@@ -1,0 +1,65 @@
+[workspace.package]
+edition = "2024"
+authors = ["Francesco Ceccon", "The Wings contributors"]
+repository = "https://github.com/apibara/wings"
+license = "Apache-2.0"
+
+[workspace]
+resolver = "2"
+members = [
+    "wings",
+    "wings_ingestor_core",
+    "wings_ingestor_http",
+    "wings_metadata_core",
+    "wings_object_store",
+    "wings_server_http",
+]
+
+[profile.maxperf]
+inherits = "release"
+codegen-units = 1
+lto = "fat"
+incremental = false
+
+[workspace.dependencies]
+arrow = "55.2.0"
+arrow-ipc = "55.2.0"
+arrow-json = "55.2.0"
+arrow-schema = "55.2.0"
+async-trait = "0.1.88"
+axum = "0.8.4"
+bytes = "1.0"
+bytesize = "2.0.1"
+clap = { version = "4.5.40", features = [
+    "derive",
+    "env",
+    "cargo",
+    "unicode",
+    "color",
+    "unstable-styles",
+] }
+serde = { version = "1.0", features = ["derive"] }
+ctrlc = { version = "3.4.7", features = ["termination"] }
+dashmap = "6.1.0"
+datafusion = "48.0.0"
+error-stack = "0.5.0"
+flatbuffers = "25.2.10"
+futures = "0.3.31"
+futures-util = "0.3.31"
+hex = "0.4.3"
+http = "1.3.1"
+http-body = "1.0.1"
+moka = { version = "0.12.10", features = ["future"] }
+object_store = "0.12.2"
+parquet = "55.2.0"
+paste = "1.0.15"
+prost = "0.13.5"
+prost-types = "0.13.5"
+serde_json = "1.0"
+thiserror = "2.0.12"
+tonic = "0.13.1"
+tonic-build = "0.13.1"
+tonic-reflection = "0.13.1"
+tokio = { version = "1.45.1", features = ["full", "rt-multi-thread"] }
+tokio-util = { version = "0.7.15", features = ["time"] }
+tower = "0.5"

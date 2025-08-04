@@ -1,0 +1,9 @@
+/target
+/_docker
+/result
+/result-bin
+/.devcontainer/.profile
+.pre-commit-config.yaml
+.direnv
+perf.data
+perf.data.old
