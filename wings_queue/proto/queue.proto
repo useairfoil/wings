@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package wings.queue;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+service Broker {
+  rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse);
+
+  rpc RequestTasks(RequestTasksRequest) returns (RequestTasksResponse);
+
+  rpc AcknowledgeTask(AcknowledgeTaskRequest) returns (AcknowledgeTaskResponse);
+
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message ScheduleTaskRequest {
+  string unique_id = 1;
+
+  google.protobuf.Any payload = 2;
+
+  google.protobuf.Timestamp run_at = 3;
+}
+
+message ScheduleTaskResponse {
+  string task_id = 1;
+}
+
+message RequestTasksRequest {
+  string worker_id = 1;
+  uint32 max_tasks = 2;
+  google.protobuf.Duration lease_duration = 3;
+}
+
+message RequestTasksResponse {
+  repeated LeasedTask tasks = 1;
+}
+
+message LeasedTask {
+  string task_id = 1;
+  string unique_id = 2;
+  google.protobuf.Any payload = 3;
+  uint32 attempt = 4;
+  google.protobuf.Timestamp scheduled_at = 5;
+  google.protobuf.Timestamp lease_expires_at = 6;
+}
+
+message AcknowledgeTaskRequest {
+  string worker_id = 1;
+  string task_id = 2;
+
+  oneof result {
+    TaskSuccess success = 3;
+    TaskFailure failure = 4;
+  }
+}
+
+message TaskSuccess {}
+
+message TaskFailure {
+  string error_message = 1;
+  google.protobuf.Any details = 2;
+  google.protobuf.Timestamp retry_at = 3;
+}
+
+message AcknowledgeTaskResponse {}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  repeated string task_ids = 2;
+}
+
+message HeartbeatResponse {}

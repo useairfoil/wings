@@ -1,0 +1,18 @@
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.29
+    entrypoint: weed
+    command: ["mini", "-s3", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: wingsdevaccesskey
+      AWS_SECRET_ACCESS_KEY: wingsdevsecretkey
+      S3_BUCKET: default-bucket
+    ports:
+      - "8333:8333"
+      - "8888:8888"
+      - "9333:9333"
+    volumes:
+      - seaweedfs-data:/data
+
+volumes:
+  seaweedfs-data:
