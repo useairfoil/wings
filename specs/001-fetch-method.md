@@ -34,7 +34,7 @@ Most notably:
  - Long polling with the timeout specified in the request.
  - Minimum and maximum size of the response specified in the request.
  - Multiple topics and partitions in the same request.
- 
+
 We make the following changes:
 
  - Minimum and maximum size is in number of messages. This simplifies the implementation.
@@ -62,7 +62,7 @@ The `wings_server_core` module must expose a method to fetch data for a specific
  - `partition: Option<PartitionValue>`: this is the partition value, if any. This component must validate that the topic and partition value are compatible.
  - `offset: u64`: the offset of the first record to fetch.
  - computation constraints: this object is shared among many (possibly concurrent) calls to fetch. It provides a deadline for the request, and tracks how many messages have been fetched so far (together with the minimum and maximum number of messages).
- 
+
 This method must return the following data:
 
  - `topic: TopicRef`: the topic.
@@ -71,7 +71,7 @@ This method must return the following data:
  - `start_offset: u64`: the offset of the first record returned.
  - `end_offset: u64`: the offset of the last record returned.
  - `batch: RecordBatch`: the messages, as Arrow RecordBatch.
- 
+
 It is the job of the caller to then convert and return the data to the user.
 
 The fetch method's complexity comes from the shared computation constraints. These constraints are as follows:
@@ -79,7 +79,7 @@ The fetch method's complexity comes from the shared computation constraints. The
  - `deadline: Instant` (default: now() + 500ms, must be greater than 1ms): the component must stop when the deadline is reached.
  - `min_messages: usize` (default: 1, min: 1, max: 100_000, must be smaller than `max_messages`): if the fetch method reaches the end-of-log offset and collected less data than this, it should wait for more data to be available before returning (but should still follow the specified deadline). If the method collected more data than this, it should return immediately.
  - `max_messages: usize` (default: 10_000, min: 1, max: 100_000, must be greater than `min_messages`): if the fetch method collects at least this many messages, it should return immediately.
- 
+
 Notice that the interaction between `deadline` and `min_messages` is crucial for implementing long polling. Once the client reaches the head of the log, it will always wait for more data to be available before returning. Setting the deadline to a reasonable value (500ms) ensures that the client doesn't flood the server with requests that return no data.
 
 **Non-functional requirements**
@@ -88,7 +88,7 @@ Since this is an initial implementation, we prioritize simplicity and scalabilit
 
  - Avoid shared state unless it's used to reduce IO.
  - Limit the number of concurrent requests in all components.
- 
+
 ### HTTP server
 
 We should implement the HTTP endpoint in the `wings_server_http` module.
@@ -106,7 +106,7 @@ Where `TopicRequest` is a struct that contains the following fields:
  - `topic: String`: the topic id. Together with the namespace, this forms the `TopicName`.
  - `partition_value: Option<PartitionValue>`: the partition value if the topic is partitioned.
  - `offset: u64`: the offset to start fetching from.
- 
+
 The response object contains the following fields:
 
  - `topics: Vec<TopicResponse>`: the topic-specific responses.
@@ -120,13 +120,15 @@ The `TopicResponseSuccess` (tag: `success`) struct that contains the following f
  - `start_offset: u64`: the offset of the first record returned.
  - `end_offset: u64`: the offset of the last record returned.
  - `messages: Vec<serde_json::Value>`: the fetched messages, serialized as JSON objects.
- 
+
 The `TopicResponseError` (tag: `error`) struct that contains the following fields:
 
+ - `topic: String`: the full topic name.
+ - `partition_value: Option<PartitionValue>`: the partition value if the topic is partitioned.
  - `message: String`: the error message.
 
 **Functional requirements**
- 
+
 The HTTP handler must:
 
  - validate the namespace name and topic name.
@@ -145,8 +147,27 @@ This command takes the following arguments:
  - `timeout` (optional): the maximum time to wait for data to be available.
  - `max_messages` (optional): change the request `max_messages` parameter to this.
  - `min_messages` (optional): change the request `min_messages` parameter to this.
- 
+
 The data returned by the API should be formatted as a table.
+
+Notice that since we request only data for one specific topic/partition, the result always contains a single topic.
+
+In case of success, print the following:
+
+```text
+Topic: <topic>, Partition: <partition>, Start: <start_offset>, End: <end_offset>
+
+<messages_as_table />
+```
+
+Where `<messages_as_table />` is a table created by parsing the messages returned by the API into an arrow `RecordBatch` and printing it. Use `arrow_json` to parse the messages, using the schema from the topic definition.
+
+In case of error, print the topic, partition value and error message with the following format:
+
+```text
+Topic: <topic>, Partition: <partition>, Error: <error_message>
+```
+
 
 ## Design and architecture
 
@@ -166,7 +187,7 @@ This struct holds all the clients for the external services necessary to fetch d
  - `Arc<dyn Admin>`: fetch the metadata for the topic's namespace. The namespace is needed to create an object store client using the `ObjectStoreFactory`.
  - `Arc<dyn OffsetRegistry>`: interact with the offset registry to get the location of the specific offset.
  - `Arc<dyn ObjectStoreFactory>`: create a client to read with the object store.
- 
+
  The `fetch` method  collects data until one of the stopping conditions outlined in the "Core module" section above is met.
 
 ### Offset registry updates
@@ -179,7 +200,7 @@ We need to make the following changes:
 
  - The `offset_location` should return `OffsetRegistryResult<Option<OffsetLocation>>`. The value of `None` is returned if the requested offset is _after_ the most recent offset.
  - The function must accept a `deadline: Instant` parameter. If the specified offset is not present yet, the implementation must listen for offset changes until the offset is ingested, or the deadline is reached (whatever comes first).
- 
+
 After this change, we should update the `InMemoryOffsetRegitry` to handle this behaviour. This implementation simply registers a group of "waiters" using the concurrent hashmap in the `dashmap` crate and `tokio::sync::Notify`.
 When a topic/partition offset is updated, all registered waiters are removed and notified.
 
@@ -187,7 +208,7 @@ Finally, we should update the gRPC service protocol to transmit the specified de
 
 ### Remote service request deduplication
 
-All "get" requests must be deduplicated: 
+All "get" requests must be deduplicated:
 
  - `RemoteOffsetRegistryService`
     + `offset_location`
@@ -195,7 +216,7 @@ All "get" requests must be deduplicated:
     + `get_tenant`
     + `get_namespace`
     + `get_topic`
-    
+
 We should implement a `Deduplicate<K, V>` struct that is used to implement deduplication.
 
 The struct only provides a `fetch` method with the following signature (NOTE: the name `fetch` in this module is unrelated to the `fetch` described in the other sections):
@@ -230,18 +251,15 @@ The HTTP server validates the request:
 
  - validates the requested values are within the expected range.
  - validates that the specified topics exist.
- 
+
 After that, it starts one task per partition to fetch the data. Once the tasks are completed, it builds the response and returns it.
 
 ## Implementation plan
 
-> This is a list of tasks that need to be completed to implement this work.  
-> Use checkboxes to track progress.
-
 The first step is to create the HTTP server and CLI. Once we have this, we can start running the server and call it with the CLI.
 
-- [ ] Stub the HTTP server request and response types, and the HTTP handler. For now, just panic on call.
-- [ ] Implement the `fetch` command in the CLI. Use the types from the HTTP server for the request and response.
+- [x] Stub the HTTP server request and response types, and the HTTP handler. For now, just return a server error response.
+- [x] Implement the `fetch` command in the CLI. Use the types from the HTTP server for the request and response.
 
 After that, we can start implementing the core module.
 
@@ -251,19 +269,19 @@ After that, we can start implementing the core module.
  - [ ] Update the HTTP server to call `fetch` in parallel.
     + Make sure to convert all HTTP types into the core fetcher types. The return values must be converted back to the HTTP types.
     + Make sure to pass the shared state to all the `fetch` calls.
- 
+
 After this, we can implement `Fetcher` in the core module.
- 
+
  - [ ] Validate that the topic and partition value are compatible. Use the topic's partition column schema to validate this.
  - [ ] Start accumulating messages (records) in a buffer, starting from the provided offset.
  - [ ] Stop one of the stopping conditions is met. Return the values in the buffer together with any metadata needed to construct the response.
- 
+
 Then update the in memory offset registry service to implement long polling for the `offset_location` method.
 
  - [ ] Update `InMemoryOffsetRegistry::offset_location` to support long polling.
  - [ ] Update the `OffsetRegistry` gRPC service to include a deadline parameter in the request.
  - [ ] Update the `RemoteOffsetRegistry` client to forward the provided deadline to the remote server.
- 
+
 Finally, it's time to reduce the number of remote calls by implementing request deduplication.
 
  - [ ] Implement the `Deduplicate` struct.
@@ -273,7 +291,7 @@ Finally, it's time to reduce the number of remote calls by implementing request 
 ## Testing strategy
 
 > Describe how to implement unit tests for the components described in the
-> design and architecture section. 
+> design and architecture section.
 > Describe what type of integration tests to implement.
 
 For now, DO NOT WRITE ANY TESTS.

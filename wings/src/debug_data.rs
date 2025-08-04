@@ -9,7 +9,7 @@ use wings_object_store::{LocalFileSystemFactory, ObjectStoreFactory};
 
 use crate::{
     error::{CliError, CliResult},
-    push::convert_partition_value,
+    helpers::convert_partition_value,
     remote::RemoteArgs,
 };
 

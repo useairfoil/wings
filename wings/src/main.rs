@@ -2,12 +2,16 @@ use clap::{Parser, Subcommand};
 use debug_data::DebugDataArgs;
 use tokio_util::sync::CancellationToken;
 
-use crate::{admin::AdminCommands, dev::DevArgs, error::CliResult, push::PushArgs};
+use crate::{
+    admin::AdminCommands, dev::DevArgs, error::CliResult, fetch::FetchArgs, push::PushArgs,
+};
 
 mod admin;
 mod debug_data;
 mod dev;
 mod error;
+mod fetch;
+mod helpers;
 mod http_client;
 mod push;
 mod remote;
@@ -42,6 +46,11 @@ enum Commands {
         #[clap(flatten)]
         inner: DebugDataArgs,
     },
+    /// Fetch messages from Wings topics
+    Fetch {
+        #[clap(flatten)]
+        inner: FetchArgs,
+    },
 }
 
 #[tokio::main]
@@ -61,5 +70,6 @@ async fn main() -> CliResult<()> {
         Commands::Admin { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
         Commands::DebugData { inner } => inner.run(ct).await,
+        Commands::Fetch { inner } => inner.run(ct).await,
     }
 }

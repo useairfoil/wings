@@ -133,7 +133,7 @@ async fn process_push_request(
 }
 
 /// Parse JSON data into an Arrow RecordBatch using the provided schema.
-fn parse_json_to_arrow(
+pub fn parse_json_to_arrow(
     schema: SchemaRef,
     json_data: &[serde_json::Value],
 ) -> std::result::Result<RecordBatch, ArrowError> {

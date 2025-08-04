@@ -14,3 +14,9 @@ impl HttpServer {
         Router::new().route("/v1/fetch", post(fetch_handler))
     }
 }
+
+impl Default for HttpServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
