@@ -4,7 +4,7 @@ use error_stack::{ResultExt, report};
 use tokio_util::sync::CancellationToken;
 use wings_ingestor_http::push::parse_json_to_arrow;
 use wings_metadata_core::admin::{Admin, NamespaceName, Topic, TopicName};
-use wings_server_http::fetch::{FetchRequest, FetchResponse, TopicRequest, TopicResponse};
+use wings_server_http::types::{FetchRequest, FetchResponse, TopicRequest, TopicResponse};
 
 use crate::{
     error::{CliError, CliResult},
@@ -39,7 +39,7 @@ pub struct FetchArgs {
     min_messages: Option<usize>,
 
     /// The namespace to fetch from
-    #[arg(long, default_value = "tenant/default/namespace/default")]
+    #[arg(long, default_value = "tenants/default/namespaces/default")]
     namespace: String,
 
     /// HTTP server address

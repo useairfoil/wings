@@ -62,6 +62,7 @@ The `wings_server_core` module must expose a method to fetch data for a specific
  - `partition: Option<PartitionValue>`: this is the partition value, if any. This component must validate that the topic and partition value are compatible.
  - `offset: u64`: the offset of the first record to fetch.
  - computation constraints: this object is shared among many (possibly concurrent) calls to fetch. It provides a deadline for the request, and tracks how many messages have been fetched so far (together with the minimum and maximum number of messages).
+ - `ct: CancellationToken`: this is a cancellation token that can be used to cancel the request.
 
 This method must return the following data:
 
@@ -107,7 +108,7 @@ Where `TopicRequest` is a struct that contains the following fields:
  - `partition_value: Option<PartitionValue>`: the partition value if the topic is partitioned.
  - `offset: u64`: the offset to start fetching from.
 
-The response object contains the following fields:
+A successful response object contains the following fields:
 
  - `topics: Vec<TopicResponse>`: the topic-specific responses.
 
@@ -126,6 +127,8 @@ The `TopicResponseError` (tag: `error`) struct that contains the following field
  - `topic: String`: the full topic name.
  - `partition_value: Option<PartitionValue>`: the partition value if the topic is partitioned.
  - `message: String`: the error message.
+
+If any validation error occurs, the response will be an error response with a single `message` field.
 
 **Functional requirements**
 
@@ -249,7 +252,7 @@ The `fetch` implementation works as follows:
 
 The HTTP server validates the request:
 
- - validates the requested values are within the expected range.
+ - delegates parameters validation to the `FetchState` struct constructor.
  - validates that the specified topics exist.
 
 After that, it starts one task per partition to fetch the data. Once the tasks are completed, it builds the response and returns it.
@@ -263,10 +266,10 @@ The first step is to create the HTTP server and CLI. Once we have this, we can s
 
 After that, we can start implementing the core module.
 
- - [ ] Create the `Fetcher` struct in the `wings_server_core` crate.
- - [ ] Define the `fetch` method, but don't implement it yet.
- - [ ] Pass the `Fetcher` object to the HTTP server.
- - [ ] Update the HTTP server to call `fetch` in parallel.
+ - [x] Create the `Fetcher` struct in the `wings_server_core` crate.
+ - [x] Define the `fetch` method, but don't implement it yet.
+ - [x] Pass the `Fetcher` object to the HTTP server.
+ - [x] Update the HTTP server to call `fetch` in parallel.
     + Make sure to convert all HTTP types into the core fetcher types. The return values must be converted back to the HTTP types.
     + Make sure to pass the shared state to all the `fetch` calls.
 

@@ -15,6 +15,7 @@ use wings_metadata_core::{
     offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
 };
 use wings_object_store::TemporaryFileSystemFactory;
+use wings_server_core::Fetcher;
 use wings_server_http::HttpServer;
 
 use crate::error::{CliError, CliResult};
@@ -50,46 +51,51 @@ impl DevArgs {
         println!("gRPC server listening on {}", metadata_address);
         println!("HTTP ingestor listening on {}", http_address);
 
-        {
-            let _ct_guard = ct.child_token().drop_guard();
-            let object_store_factory =
-                TemporaryFileSystemFactory::new().change_context(CliError::Server {
-                    message: "error creating local temporary directory".to_string(),
-                })?;
+        let _ct_guard = ct.child_token().drop_guard();
+        let object_store_factory =
+            TemporaryFileSystemFactory::new().change_context(CliError::Server {
+                message: "error creating local temporary directory".to_string(),
+            })?;
 
-            let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
+        let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
+        let object_store_factory = Arc::new(object_store_factory);
 
-            println!(
-                "Object store root path: {}",
-                object_store_factory.root_path().display()
-            );
+        println!(
+            "Object store root path: {}",
+            object_store_factory.root_path().display()
+        );
 
-            let ingestor =
-                BatchIngestor::new(Arc::new(object_store_factory), offset_registry.clone());
+        let ingestor = BatchIngestor::new(object_store_factory.clone(), offset_registry.clone());
 
-            let grpc_server_fut = run_grpc_server(
-                admin.clone(),
-                offset_registry,
-                ingestor.client(),
-                metadata_address,
-                ct.clone(),
-            );
-            let http_ingestor_fut =
-                run_http_ingestor(admin, ingestor.client(), http_address, ct.clone());
+        let fetcher = Fetcher::new(
+            admin.clone(),
+            object_store_factory.clone(),
+            offset_registry.clone(),
+        );
 
-            let ingestor_fut = run_background_ingestor(ingestor, ct);
+        let grpc_server_fut = run_grpc_server(
+            admin.clone(),
+            offset_registry,
+            ingestor.client(),
+            metadata_address,
+            ct.clone(),
+        );
 
-            tokio::select! {
-                res = grpc_server_fut => {
-                    println!("gRPC server exited with {:?}", res);
-                },
-                res = http_ingestor_fut => {
-                    println!("HTTP ingestor server exited with {:?}", res);
-                },
-                res = ingestor_fut => {
-                    println!("Background ingestor exited with {:?}", res);
-                },
-            }
+        let http_ingestor_fut =
+            run_http_server(admin, fetcher, ingestor.client(), http_address, ct.clone());
+
+        let ingestor_fut = run_background_ingestor(ingestor, ct);
+
+        tokio::select! {
+            res = grpc_server_fut => {
+                println!("gRPC server exited with {:?}", res);
+            },
+            res = http_ingestor_fut => {
+                println!("HTTP ingestor server exited with {:?}", res);
+            },
+            res = ingestor_fut => {
+                println!("Background ingestor exited with {:?}", res);
+            },
         }
 
         Ok(())
@@ -148,23 +154,22 @@ async fn run_grpc_server(
     })
 }
 
-async fn run_http_ingestor(
-    admin: Arc<InMemoryAdminService>,
+async fn run_http_server(
+    admin: Arc<dyn Admin>,
+    fetcher: Fetcher,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> CliResult<()> {
     let topic_cache = TopicCache::new(admin.clone());
-    let namespace_cache = NamespaceCache::new(admin);
+    let namespace_cache = NamespaceCache::new(admin.clone());
 
-    let app = {
-        let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
-        let server = HttpServer::new();
+    let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
+    let server = HttpServer::new(fetcher);
 
-        Router::new()
-            .merge(ingestor.into_router())
-            .merge(server.into_router())
-    };
+    let app = Router::new()
+        .merge(ingestor.into_router())
+        .merge(server.into_router());
 
     let listener = tokio::net::TcpListener::bind(&address)
         .await

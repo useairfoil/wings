@@ -34,4 +34,5 @@ wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-metadata-core = { path = "../wings_metadata_core" }
 wings-object-store = { path = "../wings_object_store" }
+wings-server-core = { path = "../wings_server_core" }
 wings-server-http = { path = "../wings_server_http" }

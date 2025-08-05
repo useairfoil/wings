@@ -4344,6 +4344,7 @@ dependencies = [
  "wings-ingestor-http",
  "wings-metadata-core",
  "wings-object-store",
+ "wings-server-core",
  "wings-server-http",
 ]
 
@@ -4431,6 +4432,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-server-core"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-json",
+ "arrow-schema",
+ "datafusion",
+ "error-stack",
+ "futures",
+ "object_store",
+ "parquet",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "wings-metadata-core",
+ "wings-object-store",
+]
+
+[[package]]
 name = "wings-server-http"
 version = "0.1.0"
 dependencies = [
@@ -4447,6 +4469,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "wings-metadata-core",
+ "wings-server-core",
 ]
 
 [[package]]
