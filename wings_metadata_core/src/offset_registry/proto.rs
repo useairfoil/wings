@@ -1,12 +1,13 @@
 //! Conversions between offset registry domain types and protobuf types.
 
-use error_stack::{Report, ResultExt, bail, ensure};
+use snafu::{ResultExt, ensure};
 
 use crate::admin::TopicName;
-use crate::offset_registry::error::OffsetRegistryError;
 use crate::offset_registry::types::*;
 use crate::partition::PartitionValue;
 use crate::protocol::wings::v1::{self as pb};
+
+use super::error::{InvalidArgumentSnafu, InvalidResourceNameSnafu, OffsetRegistryError};
 
 impl From<OffsetLocation> for pb::OffsetLocationResponse {
     fn from(location: OffsetLocation) -> Self {
@@ -21,16 +22,16 @@ impl From<OffsetLocation> for pb::OffsetLocationResponse {
 }
 
 impl TryFrom<pb::OffsetLocationResponse> for OffsetLocation {
-    type Error = Report<OffsetRegistryError>;
+    type Error = OffsetRegistryError;
 
     fn try_from(response: pb::OffsetLocationResponse) -> Result<Self, Self::Error> {
         use pb::offset_location_response::Location as ProtoLocation;
 
         let location = response
             .location
-            .ok_or(OffsetRegistryError::InvalidArgument(
-                "missing location from response".to_string(),
-            ))?;
+            .ok_or_else(|| OffsetRegistryError::InvalidArgument {
+                message: "missing location from response".to_string(),
+            })?;
 
         match location {
             ProtoLocation::FolioLocation(folio) => Ok(OffsetLocation::Folio(folio.into())),
@@ -63,12 +64,13 @@ impl From<pb::FolioLocation> for FolioLocation {
 }
 
 impl TryFrom<pb::BatchToCommit> for BatchToCommit {
-    type Error = Report<OffsetRegistryError>;
+    type Error = OffsetRegistryError;
 
     fn try_from(batch: pb::BatchToCommit) -> Result<Self, Self::Error> {
-        let topic_name = TopicName::parse(&batch.topic).change_context(
-            OffsetRegistryError::InvalidArgument("invalid topic name format".to_string()),
-        )?;
+        let topic_name =
+            TopicName::parse(&batch.topic).map_err(|_| OffsetRegistryError::InvalidArgument {
+                message: "invalid topic name format".to_string(),
+            })?;
 
         let partition_value = batch.partition.map(TryFrom::try_from).transpose()?;
 
@@ -95,7 +97,7 @@ impl From<&BatchToCommit> for pb::BatchToCommit {
 }
 
 impl TryFrom<pb::CommitFolioResponse> for Vec<CommittedBatch> {
-    type Error = Report<OffsetRegistryError>;
+    type Error = OffsetRegistryError;
 
     fn try_from(response: pb::CommitFolioResponse) -> Result<Self, Self::Error> {
         response
@@ -118,12 +120,11 @@ impl From<CommittedBatch> for pb::CommittedBatch {
 }
 
 impl TryFrom<pb::CommittedBatch> for CommittedBatch {
-    type Error = Report<OffsetRegistryError>;
+    type Error = OffsetRegistryError;
 
     fn try_from(batch: pb::CommittedBatch) -> Result<Self, Self::Error> {
-        let topic_name = TopicName::parse(&batch.topic).change_context(
-            OffsetRegistryError::InvalidArgument("invalid topic name format".to_string()),
-        )?;
+        let topic_name = TopicName::parse(&batch.topic)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
         let partition_value = batch.partition.map(TryFrom::try_from).transpose()?;
 
@@ -137,7 +138,7 @@ impl TryFrom<pb::CommittedBatch> for CommittedBatch {
 }
 
 impl TryFrom<pb::PartitionValue> for PartitionValue {
-    type Error = Report<OffsetRegistryError>;
+    type Error = OffsetRegistryError;
 
     fn try_from(value: pb::PartitionValue) -> Result<Self, Self::Error> {
         use pb::partition_value::Value;
@@ -147,7 +148,9 @@ impl TryFrom<pb::PartitionValue> for PartitionValue {
             Some(Value::Int8Value(v)) => {
                 ensure!(
                     v >= i8::MIN as i32 && v <= i8::MAX as i32,
-                    OffsetRegistryError::InvalidArgument(format!("Int8 value out of range: {v}"))
+                    InvalidArgumentSnafu {
+                        message: format!("Int8 value out of range: {v}")
+                    }
                 );
 
                 Ok(PartitionValue::Int8(v as i8))
@@ -155,7 +158,9 @@ impl TryFrom<pb::PartitionValue> for PartitionValue {
             Some(Value::Int16Value(v)) => {
                 ensure!(
                     v >= i16::MIN as i32 && v <= i16::MAX as i32,
-                    OffsetRegistryError::InvalidArgument(format!("Int16 value out of range: {v}"))
+                    InvalidArgumentSnafu {
+                        message: format!("Int16 value out of range: {v}")
+                    }
                 );
 
                 Ok(PartitionValue::Int16(v as i16))
@@ -165,7 +170,9 @@ impl TryFrom<pb::PartitionValue> for PartitionValue {
             Some(Value::Uint8Value(v)) => {
                 ensure!(
                     v <= u8::MAX as u32,
-                    OffsetRegistryError::InvalidArgument(format!("UInt8 value out of range: {v}"))
+                    InvalidArgumentSnafu {
+                        message: format!("UInt8 value out of range: {v}")
+                    }
                 );
 
                 Ok(PartitionValue::UInt8(v as u8))
@@ -173,7 +180,9 @@ impl TryFrom<pb::PartitionValue> for PartitionValue {
             Some(Value::Uint16Value(v)) => {
                 ensure!(
                     v <= u16::MAX as u32,
-                    OffsetRegistryError::InvalidArgument(format!("UInt16 value out of range: {v}"))
+                    InvalidArgumentSnafu {
+                        message: format!("UInt16 value out of range: {v}")
+                    }
                 );
 
                 Ok(PartitionValue::UInt16(v as u16))
@@ -183,9 +192,10 @@ impl TryFrom<pb::PartitionValue> for PartitionValue {
             Some(Value::StringValue(v)) => Ok(PartitionValue::String(v)),
             Some(Value::BytesValue(v)) => Ok(PartitionValue::Bytes(v)),
             Some(Value::BoolValue(v)) => Ok(PartitionValue::Boolean(v)),
-            None => bail!(OffsetRegistryError::InvalidArgument(
-                "Missing partition value".to_string(),
-            )),
+            None => InvalidArgumentSnafu {
+                message: "Missing partition value".to_string(),
+            }
+            .fail(),
         }
     }
 }

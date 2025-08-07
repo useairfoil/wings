@@ -1,4 +1,4 @@
-use thiserror::Error;
+use snafu::Snafu;
 
 use crate::{
     admin::{NamespaceName, TopicName},
@@ -7,22 +7,35 @@ use crate::{
 };
 
 /// Errors that can occur during batch committer operations.
-#[derive(Error, Debug)]
+#[derive(Clone, Debug, Snafu)]
+#[snafu(visibility(pub))]
 pub enum OffsetRegistryError {
-    #[error("duplicate partition value: {0} {1:?}")]
-    DuplicatePartitionValue(TopicName, Option<PartitionValue>),
-    #[error("namespace not found: {0}")]
-    NamespaceNotFound(NamespaceName),
-    #[error("offset not found for topic: {0}, partition: {1:?}, offset: {2}")]
-    OffsetNotFound(TopicName, Option<PartitionValue>, u64),
-    #[error("invalid offset range")]
+    #[snafu(display("duplicate partition value: {topic} {partition:?}"))]
+    DuplicatePartitionValue {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+    },
+    #[snafu(display("namespace not found: {namespace}"))]
+    NamespaceNotFound { namespace: NamespaceName },
+    #[snafu(display(
+        "offset not found for topic: {topic}, partition: {partition:?}, offset: {offset}"
+    ))]
+    OffsetNotFound {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+        offset: u64,
+    },
+    #[snafu(display("invalid offset range"))]
     InvalidOffsetRange,
-    #[error("internal error: {0}")]
-    Internal(String),
-    #[error("invalid argument: {0}")]
-    InvalidArgument(String),
-    #[error("invalid resource name")]
-    InvalidResourceName(#[from] ResourceError),
+    #[snafu(display("internal error: {message}"))]
+    Internal { message: String },
+    #[snafu(display("invalid argument: {message}"))]
+    InvalidArgument { message: String },
+    #[snafu(display("invalid {resource} name"))]
+    InvalidResourceName {
+        resource: &'static str,
+        source: ResourceError,
+    },
 }
 
-pub type OffsetRegistryResult<T> = error_stack::Result<T, OffsetRegistryError>;
+pub type OffsetRegistryResult<T, E = OffsetRegistryError> = ::std::result::Result<T, E>;

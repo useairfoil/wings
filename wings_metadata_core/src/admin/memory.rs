@@ -59,10 +59,10 @@ impl Admin for InMemoryAdminService {
         let tenant_id = name.id().to_string();
 
         if store.tenants.contains_key(&tenant_id) {
-            return Err(error_stack::Report::new(AdminError::AlreadyExists {
+            return Err(AdminError::AlreadyExists {
                 resource: "tenant",
                 message: tenant_id.clone(),
-            }));
+            });
         }
 
         let tenant = Tenant::new(name);
@@ -75,12 +75,14 @@ impl Admin for InMemoryAdminService {
         let store = self.store.read().await;
 
         let tenant_id = name.id();
-        store.tenants.get(tenant_id).cloned().ok_or_else(|| {
-            error_stack::Report::new(AdminError::NotFound {
+        store
+            .tenants
+            .get(tenant_id)
+            .cloned()
+            .ok_or_else(|| AdminError::NotFound {
                 resource: "tenant",
                 message: tenant_id.to_string(),
             })
-        })
     }
 
     async fn list_tenants(&self, request: ListTenantsRequest) -> AdminResult<ListTenantsResponse> {
@@ -130,10 +132,10 @@ impl Admin for InMemoryAdminService {
         let tenant_id = name.id();
 
         if !store.tenants.contains_key(tenant_id) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "tenant",
                 message: tenant_id.to_string(),
-            }));
+            });
         }
 
         let has_namespaces = store
@@ -142,11 +144,10 @@ impl Admin for InMemoryAdminService {
             .any(|namespace| namespace.name.parent().id() == tenant_id);
 
         if has_namespaces {
-            return Err(error_stack::Report::new(AdminError::InvalidArgument {
+            return Err(AdminError::InvalidArgument {
                 resource: "tenant",
                 message: format!("{} has namespaces and cannot be deleted", tenant_id),
-            })
-            .attach_printable("tenant has namespaces and cannot be deleted"));
+            });
         }
 
         store.tenants.remove(tenant_id);
@@ -166,18 +167,17 @@ impl Admin for InMemoryAdminService {
         let tenant_id = name.parent().id();
 
         if !store.tenants.contains_key(tenant_id) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "tenant",
                 message: tenant_id.to_string(),
-            })
-            .attach_printable("parent tenant must exist before creating namespace"));
+            });
         }
 
         if store.namespaces.contains_key(&namespace_key) {
-            return Err(error_stack::Report::new(AdminError::AlreadyExists {
+            return Err(AdminError::AlreadyExists {
                 resource: "namespace",
                 message: name.id().to_string(),
-            }));
+            });
         }
 
         let namespace = Namespace::new(name, options);
@@ -194,11 +194,9 @@ impl Admin for InMemoryAdminService {
             .namespaces
             .get(&namespace_key)
             .cloned()
-            .ok_or_else(|| {
-                error_stack::Report::new(AdminError::NotFound {
-                    resource: "namespace",
-                    message: name.id().to_string(),
-                })
+            .ok_or_else(|| AdminError::NotFound {
+                resource: "namespace",
+                message: name.id().to_string(),
             })
     }
 
@@ -211,11 +209,10 @@ impl Admin for InMemoryAdminService {
         let tenant_id = request.parent.id();
 
         if !store.tenants.contains_key(tenant_id) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "tenant",
                 message: tenant_id.to_string(),
-            })
-            .attach_printable("parent tenant must exist to list namespaces"));
+            });
         }
 
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
@@ -270,10 +267,10 @@ impl Admin for InMemoryAdminService {
         let namespace_key = name.name();
 
         if !store.namespaces.contains_key(&namespace_key) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "namespace",
                 message: name.id().to_string(),
-            }));
+            });
         }
 
         let has_topics = store
@@ -282,11 +279,10 @@ impl Admin for InMemoryAdminService {
             .any(|topic| topic.name.parent().name() == namespace_key);
 
         if has_topics {
-            return Err(error_stack::Report::new(AdminError::InvalidArgument {
+            return Err(AdminError::InvalidArgument {
                 resource: "namespace",
                 message: format!("{} has topics and cannot be deleted", name.id()),
-            })
-            .attach_printable("namespace has topics and cannot be deleted"));
+            });
         }
 
         store.namespaces.remove(&namespace_key);
@@ -302,30 +298,29 @@ impl Admin for InMemoryAdminService {
         let namespace_key = name.parent().name();
 
         if !store.namespaces.contains_key(&namespace_key) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "namespace",
                 message: name.parent().id().to_string(),
-            })
-            .attach_printable("parent namespace must exist before creating topic"));
+            });
         }
 
         if store.topics.contains_key(&topic_key) {
-            return Err(error_stack::Report::new(AdminError::AlreadyExists {
+            return Err(AdminError::AlreadyExists {
                 resource: "topic",
                 message: name.id().to_string(),
-            }));
+            });
         }
 
         if let Some(key_index) = options.partition_key {
             if key_index >= options.fields.len() {
-                return Err(error_stack::Report::new(AdminError::InvalidArgument {
+                return Err(AdminError::InvalidArgument {
                     resource: "topic",
                     message: format!(
                         "partition key index {} is out of bounds for fields (length: {})",
                         key_index,
                         options.fields.len()
                     ),
-                }));
+                });
             }
         }
 
@@ -339,12 +334,14 @@ impl Admin for InMemoryAdminService {
         let store = self.store.read().await;
 
         let topic_key = name.name();
-        store.topics.get(&topic_key).cloned().ok_or_else(|| {
-            error_stack::Report::new(AdminError::NotFound {
+        store
+            .topics
+            .get(&topic_key)
+            .cloned()
+            .ok_or_else(|| AdminError::NotFound {
                 resource: "topic",
                 message: name.id().to_string(),
             })
-        })
     }
 
     async fn list_topics(&self, request: ListTopicsRequest) -> AdminResult<ListTopicsResponse> {
@@ -353,11 +350,10 @@ impl Admin for InMemoryAdminService {
         let namespace_key = request.parent.name();
 
         if !store.namespaces.contains_key(&namespace_key) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "namespace",
                 message: request.parent.id().to_string(),
-            })
-            .attach_printable("parent namespace must exist to list topics"));
+            });
         }
 
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
@@ -412,10 +408,10 @@ impl Admin for InMemoryAdminService {
         let topic_key = name.name();
 
         if !store.topics.contains_key(&topic_key) {
-            return Err(error_stack::Report::new(AdminError::NotFound {
+            return Err(AdminError::NotFound {
                 resource: "topic",
                 message: name.id().to_string(),
-            }));
+            });
         }
 
         store.topics.remove(&topic_key);
@@ -487,7 +483,7 @@ mod tests {
 
         let result = service.create_tenant(tenant_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::AlreadyExists {
                 resource: "tenant",
                 ..
@@ -514,7 +510,7 @@ mod tests {
 
         let result = service.get_tenant(tenant_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "tenant",
                 ..
@@ -588,7 +584,7 @@ mod tests {
         // Verify tenant is deleted
         let result = service.get_tenant(tenant_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "tenant",
                 ..
@@ -603,7 +599,7 @@ mod tests {
 
         let result = service.delete_tenant(tenant_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "tenant",
                 ..
@@ -631,7 +627,7 @@ mod tests {
 
         let result = service.delete_tenant(tenant_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::InvalidArgument {
                 resource: "tenant",
                 ..
@@ -678,7 +674,7 @@ mod tests {
             )
             .await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "tenant",
                 ..
@@ -710,7 +706,7 @@ mod tests {
             )
             .await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::AlreadyExists {
                 resource: "namespace",
                 ..
@@ -745,7 +741,7 @@ mod tests {
 
         let result = service.get_namespace(namespace_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "namespace",
                 ..
@@ -788,7 +784,7 @@ mod tests {
 
         let result = service.list_namespaces(request).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "tenant",
                 ..
@@ -844,7 +840,7 @@ mod tests {
         // Verify namespace is deleted
         let result = service.get_namespace(namespace_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "namespace",
                 ..
@@ -860,7 +856,7 @@ mod tests {
 
         let result = service.delete_namespace(namespace_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "namespace",
                 ..
@@ -899,7 +895,7 @@ mod tests {
 
         let result = service.delete_namespace(namespace_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::InvalidArgument {
                 resource: "namespace",
                 ..
@@ -943,7 +939,7 @@ mod tests {
         let topic_options = TopicOptions::new(vec![Field::new("key", DataType::Utf8, false)]);
         let result = service.create_topic(topic_name, topic_options).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "namespace",
                 ..
@@ -970,7 +966,7 @@ mod tests {
         // Try to create the same topic again
         let result = service.create_topic(topic_name, topic_options).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::AlreadyExists {
                 resource: "topic",
                 ..
@@ -1006,7 +1002,7 @@ mod tests {
 
         let result = service.get_topic(topic_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "topic",
                 ..
@@ -1061,7 +1057,7 @@ mod tests {
 
         let result = service.list_topics(request).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "namespace",
                 ..
@@ -1125,7 +1121,7 @@ mod tests {
         // Verify topic is deleted
         let result = service.get_topic(topic_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "topic",
                 ..
@@ -1142,7 +1138,7 @@ mod tests {
 
         let result = service.delete_topic(topic_name, false).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "topic",
                 ..
@@ -1174,7 +1170,7 @@ mod tests {
         // Verify topic is deleted
         let result = service.get_topic(topic_name).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::NotFound {
                 resource: "topic",
                 ..
@@ -1223,7 +1219,7 @@ mod tests {
 
         let result = service.create_topic(topic_name, topic_options).await;
         assert!(matches!(
-            result.unwrap_err().current_context(),
+            result.unwrap_err(),
             AdminError::InvalidArgument {
                 resource: "topic",
                 ..

@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use error_stack::Report;
+use snafu::ResultExt;
 use tonic::{Request, Response, Status};
 
 use crate::admin::{NamespaceName, TopicName};
+use crate::offset_registry::error::OffsetRegistryError;
 use crate::offset_registry::{BatchToCommit, OffsetRegistry};
 use crate::protocol::wings::v1::{
     self as pb,
@@ -16,7 +17,7 @@ use crate::protocol::wings::v1::{
 };
 use crate::resource::ResourceError;
 
-use super::OffsetRegistryError;
+use super::error::InvalidResourceNameSnafu;
 
 /// gRPC server implementation for the OffsetRegistryService.
 pub struct OffsetRegistryService {
@@ -43,7 +44,9 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
         let request = request.into_inner();
 
         let namespace_name = NamespaceName::parse(&request.namespace)
-            .map_err(OffsetRegistryError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })
             .map_err(Into::into)
             .map_err(offset_registry_error_to_status)?;
 
@@ -51,7 +54,7 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
             .batches
             .into_iter()
             .map(|batch| batch.try_into())
-            .collect::<Result<Vec<_>, Report<OffsetRegistryError>>>()
+            .collect::<Result<Vec<_>, OffsetRegistryError>>()
             .map_err(offset_registry_error_to_status)?;
 
         let committed_batches = self
@@ -74,7 +77,7 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
         let request = request.into_inner();
 
         let topic_name = TopicName::parse(&request.topic)
-            .map_err(OffsetRegistryError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
             .map_err(offset_registry_error_to_status)?;
 
@@ -94,46 +97,43 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
     }
 }
 
-fn offset_registry_error_to_status(
-    error: error_stack::Report<crate::offset_registry::error::OffsetRegistryError>,
-) -> Status {
-    use crate::offset_registry::error::OffsetRegistryError;
-
-    match error.current_context() {
-        OffsetRegistryError::DuplicatePartitionValue(topic, partition) => {
+fn offset_registry_error_to_status(error: OffsetRegistryError) -> Status {
+    match error {
+        OffsetRegistryError::DuplicatePartitionValue { topic, partition } => {
             Status::already_exists(format!(
-                "duplicate partition value: topic={}, partition={:?}",
-                topic, partition
+                "duplicate partition value: topic={topic}, partition={partition:?}",
             ))
         }
-        OffsetRegistryError::NamespaceNotFound(namespace) => {
-            Status::not_found(format!("namespace not found: {}", namespace))
+        OffsetRegistryError::NamespaceNotFound { namespace } => {
+            Status::not_found(format!("namespace not found: {namespace}"))
         }
-        OffsetRegistryError::OffsetNotFound(topic, partition, offset) => {
-            Status::not_found(format!(
-                "offset not found: topic={}, partition={:?}, offset={}",
-                topic, partition, offset
-            ))
-        }
+        OffsetRegistryError::OffsetNotFound {
+            topic,
+            partition,
+            offset,
+        } => Status::not_found(format!(
+            "offset not found: topic={topic}, partition={partition:?}, offset={offset}",
+        )),
         OffsetRegistryError::InvalidOffsetRange => Status::invalid_argument("invalid offset range"),
-        OffsetRegistryError::InvalidArgument(message) => Status::invalid_argument(message.clone()),
-        OffsetRegistryError::InvalidResourceName(resource_error) => match resource_error {
+        OffsetRegistryError::InvalidArgument { message } => {
+            Status::invalid_argument(message.clone())
+        }
+        OffsetRegistryError::InvalidResourceName { resource, source } => match source {
             ResourceError::InvalidFormat { expected, actual } => Status::invalid_argument(format!(
-                "invalid resource name format: expected '{}' but got '{}'",
-                expected, actual
+                "invalid {resource} name format: expected '{expected}' but got '{actual}'",
             )),
             ResourceError::InvalidName { name } => {
-                Status::invalid_argument(format!("invalid resource name: {}", name))
+                Status::invalid_argument(format!("invalid {resource} name: {name}"))
             }
             ResourceError::MissingParent { name } => {
-                Status::invalid_argument(format!("missing parent resource in name: {}", name))
+                Status::invalid_argument(format!("missing parent {resource} in name: {name}"))
             }
             ResourceError::InvalidResourceId { id } => {
-                Status::invalid_argument(format!("invalid resource id: {}", id))
+                Status::invalid_argument(format!("invalid {resource} id: {id}"))
             }
         },
-        OffsetRegistryError::Internal(message) => {
-            Status::internal(format!("internal error: {}", message))
+        OffsetRegistryError::Internal { message } => {
+            Status::internal(format!("internal error: {message}"))
         }
     }
 }

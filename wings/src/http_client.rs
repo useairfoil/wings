@@ -1,9 +1,8 @@
 //! HTTP client for pushing messages to Wings.
 
-use error_stack::{Result, ResultExt, report};
 use reqwest::StatusCode;
 use serde_json::Value;
-use thiserror::Error;
+use snafu::{ResultExt, Snafu};
 use wings_ingestor_http::types::{Batch, ErrorResponse, PushRequest, PushResponse};
 use wings_metadata_core::{admin::NamespaceName, partition::PartitionValue};
 
@@ -15,13 +14,15 @@ pub struct HttpPushClient {
     namespace: NamespaceName,
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Debug, Snafu)]
 pub enum HttpPushClientError {
-    #[error("client error")]
-    Client,
-    #[error("response error: {0} {1}")]
-    Response(StatusCode, String),
+    #[snafu(display("Request error"))]
+    Request { source: reqwest::Error },
+    #[snafu(display("Response error: status={status}, message={message}"))]
+    Response { status: StatusCode, message: String },
 }
+
+pub type Result<T, E = HttpPushClientError> = std::result::Result<T, E>;
 
 impl HttpPushClient {
     /// Create a new HTTP push client.
@@ -73,7 +74,7 @@ impl PushRequestBuilder {
     }
 
     /// Send the push request to the server.
-    pub async fn send(self) -> Result<PushResponse, HttpPushClientError> {
+    pub async fn send(self) -> Result<PushResponse> {
         let request = PushRequest {
             namespace: self.namespace.to_string(),
             batches: self.batches,
@@ -87,22 +88,25 @@ impl PushRequestBuilder {
             .json(&request)
             .send()
             .await
-            .change_context(HttpPushClientError::Client)?;
+            .context(RequestSnafu {})?;
 
         if response.status().is_success() {
             return response
                 .json::<PushResponse>()
                 .await
-                .change_context(HttpPushClientError::Client);
+                .context(RequestSnafu {});
         }
 
         let status = response.status();
         let body = response
             .json::<ErrorResponse>()
             .await
-            .change_context(HttpPushClientError::Client)?;
+            .context(RequestSnafu {})?;
 
-        Err(report!(HttpPushClientError::Response(status, body.message)))
+        Err(HttpPushClientError::Response {
+            status,
+            message: body.message,
+        })
     }
 
     fn add_batch(&mut self, batch: Batch) {

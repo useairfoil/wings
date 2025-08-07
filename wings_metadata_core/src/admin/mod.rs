@@ -1,6 +1,7 @@
 //! The metadata admin trait and related types.
 
 pub mod error;
+pub mod helpers;
 pub mod memory;
 pub mod proto;
 pub mod remote;
@@ -8,6 +9,7 @@ pub mod server;
 pub mod types;
 
 pub use error::{AdminError, AdminResult};
+pub use helpers::{collect_namespace_topics, collect_namespace_topics_from_ids};
 pub use memory::InMemoryAdminService;
 pub use remote::RemoteAdminService;
 pub use server::AdminService;

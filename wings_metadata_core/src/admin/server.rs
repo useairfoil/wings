@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use snafu::ResultExt;
 use tonic::{Request, Response, Status};
 
 use crate::admin::{
@@ -14,6 +15,8 @@ use crate::protocol::wings::v1::{
     admin_service_server::{AdminService as AdminServiceTrait, AdminServiceServer},
 };
 use crate::resource::ResourceError;
+
+use super::error::InvalidResourceNameSnafu;
 
 /// gRPC server implementation for the AdminService.
 pub struct AdminService {
@@ -40,7 +43,7 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let tenant_name = TenantName::new(request.tenant_id)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -60,7 +63,7 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let tenant_name = TenantName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -95,7 +98,7 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let tenant_name = TenantName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -114,12 +117,14 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let tenant_name = TenantName::parse(&request.parent)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
         let namespace_name = NamespaceName::new(request.namespace_id, tenant_name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -142,7 +147,9 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let namespace_name = NamespaceName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -178,7 +185,9 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let namespace_name = NamespaceName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -197,12 +206,14 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let namespace_name = NamespaceName::parse(&request.parent)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
         let topic_name = TopicName::new(request.topic_id, namespace_name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -225,7 +236,7 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let topic_name = TopicName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -262,7 +273,7 @@ impl AdminServiceTrait for AdminService {
         let request = request.into_inner();
 
         let topic_name = TopicName::parse(&request.name)
-            .map_err(AdminError::InvalidResourceName)
+            .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
             .map_err(admin_error_to_status)?;
 
@@ -275,34 +286,31 @@ impl AdminServiceTrait for AdminService {
     }
 }
 
-fn admin_error_to_status(error: error_stack::Report<AdminError>) -> Status {
-    match error.current_context() {
+fn admin_error_to_status(error: AdminError) -> Status {
+    match error {
         AdminError::NotFound { resource, message } => {
-            Status::not_found(format!("{} not found: {}", resource, message))
+            Status::not_found(format!("{resource} not found: {message}"))
         }
         AdminError::AlreadyExists { resource, message } => {
-            Status::already_exists(format!("{} already exists: {}", resource, message))
+            Status::already_exists(format!("{resource} already exists: {message}"))
         }
         AdminError::InvalidArgument { resource, message } => {
-            Status::invalid_argument(format!("invalid {}: {}", resource, message))
+            Status::invalid_argument(format!("invalid {resource}: {message}"))
         }
-        AdminError::InvalidResourceName(resource_error) => match resource_error {
+        AdminError::InvalidResourceName { resource, source } => match source {
             ResourceError::InvalidFormat { expected, actual } => Status::invalid_argument(format!(
-                "invalid resource name format: expected '{}' but got '{}'",
-                expected, actual
+                "invalid {resource} name format: expected '{expected}' but got '{actual}'",
             )),
             ResourceError::InvalidName { name } => {
-                Status::invalid_argument(format!("invalid resource name: {}", name))
+                Status::invalid_argument(format!("invalid {resource} name: {name}"))
             }
             ResourceError::MissingParent { name } => {
-                Status::invalid_argument(format!("missing parent resource in name: {}", name))
+                Status::invalid_argument(format!("missing parent {resource} in name: {name}"))
             }
             ResourceError::InvalidResourceId { id } => {
-                Status::invalid_argument(format!("invalid resource id: {}", id))
+                Status::invalid_argument(format!("invalid {resource} id: {id}"))
             }
         },
-        AdminError::Internal { message } => {
-            Status::internal(format!("internal error: {}", message))
-        }
+        AdminError::Internal { message } => Status::internal(format!("internal error: {message}")),
     }
 }

@@ -10,7 +10,6 @@
 use std::fmt::Debug;
 
 use arrow::array::RecordBatch;
-use error_stack::Report;
 use tokio_util::time::delay_queue;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicName, TopicRef},
@@ -26,7 +25,7 @@ pub struct ReplyWithError {
     /// The reply channel.
     pub reply: WriteReplySender,
     /// The error.
-    pub error: Report<IngestorError>,
+    pub error: IngestorError,
 }
 
 /// A batch of messages.

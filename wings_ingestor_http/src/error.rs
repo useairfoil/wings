@@ -1,18 +1,18 @@
-use thiserror::Error;
+use snafu::Snafu;
 
 /// Errors that can occur in the HTTP ingestor.
-#[derive(Error, Debug)]
+#[derive(Debug, Snafu)]
 pub enum HttpIngestorError {
-    #[error("failed to bind to address: {address}")]
+    #[snafu(display("failed to bind to address: {address}"))]
     BindError { address: String },
-    #[error("server error: {message}")]
+    #[snafu(display("server error: {message}"))]
     ServerError { message: String },
-    #[error("internal error: {0}")]
-    Internal(String),
-    #[error("bad request: {0}")]
-    BadRequest(String),
-    #[error("not found: {0}")]
-    NotFound(String),
+    #[snafu(display("internal server error: {message}"))]
+    Internal { message: String },
+    #[snafu(display("bad request: {message}"))]
+    BadRequest { message: String },
+    #[snafu(display("not found: {message}"))]
+    NotFound { message: String },
 }
 
-pub type HttpIngestorResult<T> = error_stack::Result<T, HttpIngestorError>;
+pub type Result<T, E = HttpIngestorError> = std::result::Result<T, E>;

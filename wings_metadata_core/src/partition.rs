@@ -9,14 +9,14 @@ use std::convert::TryFrom;
 use arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use snafu::Snafu;
 
 /// Errors that can occur when converting partition values.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 pub enum PartitionValueError {
-    #[error("unsupported scalar value type for partitioning: {scalar_type}")]
+    #[snafu(display("unsupported scalar value type for partitioning: {scalar_type}"))]
     UnsupportedScalarType { scalar_type: String },
-    #[error("invalid partition value: {message}")]
+    #[snafu(display("invalid partition value: {message}"))]
     InvalidValue { message: String },
 }
 

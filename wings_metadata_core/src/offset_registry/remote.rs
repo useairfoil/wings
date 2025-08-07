@@ -95,5 +95,7 @@ where
 }
 
 fn status_to_offset_registry_error(status: tonic::Status) -> OffsetRegistryError {
-    OffsetRegistryError::Internal(format!("error from remote service: {}", status.message()))
+    OffsetRegistryError::Internal {
+        message: format!("error from remote service: {}", status.message()),
+    }
 }

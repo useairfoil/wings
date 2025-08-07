@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
-use error_stack::report;
 use object_store::{PutMode, PutOptions, PutPayload};
 use wings_metadata_core::admin::{NamespaceName, NamespaceRef};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
-    error::{IngestorError, IngestorResult},
+    error::{IngestorError, Result},
     types::{
         NamespaceFolio, ReplyWithError, SerializedPartitionFolioMetadata,
         UploadedNamespaceFolioMetadata,
@@ -90,19 +89,12 @@ impl FolioUploader {
                 partitions: partition_metadata,
             }),
             Err(err) => {
-                let error = err
-                    .downcast_ref::<IngestorError>()
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        IngestorError::Internal(format!("failed to upload folio: {err}"))
-                    });
-
                 let replies = partition_metadata
                     .into_iter()
                     .flat_map(|p| {
                         p.batches.into_iter().map(|b| ReplyWithError {
                             reply: b.reply,
-                            error: report!(error.clone()),
+                            error: err.clone(),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -117,15 +109,16 @@ impl FolioUploader {
         namespace: NamespaceRef,
         file_ref: String,
         data: Bytes,
-    ) -> IngestorResult<()> {
+    ) -> Result<()> {
         let secret_name = &namespace.default_object_store_config;
 
         let object_store = self
             .object_store_factory
             .create_object_store(secret_name.clone())
             .await
-            .map_err(|err| {
-                IngestorError::Internal(format!("failed to create object store client: {err}"))
+            .map_err(|err| IngestorError::ObjectStore {
+                message: "failed to create object store client",
+                source: Arc::new(err),
             })?;
 
         object_store
@@ -138,7 +131,10 @@ impl FolioUploader {
                 },
             )
             .await
-            .map_err(|err| IngestorError::Internal(format!("failed to upload folio: {err}")))?;
+            .map_err(|err| IngestorError::ObjectStore {
+                message: "failed to upload folio",
+                source: Arc::new(err),
+            })?;
 
         Ok(())
     }

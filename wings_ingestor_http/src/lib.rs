@@ -10,7 +10,7 @@ pub mod push;
 pub mod types;
 
 // Re-export the main types for easier importing
-pub use error::{HttpIngestorError, HttpIngestorResult};
+pub use error::{HttpIngestorError, Result};
 pub use types::{Batch, PushRequest, PushResponse};
 use wings_ingestor_core::BatchIngestorClient;
 

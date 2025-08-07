@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use error_stack::{ResultExt, report};
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
@@ -10,7 +9,7 @@ use wings_object_store::ObjectStoreFactory;
 use crate::{
     batch::{Batch, WriteInfo, WriteReplySender},
     batcher::NamespaceFolioWriter,
-    error::{IngestorError, IngestorResult},
+    error::{IngestorError, ReplyChannelClosedSnafu, Result},
     types::{
         CommittedNamespaceFolioMetadata, CommittedPartitionFolioMetadata, NamespaceFolio,
         ReplyWithError,
@@ -35,10 +34,7 @@ pub struct BatchWithReply {
     pub reply: WriteReplySender,
 }
 
-pub async fn run_background_ingestor(
-    ingestor: BatchIngestor,
-    ct: CancellationToken,
-) -> IngestorResult<()> {
+pub async fn run_background_ingestor(ingestor: BatchIngestor, ct: CancellationToken) -> Result<()> {
     ingestor.run(ct).await
 }
 
@@ -64,7 +60,7 @@ impl BatchIngestor {
         }
     }
 
-    async fn run(mut self, ct: CancellationToken) -> IngestorResult<()> {
+    async fn run(mut self, ct: CancellationToken) -> Result<()> {
         let _ct_guard = ct.child_token().drop_guard();
         let mut folio_timer = DelayQueue::new();
         let mut folio_writer = NamespaceFolioWriter::default();
@@ -142,19 +138,15 @@ impl BatchIngestor {
 }
 
 impl BatchIngestorClient {
-    pub async fn write(&self, batch: Batch) -> IngestorResult<WriteInfo> {
+    pub async fn write(&self, batch: Batch) -> Result<WriteInfo> {
         let (tx, rx) = oneshot::channel();
 
         self.tx
             .send(BatchWithReply { batch, reply: tx })
             .await
-            .or_else(|err| {
-                Err(err).change_context(IngestorError::Internal("channel closed".to_string()))
-            })?;
+            .or_else(|_| ReplyChannelClosedSnafu {}.fail())?;
 
-        rx.await.or_else(|err| {
-            Err(err).change_context(IngestorError::Internal("channel closed".to_string()))
-        })?
+        rx.await.or_else(|_| ReplyChannelClosedSnafu {}.fail())?
     }
 }
 
@@ -187,14 +179,17 @@ async fn upload_and_commit_folio(
     {
         Ok(commits) => commits,
         Err(err) => {
-            let error = IngestorError::Internal(format!("failed to commit folio: {err}"));
+            let error = IngestorError::OffsetRegistry {
+                message: "failed to commit folio",
+                source: err,
+            };
 
             let replies = batch_context
                 .into_iter()
                 .flat_map(|p| {
                     p.2.into_iter().map(|b| ReplyWithError {
                         reply: b.reply,
-                        error: report!(error.clone()),
+                        error: error.clone(),
                     })
                 })
                 .collect::<Vec<_>>();

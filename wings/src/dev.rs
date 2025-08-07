@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::Router;
 use clap::Args;
-use error_stack::ResultExt;
+use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
@@ -15,10 +15,12 @@ use wings_metadata_core::{
     offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
 };
 use wings_object_store::TemporaryFileSystemFactory;
-use wings_server_core::Fetcher;
 use wings_server_http::HttpServer;
 
-use crate::error::{CliError, CliResult};
+use crate::error::{
+    InvalidServerUrlSnafu, IoSnafu, ObjectStoreSnafu, Result, TonicReflectionSnafu,
+    TonicServerSnafu,
+};
 
 #[derive(Debug, Args)]
 pub struct DevArgs {
@@ -31,20 +33,18 @@ pub struct DevArgs {
 }
 
 impl DevArgs {
-    pub async fn run(self, ct: CancellationToken) -> CliResult<()> {
+    pub async fn run(self, ct: CancellationToken) -> Result<()> {
         let (admin, default_namespace) = new_dev_admin_service().await;
 
-        let metadata_address = self.metadata_address.parse::<SocketAddr>().change_context(
-            CliError::InvalidConfiguration {
-                message: "failed to parse metadata address".to_string(),
-            },
-        )?;
+        let metadata_address = self
+            .metadata_address
+            .parse::<SocketAddr>()
+            .context(InvalidServerUrlSnafu {})?;
 
-        let http_address = self.http_address.parse::<SocketAddr>().change_context(
-            CliError::InvalidConfiguration {
-                message: "failed to parse http address".to_string(),
-            },
-        )?;
+        let http_address = self
+            .http_address
+            .parse::<SocketAddr>()
+            .context(InvalidServerUrlSnafu {})?;
 
         println!("Starting Wings in development mode");
         println!("Default namespace: {}", default_namespace);
@@ -53,9 +53,7 @@ impl DevArgs {
 
         let _ct_guard = ct.child_token().drop_guard();
         let object_store_factory =
-            TemporaryFileSystemFactory::new().change_context(CliError::Server {
-                message: "error creating local temporary directory".to_string(),
-            })?;
+            TemporaryFileSystemFactory::new().context(ObjectStoreSnafu {})?;
 
         let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
         let object_store_factory = Arc::new(object_store_factory);
@@ -67,12 +65,6 @@ impl DevArgs {
 
         let ingestor = BatchIngestor::new(object_store_factory.clone(), offset_registry.clone());
 
-        let fetcher = Fetcher::new(
-            admin.clone(),
-            object_store_factory.clone(),
-            offset_registry.clone(),
-        );
-
         let grpc_server_fut = run_grpc_server(
             admin.clone(),
             offset_registry,
@@ -81,8 +73,7 @@ impl DevArgs {
             ct.clone(),
         );
 
-        let http_ingestor_fut =
-            run_http_server(admin, fetcher, ingestor.client(), http_address, ct.clone());
+        let http_ingestor_fut = run_http_server(admin, ingestor.client(), http_address, ct.clone());
 
         let ingestor_fut = run_background_ingestor(ingestor, ct);
 
@@ -128,15 +119,13 @@ async fn run_grpc_server(
     _batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
-) -> CliResult<()> {
+) -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
             wings_metadata_core::protocol::admin_file_descriptor_set(),
         )
         .build_v1()
-        .change_context(CliError::Service {
-            message: "failed to create tonic reflection service".to_string(),
-        })?;
+        .context(TonicReflectionSnafu {})?;
 
     let admin_service = AdminService::new(admin).into_service();
     let offset_registry_service = OffsetRegistryService::new(offset_registry).into_service();
@@ -149,23 +138,20 @@ async fn run_grpc_server(
             ct.cancelled().await;
         });
 
-    server.await.change_context(CliError::Server {
-        message: "error while running grpc server".to_string(),
-    })
+    server.await.context(TonicServerSnafu {})
 }
 
 async fn run_http_server(
     admin: Arc<dyn Admin>,
-    fetcher: Fetcher,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
-) -> CliResult<()> {
+) -> Result<()> {
     let topic_cache = TopicCache::new(admin.clone());
     let namespace_cache = NamespaceCache::new(admin.clone());
 
     let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
-    let server = HttpServer::new(fetcher);
+    let server = HttpServer::new();
 
     let app = Router::new()
         .merge(ingestor.into_router())
@@ -173,15 +159,11 @@ async fn run_http_server(
 
     let listener = tokio::net::TcpListener::bind(&address)
         .await
-        .change_context(CliError::Server {
-            message: format!("failed to bind address {address}"),
-        })?;
+        .context(IoSnafu {})?;
 
     let server = axum::serve(listener, app).with_graceful_shutdown(async move {
         ct.cancelled().await;
     });
 
-    server.await.change_context(CliError::Server {
-        message: "server failed to run".to_string(),
-    })
+    server.await.context(IoSnafu {})
 }

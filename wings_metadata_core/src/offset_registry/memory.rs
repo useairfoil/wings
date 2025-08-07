@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use error_stack::bail;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::{
@@ -83,10 +82,10 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         let mut seen_partitions = HashSet::new();
         for batch in batches {
             if !seen_partitions.insert((batch.topic_name.clone(), batch.partition_value.clone())) {
-                bail!(OffsetRegistryError::DuplicatePartitionValue(
-                    batch.topic_name.clone(),
-                    batch.partition_value.clone(),
-                ));
+                return Err(OffsetRegistryError::DuplicatePartitionValue {
+                    topic: batch.topic_name.clone(),
+                    partition: batch.partition_value.clone(),
+                });
             }
         }
 
@@ -137,30 +136,31 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
     ) -> OffsetRegistryResult<OffsetLocation> {
         let namespace_name = topic.parent().clone();
 
-        let namespace_state = self
-            .namespaces
-            .get(&namespace_name)
-            .ok_or_else(|| OffsetRegistryError::NamespaceNotFound(namespace_name.clone()))?;
+        let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
+            OffsetRegistryError::NamespaceNotFound {
+                namespace: namespace_name.clone(),
+            }
+        })?;
 
         let partition_key = PartitionKey::new(topic.clone(), partition_value.clone());
 
         let Some(partition_state) = namespace_state.partitions.get(&partition_key) else {
-            bail!(OffsetRegistryError::OffsetNotFound(
+            return Err(OffsetRegistryError::OffsetNotFound {
                 topic,
-                partition_value,
-                offset
-            ));
+                partition: partition_value,
+                offset,
+            });
         };
 
         // Find the batch containing this offset
         let batch_start = partition_state.batches.range(..=offset).next_back();
 
         let Some((&start_offset, batch_info)) = batch_start else {
-            bail!(OffsetRegistryError::OffsetNotFound(
+            return Err(OffsetRegistryError::OffsetNotFound {
                 topic,
-                partition_value,
-                offset
-            ));
+                partition: partition_value,
+                offset,
+            });
         };
 
         if offset <= batch_info.end_offset {
@@ -173,11 +173,11 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             }));
         }
 
-        bail!(OffsetRegistryError::OffsetNotFound(
+        return Err(OffsetRegistryError::OffsetNotFound {
             topic,
-            partition_value,
-            offset
-        ));
+            partition: partition_value,
+            offset,
+        });
     }
 }
 
@@ -261,10 +261,7 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::NamespaceNotFound(_)
-        ));
+        assert!(matches!(err, OffsetRegistryError::NamespaceNotFound { .. }));
 
         // Test 2: Commit and query a single batch
         let namespace = test_namespace();
@@ -345,8 +342,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::OffsetNotFound(_, _, 10)
+            err,
+            OffsetRegistryError::OffsetNotFound { offset: 10, .. }
         ));
 
         // Query offset far after the end (100)
@@ -356,8 +353,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::OffsetNotFound(_, _, 100)
+            err,
+            OffsetRegistryError::OffsetNotFound { offset: 100, .. }
         ));
 
         // Test 5: Sequential batch commits
@@ -491,8 +488,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::DuplicatePartitionValue(_, _)
+            err,
+            OffsetRegistryError::DuplicatePartitionValue { .. }
         ));
 
         // Test 8: Multiple namespaces
@@ -563,10 +560,7 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::OffsetNotFound(_, _, _)
-        ));
+        assert!(matches!(err, OffsetRegistryError::OffsetNotFound { .. }));
 
         // Query with valid topic but non-existent partition
         let result = registry
@@ -574,10 +568,7 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(
-            err.current_context(),
-            OffsetRegistryError::OffsetNotFound(_, _, _)
-        ));
+        assert!(matches!(err, OffsetRegistryError::OffsetNotFound { .. }));
 
         // Test 10: Edge case with minimum values
         // Create a batch with just 1 message

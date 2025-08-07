@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use arrow::datatypes::{DataType, Field};
-use error_stack::ResultExt;
+use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::{
     Admin, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, Namespace, NamespaceName,
@@ -9,7 +9,7 @@ use wings_metadata_core::admin::{
 };
 
 use crate::{
-    error::{CliError, CliResult},
+    error::{AdminSnafu, CliError, InvalidResourceNameSnafu, Result},
     remote::RemoteArgs,
 };
 
@@ -79,19 +79,19 @@ pub enum AdminCommands {
 }
 
 impl AdminCommands {
-    pub async fn run(self, _ct: CancellationToken) -> CliResult<()> {
+    pub async fn run(self, _ct: CancellationToken) -> Result<()> {
         match self {
             AdminCommands::CreateTenant { name, remote } => {
                 let client = remote.admin_client().await?;
-                let tenant_name =
-                    TenantName::new(name).change_context(CliError::InvalidConfiguration {
-                        message: "invalid tenant name".to_string(),
-                    })?;
+                let tenant_name = TenantName::new(name)
+                    .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
                 let tenant = client
                     .create_tenant(tenant_name)
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "create_tenant",
+                    })?;
 
                 print_tenant(&tenant);
 
@@ -103,7 +103,9 @@ impl AdminCommands {
                 let response = client
                     .list_tenants(ListTenantsRequest::default())
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "list_tenants",
+                    })?;
 
                 for tenant in response.tenants {
                     print_tenant(&tenant);
@@ -119,11 +121,10 @@ impl AdminCommands {
             } => {
                 let client = remote.admin_client().await?;
 
-                let namespace_name = NamespaceName::parse(&namespace).change_context(
-                    CliError::InvalidConfiguration {
-                        message: format!("invalid namespace name: {namespace}"),
-                    },
-                )?;
+                let namespace_name =
+                    NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
+                        resource: "namespace",
+                    })?;
 
                 let secret_name = SecretName::new_unchecked("default-bucket");
 
@@ -140,7 +141,9 @@ impl AdminCommands {
                 let namespace = client
                     .create_namespace(namespace_name, options)
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "create_namespace",
+                    })?;
 
                 print_namespace(&namespace);
 
@@ -149,10 +152,8 @@ impl AdminCommands {
             AdminCommands::ListNamespaces { tenant, remote } => {
                 let client = remote.admin_client().await?;
 
-                let tenant_name =
-                    TenantName::parse(&tenant).change_context(CliError::InvalidConfiguration {
-                        message: format!("invalid tenant name: {tenant}"),
-                    })?;
+                let tenant_name = TenantName::parse(&tenant)
+                    .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
                 let response = client
                     .list_namespaces(ListNamespacesRequest {
@@ -161,7 +162,9 @@ impl AdminCommands {
                         page_token: None,
                     })
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "list_namespaces",
+                    })?;
 
                 for namespace in response.namespaces {
                     print_namespace(&namespace);
@@ -178,10 +181,8 @@ impl AdminCommands {
                 let client = remote.admin_client().await?;
 
                 // Parse topic name
-                let topic_name =
-                    TopicName::parse(&name).change_context(CliError::InvalidConfiguration {
-                        message: "invalid topic name".to_string(),
-                    })?;
+                let topic_name = TopicName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
                 // Parse fields
                 let parsed_fields = parse_fields(&fields)?;
@@ -191,7 +192,8 @@ impl AdminCommands {
                     let index = parsed_fields
                         .iter()
                         .position(|f| f.name() == &partition_column)
-                        .ok_or_else(|| CliError::InvalidConfiguration {
+                        .ok_or_else(|| CliError::InvalidArgument {
+                            name: "partition",
                             message: format!(
                                 "partition key column '{}' not found in fields",
                                 partition_column
@@ -208,7 +210,9 @@ impl AdminCommands {
                 let topic = client
                     .create_topic(topic_name, topic_options)
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "create_topic",
+                    })?;
 
                 print_topic(&topic);
 
@@ -217,16 +221,17 @@ impl AdminCommands {
             AdminCommands::ListTopics { namespace, remote } => {
                 let client = remote.admin_client().await?;
 
-                let namespace_name = NamespaceName::parse(&namespace).change_context(
-                    CliError::InvalidConfiguration {
-                        message: "invalid namespace name".to_string(),
-                    },
-                )?;
+                let namespace_name =
+                    NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
+                        resource: "namespace",
+                    })?;
 
                 let response = client
                     .list_topics(ListTopicsRequest::new(namespace_name))
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "list_topics",
+                    })?;
 
                 for topic in response.topics {
                     print_topic(&topic);
@@ -241,15 +246,15 @@ impl AdminCommands {
             } => {
                 let client = remote.admin_client().await?;
 
-                let topic_name =
-                    TopicName::parse(&name).change_context(CliError::InvalidConfiguration {
-                        message: "invalid topic name".to_string(),
-                    })?;
+                let topic_name = TopicName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
                 client
                     .delete_topic(topic_name, force)
                     .await
-                    .change_context(CliError::Remote)?;
+                    .context(AdminSnafu {
+                        operation: "delete_topic",
+                    })?;
 
                 println!("Deleted topic '{}'", name);
 
@@ -266,7 +271,8 @@ fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
     for field_str in fields {
         let parts: Vec<&str> = field_str.split(':').collect();
         if parts.len() != 2 {
-            return Err(CliError::InvalidConfiguration {
+            return Err(CliError::InvalidArgument {
+                name: "field",
                 message: format!(
                     "invalid field format '{}'. Expected 'column_name:column_type'",
                     field_str
@@ -278,7 +284,8 @@ fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
         let type_str = parts[1].trim();
 
         if column_name.is_empty() {
-            return Err(CliError::InvalidConfiguration {
+            return Err(CliError::InvalidArgument {
+                name: "field",
                 message: "column name cannot be empty".to_string(),
             });
         }
@@ -298,7 +305,8 @@ fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
             "bool" | "boolean" => DataType::Boolean,
             "binary" => DataType::Binary,
             _ => {
-                return Err(CliError::InvalidConfiguration {
+                return Err(CliError::InvalidArgument {
+                    name: "field",
                     message: format!(
                         "unsupported type '{}'. Supported types: int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, string, bool, binary",
                         type_str

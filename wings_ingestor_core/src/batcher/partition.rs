@@ -1,15 +1,17 @@
+use std::sync::Arc;
+
 use arrow::record_batch::RecordBatch;
 use arrow_schema::SchemaRef;
-use error_stack::report;
 use parquet::{
     arrow::ArrowWriter,
     file::{metadata::KeyValue, properties::WriterProperties},
 };
+use snafu::ResultExt;
 use wings_metadata_core::{admin::TopicName, partition::PartitionValue};
 
 use crate::{
     batch::WriteReplySender,
-    error::{IngestorError, IngestorResult},
+    error::{IngestorError, ParquetSnafu, Result},
     types::{BatchContext, PartitionFolio, ReplyWithError},
 };
 
@@ -27,7 +29,7 @@ impl PartitionFolioWriter {
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
         schema: SchemaRef,
-    ) -> IngestorResult<Self> {
+    ) -> Result<Self> {
         // Add topic name and partition key to the metadata to help with debugging and troubleshooting.
         let partition_value = partition_value.map(|v| v.to_string());
         let kv_metadata = vec![
@@ -40,8 +42,11 @@ impl PartitionFolioWriter {
 
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
-        let writer = ArrowWriter::try_new(buffer, schema, write_properties.into())
-            .map_err(|err| IngestorError::Schema(err.to_string()))?;
+        let writer = ArrowWriter::try_new(buffer, schema, write_properties.into()).context(
+            ParquetSnafu {
+                message: "failed to initialize writer",
+            },
+        )?;
 
         Ok(Self {
             writer,
@@ -61,7 +66,10 @@ impl PartitionFolioWriter {
         let initial_size = self.buffer_size();
 
         if let Err(err) = self.writer.write(batch) {
-            let error = report!(IngestorError::Schema(err.to_string()));
+            let error = IngestorError::Parquet {
+                message: "failed to write batch",
+                source: Arc::new(err),
+            };
             return Err(ReplyWithError { reply, error });
         };
 
@@ -96,15 +104,17 @@ impl PartitionFolioWriter {
                 batches: self.batches,
             }),
             Err(err) => {
+                let error = IngestorError::Parquet {
+                    message: "failed to finalize batch",
+                    source: Arc::new(err),
+                };
+
                 let replies = self
                     .batches
                     .into_iter()
-                    .map(|m| {
-                        let error = report!(IngestorError::Internal(err.to_string()));
-                        ReplyWithError {
-                            reply: m.reply,
-                            error,
-                        }
+                    .map(|m| ReplyWithError {
+                        reply: m.reply,
+                        error: error.clone(),
                     })
                     .collect();
                 Err(replies)

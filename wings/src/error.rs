@@ -1,26 +1,59 @@
-use thiserror::Error;
+use std::net::AddrParseError;
+
+use axum::http::uri::InvalidUri;
+use datafusion::error::DataFusionError;
+use snafu::Snafu;
+use wings_metadata_core::{
+    admin::AdminError, offset_registry::OffsetRegistryError, resource::ResourceError,
+};
 
 /// CLI error types.
-#[derive(Error, Debug)]
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
 pub enum CliError {
-    #[error("invalid configuration: {message}")]
-    InvalidConfiguration { message: String },
-    #[error("service error: {message}")]
-    Service { message: String },
-    #[error("admin API error: {message}")]
-    AdminApi { message: String },
-    #[error("object store error: {message}")]
-    ObjectStore { message: String },
-    #[error("remote API error")]
-    Remote,
-    #[error("server error: {message}")]
-    Server { message: String },
-    #[error("invalid arguments")]
-    InvalidArguments,
-    #[error("I/O error")]
-    IoError,
-    #[error("invalid JSON")]
-    InvalidJson,
+    #[snafu(display("Invalid {resource} name"))]
+    InvalidResourceName {
+        resource: &'static str,
+        source: ResourceError,
+    },
+    #[snafu(display("Failed admin operation {operation}"))]
+    Admin {
+        operation: &'static str,
+        source: AdminError,
+    },
+    #[snafu(display("Failed offset registry operation {operation}"))]
+    OffsetRegistry {
+        operation: &'static str,
+        source: OffsetRegistryError,
+    },
+    #[snafu(display("Invalid {name} argument: {message}"))]
+    InvalidArgument { name: &'static str, message: String },
+    #[snafu(display("Object store error"))]
+    ObjectStore { source: object_store::Error },
+    #[snafu(display("IO error"))]
+    Io { source: std::io::Error },
+    #[snafu(display("Invalid partition value"))]
+    InvalidPartitionValue,
+    #[snafu(display("Invalid remote URL"))]
+    InvalidRemoteUrl { source: InvalidUri },
+    #[snafu(display("Invalid server URL"))]
+    InvalidServerUrl { source: AddrParseError },
+    #[snafu(display("Connection error"))]
+    Connection { source: tonic::transport::Error },
+    #[snafu(display("Tonic reflection error"))]
+    TonicReflection {
+        source: tonic_reflection::server::Error,
+    },
+    #[snafu(display("Tonic server error"))]
+    TonicServer { source: tonic::transport::Error },
+    #[snafu(display("Push client error"))]
+    PushClient {
+        source: super::http_client::HttpPushClientError,
+    },
+    #[snafu(display("JSON parse error"))]
+    JsonParse { source: serde_json::Error },
+    #[snafu(display("DataFusion error"))]
+    DataFusion { source: DataFusionError },
 }
 
-pub type CliResult<T> = error_stack::Result<T, CliError>;
+pub type Result<T, E = CliError> = std::result::Result<T, E>;

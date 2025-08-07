@@ -7,14 +7,13 @@ use arrow_json::ReaderBuilder;
 use arrow_schema::ArrowError;
 use axum::response::{IntoResponse, Response};
 use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
-use error_stack::{Report, bail};
 use futures::StreamExt;
 use futures::stream::FuturesOrdered;
 use wings_ingestor_core::Batch;
 use wings_metadata_core::admin::{NamespaceName, TopicName};
 
 use crate::HttpIngestorState;
-use crate::error::{HttpIngestorError, HttpIngestorResult};
+use crate::error::{HttpIngestorError, Result};
 use crate::types::{BatchResponse, ErrorResponse, PushRequest, PushResponse};
 
 /// Handler for the /v1/push endpoint.
@@ -45,24 +44,20 @@ pub async fn push_handler(
 async fn process_push_request(
     state: &HttpIngestorState,
     request: PushRequest,
-) -> HttpIngestorResult<PushResponse> {
+) -> Result<PushResponse> {
     // Parse namespace name
-    let namespace_name = NamespaceName::parse(&request.namespace).map_err(|err| {
-        HttpIngestorError::BadRequest(format!(
-            "invalid namespace format: {} {err}",
-            request.namespace,
-        ))
-    })?;
+    let namespace_name =
+        NamespaceName::parse(&request.namespace).map_err(|err| HttpIngestorError::BadRequest {
+            message: format!("invalid namespace format: {} {err}", request.namespace,),
+        })?;
 
     // Get namespace definition from cache
     let namespace_ref = state
         .namespace_cache
         .get(namespace_name.clone())
         .await
-        .map_err(|err| {
-            HttpIngestorError::Internal(format!(
-                "failed to resolve namespace: {namespace_name} {err}"
-            ))
+        .map_err(|err| HttpIngestorError::Internal {
+            message: format!("failed to resolve namespace: {namespace_name} {err}"),
         })?;
 
     // Process each topic's batches
@@ -72,15 +67,19 @@ async fn process_push_request(
     for batch in request.batches {
         // Parse topic name
         let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
-            HttpIngestorError::BadRequest(format!("invalid topic name: {} {err}", batch.topic))
+            HttpIngestorError::BadRequest {
+                message: format!("invalid topic name: {} {err}", batch.topic),
+            }
         })?;
 
         // Check that all batches have distinct (topic, partition).
         if !seen.insert((topic_name.clone(), batch.partition.clone())) {
-            bail!(HttpIngestorError::BadRequest(format!(
-                "duplicate batch for topic {} partition {:?}",
-                topic_name, batch.partition
-            )));
+            return Err(HttpIngestorError::BadRequest {
+                message: format!(
+                    "duplicate batch for topic {} partition {:?}",
+                    topic_name, batch.partition
+                ),
+            });
         }
 
         // Get topic definition from cache
@@ -88,22 +87,22 @@ async fn process_push_request(
             .topic_cache
             .get(topic_name.clone())
             .await
-            .map_err(|err| {
-                HttpIngestorError::Internal(format!("failed to resolve topic: {topic_name} {err}"))
+            .map_err(|err| HttpIngestorError::Internal {
+                message: format!("failed to resolve topic: {topic_name} {err}"),
             })?;
 
         // Process each batch for this topic
         if batch.data.is_empty() {
-            bail!(HttpIngestorError::BadRequest(
-                "no data provided".to_string()
-            ));
+            return Err(HttpIngestorError::BadRequest {
+                message: "no data provided".to_string(),
+            });
         }
 
         let schema = topic_ref.schema_without_partition_column();
         let record_batch = parse_json_to_arrow(schema, &batch.data).map_err(|err| {
-            HttpIngestorError::BadRequest(format!(
-                "failed to parse JSON data for topic {topic_name}: {err}"
-            ))
+            HttpIngestorError::BadRequest {
+                message: format!("failed to parse JSON data for topic {topic_name}: {err}"),
+            }
         })?;
 
         let batch = Batch {
@@ -156,11 +155,11 @@ pub fn parse_json_to_arrow(
     concat_batches(&schema, batches.iter())
 }
 
-fn map_error_to_response(error: Report<HttpIngestorError>) -> Response {
-    let status_code = match error.current_context() {
-        HttpIngestorError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        HttpIngestorError::BadRequest(_) => StatusCode::BAD_REQUEST,
-        HttpIngestorError::NotFound(_) => StatusCode::NOT_FOUND,
+fn map_error_to_response(error: HttpIngestorError) -> Response {
+    let status_code = match error {
+        HttpIngestorError::Internal { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        HttpIngestorError::BadRequest { .. } => StatusCode::BAD_REQUEST,
+        HttpIngestorError::NotFound { .. } => StatusCode::NOT_FOUND,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
 

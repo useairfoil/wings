@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
-use debug_data::DebugDataArgs;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    admin::AdminCommands, dev::DevArgs, error::CliResult, fetch::FetchArgs, push::PushArgs,
+    admin::AdminCommands, debug_data::DebugDataArgs, dev::DevArgs, error::Result, fetch::FetchArgs,
+    push::PushArgs, sql::SqlArgs,
 };
 
 mod admin;
@@ -15,6 +15,7 @@ mod helpers;
 mod http_client;
 mod push;
 mod remote;
+mod sql;
 
 #[derive(Parser)]
 #[command(name = "wings")]
@@ -46,6 +47,11 @@ enum Commands {
         #[clap(flatten)]
         inner: DebugDataArgs,
     },
+    /// Run SQL queries against a namespace
+    Sql {
+        #[clap(flatten)]
+        inner: SqlArgs,
+    },
     /// Fetch messages from Wings topics
     Fetch {
         #[clap(flatten)]
@@ -54,7 +60,7 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> CliResult<()> {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let ct = CancellationToken::new();
@@ -70,6 +76,7 @@ async fn main() -> CliResult<()> {
         Commands::Admin { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
         Commands::DebugData { inner } => inner.run(ct).await,
+        Commands::Sql { inner } => inner.run(ct).await,
         Commands::Fetch { inner } => inner.run(ct).await,
     }
 }

@@ -1,13 +1,16 @@
 use clap::Parser;
-use error_stack::{ResultExt, report};
 use serde_json::Value;
+use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_ingestor_http::types::BatchResponse;
 use wings_metadata_core::admin::{Admin, NamespaceName, RemoteAdminService, TopicName};
 
 use crate::{
-    error::{CliError, CliResult},
+    error::{
+        AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, JsonParseSnafu, PushClientSnafu,
+        Result,
+    },
     helpers::convert_partition_value,
     http_client::{HttpPushClient, PushRequestBuilder},
     remote::RemoteArgs,
@@ -37,25 +40,21 @@ pub struct PushArgs {
 }
 
 impl PushArgs {
-    pub async fn run(self, _ct: CancellationToken) -> CliResult<()> {
+    pub async fn run(self, _ct: CancellationToken) -> Result<()> {
         let admin = self.remote.admin_client().await?;
 
-        let namespace_name = NamespaceName::parse(&self.namespace).change_context(
-            CliError::InvalidConfiguration {
-                message: "invalid namespace name".to_string(),
-            },
-        )?;
+        let namespace_name =
+            NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })?;
 
         let client = HttpPushClient::new(&self.http_address, namespace_name.clone());
 
-        // let batches = self.parse_batches()?;
         let request = self
             .parse_batches_to_request(namespace_name, &admin, &client)
             .await?;
 
-        let response = request.send().await.change_context(CliError::Server {
-            message: "failed to push data".to_string(),
-        })?;
+        let response = request.send().await.context(PushClientSnafu {})?;
 
         for batch in response.batches {
             match batch {
@@ -79,7 +78,7 @@ impl PushArgs {
         namespace_name: NamespaceName,
         admin: &RemoteAdminService<Channel>,
         client: &HttpPushClient,
-    ) -> CliResult<PushRequestBuilder> {
+    ) -> Result<PushRequestBuilder> {
         let mut i = 0;
 
         let mut request = client.push();
@@ -87,21 +86,19 @@ impl PushArgs {
             let remaining = self.batches.len() - i;
 
             if remaining < 2 {
-                return Err(report!(crate::error::CliError::InvalidArguments)
-                    .attach_printable("Each batch requires at least topic_id and payload"));
+                return Err(CliError::InvalidArgument {
+                    name: "batch",
+                    message: "Each batch requires at least topic_id and payload".to_string(),
+                });
             }
 
             let topic_id = &self.batches[i];
             let topic_name = TopicName::new(topic_id, namespace_name.clone())
-                .change_context(CliError::InvalidArguments)
-                .attach_printable_lazy(|| format!("invalid topic name: {}", topic_id))?;
+                .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-            let topic = admin
-                .get_topic(topic_name)
-                .await
-                .change_context(CliError::AdminApi {
-                    message: "failed to get topic".to_string(),
-                })?;
+            let topic = admin.get_topic(topic_name).await.context(AdminSnafu {
+                operation: "get_topic",
+            })?;
 
             let partition_column = topic.partition_column();
 
@@ -113,20 +110,23 @@ impl PushArgs {
                 if remaining >= 3 {
                     // Next arg is partition value, followed by payload
                     let partition_value =
-                        convert_partition_value(next_arg, partition_column.data_type())
-                            .change_context(CliError::InvalidArguments)?;
+                        convert_partition_value(next_arg, partition_column.data_type())?;
                     (Some(partition_value), i + 2)
                 } else {
-                    return Err(report!(crate::error::CliError::InvalidArguments)
-                        .attach_printable("Missing payload after partition value"));
+                    return Err(CliError::InvalidArgument {
+                        name: "batch",
+                        message: "Missing payload after partition value".to_string(),
+                    });
                 }
             } else {
                 (None, i + 1)
             };
 
             if payload_index >= self.batches.len() {
-                return Err(report!(crate::error::CliError::InvalidArguments)
-                    .attach_printable("Missing payload"));
+                return Err(CliError::InvalidArgument {
+                    name: "batch",
+                    message: "Missing payload".to_string(),
+                });
             }
 
             let payload_str = &self.batches[payload_index];
@@ -145,12 +145,10 @@ impl PushArgs {
         Ok(request)
     }
 
-    fn parse_payload(&self, payload_str: &str) -> CliResult<Vec<Value>> {
+    fn parse_payload(&self, payload_str: &str) -> Result<Vec<Value>> {
         if let Some(file_path) = payload_str.strip_prefix('@') {
             // File path mode
-            let content = std::fs::read_to_string(file_path)
-                .change_context(crate::error::CliError::IoError)
-                .attach_printable_lazy(|| format!("Failed to read file: {}", file_path))?;
+            let content = std::fs::read_to_string(file_path).context(IoSnafu {})?;
 
             let mut messages = Vec::new();
             for line in content.lines() {
@@ -159,11 +157,7 @@ impl PushArgs {
                     continue;
                 }
 
-                let json: Value = serde_json::from_str(line)
-                    .change_context(crate::error::CliError::InvalidJson)
-                    .attach_printable_lazy(|| {
-                        format!("Invalid JSON in file {}: {}", file_path, line)
-                    })?;
+                let json: Value = serde_json::from_str(line).context(JsonParseSnafu {})?;
 
                 messages.push(json);
             }
@@ -171,9 +165,7 @@ impl PushArgs {
             Ok(messages)
         } else {
             // Direct JSON mode
-            let json: Value = serde_json::from_str(payload_str)
-                .change_context(crate::error::CliError::InvalidJson)
-                .attach_printable_lazy(|| format!("Invalid JSON: {}", payload_str))?;
+            let json: Value = serde_json::from_str(payload_str).context(JsonParseSnafu {})?;
 
             Ok(vec![json])
         }

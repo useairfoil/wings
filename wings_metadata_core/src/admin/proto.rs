@@ -6,9 +6,9 @@ use arrow::datatypes::Schema;
 use arrow_ipc::convert::{IpcSchemaEncoder, fb_to_schema};
 use arrow_ipc::root_as_schema;
 use bytesize::ByteSize;
-use error_stack::{Report, ResultExt};
+use snafu::ResultExt;
 
-use crate::admin::error::{AdminError, AdminResult};
+use crate::admin::error::{AdminError, AdminResult, InvalidResourceNameSnafu};
 use crate::admin::types::*;
 use crate::protocol::wings::v1 as pb;
 
@@ -23,13 +23,11 @@ impl From<Tenant> for pb::Tenant {
 }
 
 impl TryFrom<pb::Tenant> for Tenant {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(tenant: pb::Tenant) -> AdminResult<Self> {
-        let name = TenantName::parse(&tenant.name).change_context(AdminError::InvalidArgument {
-            resource: "tenant",
-            message: "invalid tenant name format".to_string(),
-        })?;
+        let name = TenantName::parse(&tenant.name)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
         Ok(Self { name })
     }
@@ -52,28 +50,20 @@ impl From<Namespace> for pb::Namespace {
 }
 
 impl TryFrom<pb::Namespace> for Namespace {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
-        let name =
-            NamespaceName::parse(&namespace.name).change_context(AdminError::InvalidArgument {
-                resource: "namespace",
-                message: "invalid namespace name format".to_string(),
-            })?;
+        let name = NamespaceName::parse(&namespace.name).context(InvalidResourceNameSnafu {
+            resource: "namespace",
+        })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
         let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
-            .change_context(AdminError::InvalidArgument {
-                resource: "secret",
-                message: "invalid default object store config name format".to_string(),
-            })?;
+            .context(InvalidResourceNameSnafu { resource: "secret" })?;
         let frozen_object_store_config = namespace
             .frozen_object_store_config
             .map(|config| {
-                SecretName::parse(&config).change_context(AdminError::InvalidArgument {
-                    resource: "secret",
-                    message: "invalid frozen object store config name format".to_string(),
-                })
+                SecretName::parse(&config).context(InvalidResourceNameSnafu { resource: "secret" })
             })
             .transpose()?;
 
@@ -88,25 +78,19 @@ impl TryFrom<pb::Namespace> for Namespace {
 }
 
 impl TryFrom<pb::Namespace> for NamespaceOptions {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
 
         let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
-            .change_context(AdminError::InvalidArgument {
-                resource: "secret",
-                message: "invalid default object store config name format".to_string(),
-            })?;
+            .context(InvalidResourceNameSnafu { resource: "secret" })?;
 
         let frozen_object_store_config = namespace
             .frozen_object_store_config
             .map(|config| {
-                SecretName::parse(&config).change_context(AdminError::InvalidArgument {
-                    resource: "secret",
-                    message: "invalid frozen object store config name format".to_string(),
-                })
+                SecretName::parse(&config).context(InvalidResourceNameSnafu { resource: "secret" })
             })
             .transpose()?;
 
@@ -149,13 +133,11 @@ impl From<Topic> for pb::Topic {
 }
 
 impl TryFrom<pb::Topic> for Topic {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let name = TopicName::parse(&topic.name).change_context(AdminError::InvalidArgument {
-            resource: "topic",
-            message: "invalid topic name format".to_string(),
-        })?;
+        let name = TopicName::parse(&topic.name)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
         let fields = deserialize_fields(&topic.fields)?;
         let partition_key = topic.partition_key.map(|idx| idx as usize);
 
@@ -168,7 +150,7 @@ impl TryFrom<pb::Topic> for Topic {
 }
 
 impl TryFrom<pb::Topic> for TopicOptions {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
         let fields = deserialize_fields(&topic.fields)?;
@@ -223,7 +205,7 @@ impl From<ListTenantsResponse> for pb::ListTenantsResponse {
 }
 
 impl TryFrom<pb::ListTenantsResponse> for ListTenantsResponse {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(response: pb::ListTenantsResponse) -> AdminResult<Self> {
         let tenants = response
@@ -254,14 +236,11 @@ impl From<ListNamespacesRequest> for pb::ListNamespacesRequest {
 }
 
 impl TryFrom<pb::ListNamespacesRequest> for ListNamespacesRequest {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(request: pb::ListNamespacesRequest) -> AdminResult<Self> {
-        let parent =
-            TenantName::parse(&request.parent).change_context(AdminError::InvalidArgument {
-                resource: "tenant",
-                message: "invalid parent tenant name format".to_string(),
-            })?;
+        let parent = TenantName::parse(&request.parent)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
         Ok(Self {
             parent,
@@ -287,7 +266,7 @@ impl From<ListNamespacesResponse> for pb::ListNamespacesResponse {
 }
 
 impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(response: pb::ListNamespacesResponse) -> AdminResult<Self> {
         let namespaces = response
@@ -318,14 +297,12 @@ impl From<ListTopicsRequest> for pb::ListTopicsRequest {
 }
 
 impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(request: pb::ListTopicsRequest) -> AdminResult<Self> {
-        let parent =
-            NamespaceName::parse(&request.parent).change_context(AdminError::InvalidArgument {
-                resource: "namespace",
-                message: "invalid parent namespace name format".to_string(),
-            })?;
+        let parent = NamespaceName::parse(&request.parent).context(InvalidResourceNameSnafu {
+            resource: "namespace",
+        })?;
 
         Ok(Self {
             parent,
@@ -351,7 +328,7 @@ impl From<ListTopicsResponse> for pb::ListTopicsResponse {
 }
 
 impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
-    type Error = Report<AdminError>;
+    type Error = AdminError;
 
     fn try_from(response: pb::ListTopicsResponse) -> AdminResult<Self> {
         let topics = response

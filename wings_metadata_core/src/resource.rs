@@ -3,24 +3,24 @@
 //! This module provides a macro to generate type-safe resource types that prevent
 //! mixing up different resource identifiers and ensure proper hierarchical relationships.
 
-use thiserror::Error;
+use snafu::Snafu;
 
 /// Errors that can occur when parsing resource names.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 pub enum ResourceError {
-    #[error("invalid resource name format: expected '{expected}' but got '{actual}'")]
+    #[snafu(display("invalid resource name format: expected '{expected}' but got '{actual}'"))]
     InvalidFormat { expected: String, actual: String },
-    #[error("invalid resource name: '{name}' does not match expected pattern")]
+    #[snafu(display("invalid resource name: '{name}' does not match expected pattern"))]
     InvalidName { name: String },
-    #[error("missing parent resource in name: '{name}'")]
+    #[snafu(display("missing parent resource in name: '{name}'"))]
     MissingParent { name: String },
-    #[error(
+    #[snafu(display(
         "invalid resource id: '{id}' - must be at least 1 character long, start with lowercase letter, and contain only lowercase letters, numbers, hyphens, and underscores"
-    )]
+    ))]
     InvalidResourceId { id: String },
 }
 
-pub type ResourceResult<T> = Result<T, ResourceError>;
+pub type ResourceResult<T, E = ResourceError> = ::std::result::Result<T, E>;
 
 /// Validate a resource ID according to Wings naming conventions.
 ///
