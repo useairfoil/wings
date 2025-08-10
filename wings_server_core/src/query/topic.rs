@@ -11,7 +11,7 @@ use datafusion::{
     prelude::Expr,
 };
 use tracing::debug;
-use wings_metadata_core::admin::{Topic, TopicRef};
+use wings_metadata_core::admin::Topic;
 
 #[derive(Debug)]
 pub struct TopicTableProvider {
@@ -57,6 +57,8 @@ impl TableProvider for TopicTableProvider {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
         debug!(?projection, ?filters, ?limit, "TopicTableProvider::scan");
+        let _filters = filters.to_vec();
+
         todo!();
     }
 }

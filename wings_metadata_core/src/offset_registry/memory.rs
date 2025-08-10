@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -133,7 +134,8 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         topic: TopicName,
         partition_value: Option<PartitionValue>,
         offset: u64,
-    ) -> OffsetRegistryResult<OffsetLocation> {
+        _deadline: SystemTime,
+    ) -> OffsetRegistryResult<Option<OffsetLocation>> {
         let namespace_name = topic.parent().clone();
 
         let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
@@ -145,22 +147,14 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         let partition_key = PartitionKey::new(topic.clone(), partition_value.clone());
 
         let Some(partition_state) = namespace_state.partitions.get(&partition_key) else {
-            return Err(OffsetRegistryError::OffsetNotFound {
-                topic,
-                partition: partition_value,
-                offset,
-            });
+            return Ok(None);
         };
 
         // Find the batch containing this offset
         let batch_start = partition_state.batches.range(..=offset).next_back();
 
         let Some((&start_offset, batch_info)) = batch_start else {
-            return Err(OffsetRegistryError::OffsetNotFound {
-                topic,
-                partition: partition_value,
-                offset,
-            });
+            return Ok(None);
         };
 
         if offset <= batch_info.end_offset {
@@ -170,14 +164,11 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
                 size_bytes: batch_info.size_bytes,
                 start_offset,
                 end_offset: batch_info.end_offset,
-            }));
+            })
+            .into());
         }
 
-        return Err(OffsetRegistryError::OffsetNotFound {
-            topic,
-            partition: partition_value,
-            offset,
-        });
+        Ok(None)
     }
 }
 
@@ -257,7 +248,7 @@ mod tests {
 
         // Query against empty registry should fail
         let result = registry
-            .offset_location(topic.clone(), partition.clone(), 0)
+            .offset_location(topic.clone(), partition.clone(), 0, SystemTime::now())
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -290,11 +281,12 @@ mod tests {
 
         // Test 3: Query offset at the start, middle, and end
         // Query offset at the start (0)
-        let result = registry
-            .offset_location(topic.clone(), partition.clone(), 0)
+        let location = registry
+            .offset_location(topic.clone(), partition.clone(), 0, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "file1.data");
                 assert_eq!(loc.offset_bytes, 100);
@@ -305,11 +297,12 @@ mod tests {
         }
 
         // Query offset in the middle (5)
-        let result = registry
-            .offset_location(topic.clone(), partition.clone(), 5)
+        let location = registry
+            .offset_location(topic.clone(), partition.clone(), 5, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "file1.data");
                 assert_eq!(loc.offset_bytes, 100);
@@ -320,11 +313,12 @@ mod tests {
         }
 
         // Query offset at the end (9)
-        let result = registry
-            .offset_location(topic.clone(), partition.clone(), 9)
+        let location = registry
+            .offset_location(topic.clone(), partition.clone(), 9, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "file1.data");
                 assert_eq!(loc.offset_bytes, 100);
@@ -337,7 +331,7 @@ mod tests {
         // Test 4: Query offset out of range
         // Query offset after the end (10)
         let result = registry
-            .offset_location(topic.clone(), partition.clone(), 10)
+            .offset_location(topic.clone(), partition.clone(), 10, SystemTime::now())
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -348,7 +342,7 @@ mod tests {
 
         // Query offset far after the end (100)
         let result = registry
-            .offset_location(topic.clone(), partition.clone(), 100)
+            .offset_location(topic.clone(), partition.clone(), 100, SystemTime::now())
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -372,11 +366,12 @@ mod tests {
         assert_eq!(result2[0].end_offset, 14);
 
         // Query first batch
-        let result = registry
-            .offset_location(topic.clone(), partition.clone(), 5)
+        let location = registry
+            .offset_location(topic.clone(), partition.clone(), 5, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "file1.data");
                 assert_eq!(loc.start_offset, 0);
@@ -385,11 +380,12 @@ mod tests {
         }
 
         // Query second batch
-        let result = registry
-            .offset_location(topic.clone(), partition.clone(), 12)
+        let location = registry
+            .offset_location(topic.clone(), partition.clone(), 12, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "file2.data");
                 assert_eq!(loc.start_offset, 10);
@@ -443,11 +439,12 @@ mod tests {
         assert_eq!(result[1].end_offset, 9); // 10 messages, 0-based
 
         // Verify we can query both batches
-        let result = registry
-            .offset_location(topic1, partition1, 2)
+        let location = registry
+            .offset_location(topic1, partition1, 2, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "multi-file.data");
                 assert_eq!(loc.offset_bytes, 0);
@@ -457,11 +454,12 @@ mod tests {
             }
         }
 
-        let result = registry
-            .offset_location(topic2, partition2, 7)
+        let location = registry
+            .offset_location(topic2, partition2, 7, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "multi-file.data");
                 assert_eq!(loc.offset_bytes, 500);
@@ -522,11 +520,12 @@ mod tests {
             .unwrap();
 
         // Verify we can query each namespace independently
-        let result = registry
-            .offset_location(topic1, partition_value.clone(), 5)
+        let location = registry
+            .offset_location(topic1, partition_value.clone(), 5, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "ns1-file.data");
                 assert_eq!(loc.start_offset, 0);
@@ -534,11 +533,12 @@ mod tests {
             }
         }
 
-        let result = registry
-            .offset_location(topic2, partition_value.clone(), 15)
+        let location = registry
+            .offset_location(topic2, partition_value.clone(), 15, SystemTime::now())
             .await
+            .unwrap()
             .unwrap();
-        match result {
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "ns2-file.data");
                 assert_eq!(loc.start_offset, 0);
@@ -556,7 +556,12 @@ mod tests {
 
         // Query with valid namespace but non-existent topic
         let result = registry
-            .offset_location(non_existent_topic.clone(), partition_value.clone(), 0)
+            .offset_location(
+                non_existent_topic.clone(),
+                partition_value.clone(),
+                0,
+                SystemTime::now(),
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -564,7 +569,12 @@ mod tests {
 
         // Query with valid topic but non-existent partition
         let result = registry
-            .offset_location(topic.clone(), non_existent_partition_value, 0)
+            .offset_location(
+                topic.clone(),
+                non_existent_partition_value,
+                0,
+                SystemTime::now(),
+            )
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -600,11 +610,18 @@ mod tests {
         assert_eq!(result[0].end_offset, start_offset); // Same as start for a single message
 
         // Query that exact offset
-        let result = registry
-            .offset_location(topic, partition_value, start_offset)
+        let location = registry
+            .offset_location(
+                topic.clone(),
+                partition_value.clone(),
+                start_offset,
+                SystemTime::now(),
+            )
             .await
+            .unwrap()
             .unwrap();
-        match result {
+
+        match location {
             OffsetLocation::Folio(loc) => {
                 assert_eq!(loc.file_ref, "edge-case.data");
                 assert_eq!(loc.offset_bytes, 123);
@@ -621,5 +638,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.len(), 0);
+
+        // Test 12: Query a batch before it's produced
+        let location = registry
+            .offset_location(topic, partition_value, start_offset + 1, SystemTime::now())
+            .await
+            .unwrap();
+        assert!(location.is_none());
     }
 }

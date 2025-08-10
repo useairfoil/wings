@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
@@ -80,12 +82,15 @@ impl DebugDataArgs {
             _ => return Err(CliError::InvalidPartitionValue),
         };
 
-        let offset_location = offset_registry
-            .offset_location(topic_name, partition_value, self.offset)
+        let Some(offset_location) = offset_registry
+            .offset_location(topic_name, partition_value, self.offset, SystemTime::now())
             .await
             .context(OffsetRegistrySnafu {
                 operation: "offset_location",
-            })?;
+            })?
+        else {
+            return Ok(());
+        };
 
         match offset_location {
             OffsetLocation::Folio(location) => {

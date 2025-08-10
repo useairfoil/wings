@@ -7,6 +7,8 @@ pub mod remote;
 pub mod server;
 pub mod types;
 
+use std::time::SystemTime;
+
 pub use error::{OffsetRegistryError, OffsetRegistryResult};
 pub use memory::InMemoryOffsetRegistry;
 pub use types::*;
@@ -29,10 +31,14 @@ pub trait OffsetRegistry: Send + Sync {
     ) -> OffsetRegistryResult<Vec<CommittedBatch>>;
 
     /// Returns the location of the offset for a given topic and partition.
+    ///
+    /// If the specified offset is not found, the method has up to the deadline to find it.
+    /// If the offset is not found, returns None.
     async fn offset_location(
         &self,
         topic: TopicName,
         partition_value: Option<PartitionValue>,
         offset: u64,
-    ) -> OffsetRegistryResult<OffsetLocation>;
+        deadline: SystemTime,
+    ) -> OffsetRegistryResult<Option<OffsetLocation>>;
 }

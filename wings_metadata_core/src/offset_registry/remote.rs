@@ -1,6 +1,9 @@
 //! Remote offset registry service implementation that communicates with a remote offset registry service via gRPC.
 
-use std::marker::Send;
+use std::{
+    marker::Send,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     admin::{NamespaceName, TopicName},
@@ -11,10 +14,11 @@ use crate::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use http_body::Body;
+use snafu::ResultExt;
 
 use super::{
     BatchToCommit, CommittedBatch, OffsetLocation, OffsetRegistry, OffsetRegistryError,
-    OffsetRegistryResult,
+    OffsetRegistryResult, error::InvalidDeadlineSnafu,
 };
 
 pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -77,20 +81,33 @@ where
         topic: TopicName,
         partition_value: Option<PartitionValue>,
         offset: u64,
-    ) -> OffsetRegistryResult<OffsetLocation> {
+        deadline: SystemTime,
+    ) -> OffsetRegistryResult<Option<OffsetLocation>> {
+        let epoch = deadline
+            .duration_since(UNIX_EPOCH)
+            .context(InvalidDeadlineSnafu)?;
+
+        let deadline = prost_types::Timestamp {
+            seconds: epoch.as_secs() as i64,
+            nanos: epoch.subsec_nanos() as i32,
+        };
+
         let request = pb::OffsetLocationRequest {
             topic: topic.to_string(),
             partition: partition_value.as_ref().map(Into::into),
             offset,
+            deadline: deadline.into(),
         };
 
-        self.client
+        let response = self
+            .client
             .clone()
             .offset_location(request)
             .await
             .map_err(status_to_offset_registry_error)?
-            .into_inner()
-            .try_into()
+            .into_inner();
+
+        Ok(response.into())
     }
 }
 

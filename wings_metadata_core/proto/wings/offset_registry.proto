@@ -3,6 +3,7 @@ syntax = "proto3";
 package wings.v1;
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 service OffsetRegistryService {
   rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
@@ -24,6 +25,7 @@ message OffsetLocationRequest {
   string topic = 1;
   uint64 offset = 2;
   optional PartitionValue partition = 3;
+  google.protobuf.Timestamp deadline = 4;
 }
 
 message OffsetLocationResponse {

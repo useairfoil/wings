@@ -87,9 +87,15 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
             .transpose()
             .map_err(offset_registry_error_to_status)?;
 
+        let deadline = request
+            .deadline
+            .ok_or_else(|| Status::invalid_argument("deadline is required"))?
+            .try_into()
+            .map_err(|_| Status::invalid_argument("deadline is invalid"))?;
+
         let offset_location = self
             .offset_registry
-            .offset_location(topic_name, partition_value, request.offset)
+            .offset_location(topic_name, partition_value, request.offset, deadline)
             .await
             .map_err(offset_registry_error_to_status)?;
 
@@ -134,6 +140,9 @@ fn offset_registry_error_to_status(error: OffsetRegistryError) -> Status {
         },
         OffsetRegistryError::Internal { message } => {
             Status::internal(format!("internal error: {message}"))
+        }
+        OffsetRegistryError::InvalidDeadline { source } => {
+            Status::invalid_argument(format!("invalid deadline: {source}"))
         }
     }
 }

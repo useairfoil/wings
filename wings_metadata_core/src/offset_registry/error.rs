@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 use snafu::Snafu;
 
 use crate::{
@@ -36,6 +38,8 @@ pub enum OffsetRegistryError {
         resource: &'static str,
         source: ResourceError,
     },
+    #[snafu(display("invalid deadline"))]
+    InvalidDeadline { source: SystemTimeError },
 }
 
 pub type OffsetRegistryResult<T, E = OffsetRegistryError> = ::std::result::Result<T, E>;

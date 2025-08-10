@@ -9,32 +9,26 @@ use crate::protocol::wings::v1::{self as pb};
 
 use super::error::{InvalidArgumentSnafu, InvalidResourceNameSnafu, OffsetRegistryError};
 
-impl From<OffsetLocation> for pb::OffsetLocationResponse {
-    fn from(location: OffsetLocation) -> Self {
-        match location {
-            OffsetLocation::Folio(folio) => pb::OffsetLocationResponse {
-                location: Some(pb::offset_location_response::Location::FolioLocation(
-                    folio.into(),
-                )),
-            },
-        }
+impl From<Option<OffsetLocation>> for pb::OffsetLocationResponse {
+    fn from(location: Option<OffsetLocation>) -> Self {
+        let inner = location.map(|location| match location {
+            OffsetLocation::Folio(folio) => {
+                pb::offset_location_response::Location::FolioLocation(folio.into())
+            }
+        });
+
+        pb::OffsetLocationResponse { location: inner }
     }
 }
 
-impl TryFrom<pb::OffsetLocationResponse> for OffsetLocation {
-    type Error = OffsetRegistryError;
-
-    fn try_from(response: pb::OffsetLocationResponse) -> Result<Self, Self::Error> {
+impl From<pb::OffsetLocationResponse> for Option<OffsetLocation> {
+    fn from(response: pb::OffsetLocationResponse) -> Self {
         use pb::offset_location_response::Location as ProtoLocation;
 
-        let location = response
-            .location
-            .ok_or_else(|| OffsetRegistryError::InvalidArgument {
-                message: "missing location from response".to_string(),
-            })?;
+        let location = response.location?;
 
         match location {
-            ProtoLocation::FolioLocation(folio) => Ok(OffsetLocation::Folio(folio.into())),
+            ProtoLocation::FolioLocation(folio) => OffsetLocation::Folio(folio.into()).into(),
         }
     }
 }

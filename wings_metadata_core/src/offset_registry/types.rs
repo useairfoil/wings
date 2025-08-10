@@ -49,3 +49,17 @@ pub struct FolioLocation {
     /// Last offset of the partition data in the folio file.
     pub end_offset: u64,
 }
+
+impl OffsetLocation {
+    pub fn start_offset(&self) -> u64 {
+        match self {
+            OffsetLocation::Folio(location) => location.start_offset,
+        }
+    }
+
+    pub fn end_offset(&self) -> u64 {
+        match self {
+            OffsetLocation::Folio(location) => location.end_offset,
+        }
+    }
+}
