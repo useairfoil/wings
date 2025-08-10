@@ -61,7 +61,7 @@ impl<T: SystemTable + 'static> TableProvider for SystemTableProvider<T> {
         TableType::View
     }
 
-    fn schema(&self) -> arrow_schema::SchemaRef {
+    fn schema(&self) -> SchemaRef {
         self.inner.schema()
     }
 

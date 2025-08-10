@@ -10,7 +10,7 @@ use datafusion::{
 use tracing::debug;
 use wings_metadata_core::admin::{Admin, NamespaceName, Topic, collect_namespace_topics};
 
-use crate::system_tables::SystemSchemaProvider;
+use crate::{query::topic::TopicTableProvider, system_tables::SystemSchemaProvider};
 
 pub const DEFAULT_CATALOG: &str = "wings";
 pub const DEFAULT_SCHEMA: &str = "public";
@@ -94,7 +94,12 @@ impl SchemaProvider for NamespaceProvider {
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>, DataFusionError> {
-        todo!()
+        let provider = self
+            .topics
+            .iter()
+            .find(|topic| topic.name.id == name)
+            .map(|topic| TopicTableProvider::new_provider(topic.clone()));
+        Ok(provider)
     }
 }
 

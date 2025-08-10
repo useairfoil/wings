@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use arrow::datatypes::{FieldRef, Fields, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaBuilder, SchemaRef};
 use bytesize::ByteSize;
 
 use crate::resource_type;
@@ -12,6 +12,8 @@ resource_type!(Tenant, "tenants");
 resource_type!(Namespace, "namespaces", Tenant);
 resource_type!(Topic, "topics", Namespace);
 resource_type!(Secret, "secrets");
+
+pub const OFFSET_COLUMN_NAME: &str = "__offset__";
 
 /// A tenant in the Wings system.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +80,12 @@ impl Topic {
             fields: options.fields,
             partition_key: options.partition_key,
         }
+    }
+
+    pub fn schema_with_offset_column(&self) -> SchemaRef {
+        let mut builder = SchemaBuilder::from(&self.fields);
+        builder.push(Field::new(OFFSET_COLUMN_NAME, DataType::UInt64, false));
+        Arc::new(builder.finish())
     }
 
     pub fn schema(&self) -> SchemaRef {

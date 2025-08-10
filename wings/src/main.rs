@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use observability::init_observability;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -13,6 +14,7 @@ mod error;
 mod fetch;
 mod helpers;
 mod http_client;
+mod observability;
 mod push;
 mod remote;
 mod sql;
@@ -61,6 +63,8 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_observability(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+
     let cli = Cli::parse();
 
     let ct = CancellationToken::new();
