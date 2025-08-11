@@ -1,7 +1,9 @@
+mod exec;
 mod helpers;
 mod namespace_info;
 mod provider;
 mod topic;
+mod topic_offset_location;
 mod topic_schema;
 
 use std::{any::Any, collections::HashMap, sync::Arc};
@@ -13,13 +15,15 @@ use datafusion::{
 };
 use namespace_info::NamespaceInfoTable;
 use provider::SystemTableProvider;
-use topic::TopicTable;
+use topic::TopicSystemTable;
+use topic_offset_location::TopicOffsetLocationSystemTable;
 use topic_schema::TopicSchemaTable;
 use wings_metadata_core::admin::{Admin, NamespaceName};
 
 pub const NAMESPACE_INFO_TABLE_NAME: &str = "namespace_info";
 pub const TOPIC_TABLE_NAME: &str = "topic";
 pub const TOPIC_SCHEMA_TABLE_NAME: &str = "topic_schema";
+pub const TOPIC_OFFSET_LOCATION_TABLE_NAME: &str = "topic_offset_location";
 
 pub struct SystemSchemaProvider {
     namespace: NamespaceName,
@@ -55,10 +59,7 @@ impl SystemSchemaProvider {
         )));
         tables.insert(NAMESPACE_INFO_TABLE_NAME, namespace_info);
 
-        let topic = Arc::new(SystemTableProvider::new(TopicTable::new(
-            admin.clone(),
-            namespace.clone(),
-        )));
+        let topic = Arc::new(TopicSystemTable::new(admin.clone(), namespace.clone()));
         tables.insert(TOPIC_TABLE_NAME, topic);
 
         let topic_schema = Arc::new(SystemTableProvider::new(TopicSchemaTable::new(
@@ -66,6 +67,12 @@ impl SystemSchemaProvider {
             namespace.clone(),
         )));
         tables.insert(TOPIC_SCHEMA_TABLE_NAME, topic_schema);
+
+        let topic_offset_location = Arc::new(TopicOffsetLocationSystemTable::new(
+            admin.clone(),
+            namespace.clone(),
+        ));
+        tables.insert(TOPIC_OFFSET_LOCATION_TABLE_NAME, topic_offset_location);
 
         Self { namespace, tables }
     }

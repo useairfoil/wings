@@ -50,6 +50,17 @@ pub struct FolioLocation {
     pub end_offset: u64,
 }
 
+pub struct ListTopicPartitionValuesRequest {
+    pub topic_name: TopicName,
+    pub page_size: Option<usize>,
+    pub page_token: Option<String>,
+}
+
+pub struct ListTopicPartitionValuesResponse {
+    pub values: Vec<PartitionValue>,
+    pub next_page_token: Option<String>,
+}
+
 impl OffsetLocation {
     pub fn start_offset(&self) -> u64 {
         match self {

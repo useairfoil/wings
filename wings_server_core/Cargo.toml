@@ -14,6 +14,7 @@ path = "src/lib.rs"
 arrow.workspace = true
 arrow-json.workspace = true
 arrow-schema.workspace = true
+async-stream.workspace = true
 async-trait.workspace = true
 datafusion.workspace = true
 futures.workspace = true

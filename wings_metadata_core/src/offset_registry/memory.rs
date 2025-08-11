@@ -1,6 +1,8 @@
 //! In-memory implementation of the batch committer.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashSet};
+use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -9,8 +11,9 @@ use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::{
-    BatchToCommit, CommittedBatch, FolioLocation, OffsetLocation, OffsetRegistry,
-    OffsetRegistryError, OffsetRegistryResult,
+    BatchToCommit, CommittedBatch, FolioLocation, ListTopicPartitionValuesRequest,
+    ListTopicPartitionValuesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
+    OffsetRegistryResult,
 };
 use crate::partition::PartitionValue;
 
@@ -29,7 +32,7 @@ struct PartitionKey {
 #[derive(Debug, Clone)]
 struct NamespaceOffsetState {
     /// Maps partition keys to their offset tracking
-    partitions: HashMap<PartitionKey, PartitionOffsetState>,
+    partitions: BTreeMap<PartitionKey, PartitionOffsetState>,
 }
 
 /// State for tracking offsets in a partition
@@ -56,6 +59,11 @@ pub struct InMemoryOffsetRegistry {
     namespaces: Arc<DashMap<NamespaceName, NamespaceOffsetState>>,
 }
 
+#[derive(Debug, Clone)]
+struct PartitionKeyRange {
+    start: Option<PartitionKey>,
+}
+
 impl InMemoryOffsetRegistry {
     /// Create a new in-memory batch committer.
     pub fn new() -> Self {
@@ -77,7 +85,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             self.namespaces
                 .entry(namespace.clone())
                 .or_insert_with(|| NamespaceOffsetState {
-                    partitions: HashMap::new(),
+                    partitions: BTreeMap::new(),
                 });
 
         let mut seen_partitions = HashSet::new();
@@ -170,6 +178,39 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
 
         Ok(None)
     }
+
+    async fn list_topic_partition_values(
+        &self,
+        request: ListTopicPartitionValuesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse> {
+        let namespace_name = request.topic_name.parent().clone();
+
+        let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
+            OffsetRegistryError::NamespaceNotFound {
+                namespace: namespace_name.clone(),
+            }
+        })?;
+
+        let page_size = request.page_size.unwrap_or(100);
+
+        // TODO: fetch topic schema and use it to parse partition value from string.
+        let key_range = PartitionKeyRange { start: None };
+
+        let mut values = Vec::new();
+        let mut next_page_token = None;
+
+        for (key, _) in namespace_state.partitions.range(key_range).take(page_size) {
+            next_page_token = key.partition_value.as_ref().map(|pv| pv.to_string());
+            if let Some(partition_value) = key.partition_value.clone() {
+                values.push(partition_value);
+            }
+        }
+
+        Ok(ListTopicPartitionValuesResponse {
+            values,
+            next_page_token,
+        })
+    }
 }
 
 impl PartitionKey {
@@ -184,6 +225,39 @@ impl PartitionKey {
 impl Default for InMemoryOffsetRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl PartialOrd for PartitionKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PartitionKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (
+            self.partition_value.as_ref(),
+            other.partition_value.as_ref(),
+        ) {
+            (Some(self_value), Some(other_value)) => self_value.cmp(&other_value),
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => Ordering::Less,
+            (Some(_), None) => Ordering::Greater,
+        }
+    }
+}
+
+impl RangeBounds<PartitionKey> for PartitionKeyRange {
+    fn start_bound(&self) -> Bound<&PartitionKey> {
+        match self.start.as_ref() {
+            None => Bound::Unbounded,
+            Some(start) => Bound::Excluded(start),
+        }
+    }
+
+    fn end_bound(&self) -> Bound<&PartitionKey> {
+        Bound::Unbounded
     }
 }
 

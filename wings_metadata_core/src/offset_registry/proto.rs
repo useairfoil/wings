@@ -33,6 +33,15 @@ impl From<pb::OffsetLocationResponse> for Option<OffsetLocation> {
     }
 }
 
+impl From<ListTopicPartitionValuesResponse> for pb::ListTopicPartitionValuesResponse {
+    fn from(value: ListTopicPartitionValuesResponse) -> Self {
+        pb::ListTopicPartitionValuesResponse {
+            values: value.values.iter().map(Into::into).collect(),
+            next_page_token: value.next_page_token,
+        }
+    }
+}
+
 impl From<FolioLocation> for pb::FolioLocation {
     fn from(location: FolioLocation) -> Self {
         pb::FolioLocation {

@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::error::OffsetRegistryError;
-use crate::offset_registry::{BatchToCommit, OffsetRegistry};
+use crate::offset_registry::{BatchToCommit, ListTopicPartitionValuesRequest, OffsetRegistry};
 use crate::protocol::wings::v1::{
     self as pb,
     offset_registry_service_server::{
@@ -100,6 +100,30 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
             .map_err(offset_registry_error_to_status)?;
 
         Ok(Response::new(offset_location.into()))
+    }
+
+    async fn list_topic_partition_values(
+        &self,
+        request: Request<pb::ListTopicPartitionValuesRequest>,
+    ) -> Result<Response<pb::ListTopicPartitionValuesResponse>, Status> {
+        let request = request.into_inner();
+
+        let topic_name = TopicName::parse(&request.topic)
+            .context(InvalidResourceNameSnafu { resource: "topic" })
+            .map_err(Into::into)
+            .map_err(offset_registry_error_to_status)?;
+
+        let response = self
+            .offset_registry
+            .list_topic_partition_values(ListTopicPartitionValuesRequest {
+                topic_name,
+                page_size: request.page_size.map(|v| v as usize),
+                page_token: request.page_token,
+            })
+            .await
+            .map_err(offset_registry_error_to_status)?;
+
+        Ok(Response::new(response.into()))
     }
 }
 

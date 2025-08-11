@@ -1,100 +1,94 @@
-use std::{sync::Arc, usize};
+use std::{any::Any, sync::Arc, usize};
 
-use arrow::array::{ArrayRef, RecordBatch, StringViewBuilder, UInt32Builder};
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
+use arrow_schema::SchemaRef;
 use async_trait::async_trait;
-use datafusion::{error::DataFusionError, prelude::Expr};
-use wings_metadata_core::admin::{
-    Admin, NamespaceName, Topic, collect_namespace_topics, collect_namespace_topics_from_ids,
+use datafusion::{
+    catalog::{Session, TableProvider},
+    datasource::TableType,
+    error::DataFusionError,
+    logical_expr::TableProviderFilterPushDown,
+    physical_plan::{ExecutionPlan, PhysicalExpr, expressions::col, projection::ProjectionExec},
+    prelude::Expr,
 };
+use wings_metadata_core::admin::{Admin, NamespaceName};
 
-use super::{
-    helpers::{TOPIC_NAME_COLUMN, find_topic_name_in_filters},
-    provider::SystemTable,
-};
+use super::{exec::TopicDiscoveryExec, helpers::find_topic_name_in_filters};
 
-pub struct TopicTable {
+pub struct TopicSystemTable {
     admin: Arc<dyn Admin>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
-impl TopicTable {
+impl TopicSystemTable {
     pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
         Self {
             admin,
             namespace,
-            schema: topic_schema(),
+            schema: TopicDiscoveryExec::schema(),
         }
     }
 }
 
 #[async_trait]
-impl SystemTable for TopicTable {
+impl TableProvider for TopicSystemTable {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn table_type(&self) -> TableType {
+        TableType::View
+    }
+
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> Result<Vec<TableProviderFilterPushDown>, DataFusionError> {
+        Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
+    }
+
     async fn scan(
         &self,
-        filters: Vec<Expr>,
+        _state: &dyn Session,
+        projection: Option<&Vec<usize>>,
+        filters: &[Expr],
         _limit: Option<usize>,
-    ) -> Result<RecordBatch, DataFusionError> {
-        let topics = if let Some(topic_names) = find_topic_name_in_filters(&filters) {
-            collect_namespace_topics_from_ids(&self.admin, &self.namespace, &topic_names).await?
-        } else {
-            collect_namespace_topics(&self.admin, &self.namespace).await?
+    ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
+        let topic_filters = find_topic_name_in_filters(&filters);
+
+        let topic_exec =
+            TopicDiscoveryExec::new(self.admin.clone(), self.namespace.clone(), topic_filters);
+        let topic_exec = Arc::new(topic_exec);
+
+        let Some(projection) = projection else {
+            return Ok(topic_exec);
         };
 
-        from_topics(self.schema.clone(), &topics)
+        let base_schema = topic_exec.schema();
+
+        let projected_exprs: Vec<(Arc<dyn PhysicalExpr + 'static>, String)> = projection
+            .iter()
+            .map(|&i| {
+                let field_name = base_schema.field(i).name();
+                let col_expr = col(field_name, &base_schema)?;
+                Ok::<_, DataFusionError>((col_expr, field_name.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let projection_exec = ProjectionExec::try_new(projected_exprs, topic_exec)?;
+
+        Ok(Arc::new(projection_exec))
     }
 }
 
-impl std::fmt::Debug for TopicTable {
+impl std::fmt::Debug for TopicSystemTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TopicTable")
             .field("namespace", &self.namespace)
             .finish()
     }
-}
-
-fn topic_schema() -> SchemaRef {
-    let fields = vec![
-        Field::new("tenant", DataType::Utf8View, false),
-        Field::new("namespace", DataType::Utf8View, false),
-        Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-        Field::new("partition_key", DataType::UInt32, true),
-    ];
-
-    Arc::new(Schema::new(fields))
-}
-
-fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataFusionError> {
-    let mut tenant_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut partition_key_arr = UInt32Builder::with_capacity(topics.len());
-
-    for topic in topics {
-        let topic_name = topic.name.clone();
-        topic_arr.append_value(topic_name.id.clone());
-        let namespace_name = topic_name.parent();
-        namespace_arr.append_value(namespace_name.id.clone());
-        let tenant_name = namespace_name.parent();
-        tenant_arr.append_value(tenant_name.id.clone());
-        if let Some(partition_key) = topic.partition_key {
-            partition_key_arr.append_value(partition_key as _);
-        } else {
-            partition_key_arr.append_null();
-        }
-    }
-
-    let columns: Vec<ArrayRef> = vec![
-        Arc::new(tenant_arr.finish()),
-        Arc::new(namespace_arr.finish()),
-        Arc::new(topic_arr.finish()),
-        Arc::new(partition_key_arr.finish()),
-    ];
-
-    RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)
 }

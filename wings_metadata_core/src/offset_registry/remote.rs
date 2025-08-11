@@ -17,7 +17,8 @@ use http_body::Body;
 use snafu::ResultExt;
 
 use super::{
-    BatchToCommit, CommittedBatch, OffsetLocation, OffsetRegistry, OffsetRegistryError,
+    BatchToCommit, CommittedBatch, ListTopicPartitionValuesRequest,
+    ListTopicPartitionValuesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
     OffsetRegistryResult, error::InvalidDeadlineSnafu,
 };
 
@@ -108,6 +109,36 @@ where
             .into_inner();
 
         Ok(response.into())
+    }
+
+    async fn list_topic_partition_values(
+        &self,
+        request: ListTopicPartitionValuesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse> {
+        let request = pb::ListTopicPartitionValuesRequest {
+            topic: request.topic_name.to_string(),
+            page_size: request.page_size.map(|v| v as i32),
+            page_token: request.page_token,
+        };
+
+        let response = self
+            .client
+            .clone()
+            .list_topic_partition_values(request)
+            .await
+            .map_err(status_to_offset_registry_error)?
+            .into_inner();
+
+        let values = response
+            .values
+            .into_iter()
+            .map(|value| value.try_into())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ListTopicPartitionValuesResponse {
+            values,
+            next_page_token: response.next_page_token,
+        })
     }
 }
 

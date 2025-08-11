@@ -41,4 +41,9 @@ pub trait OffsetRegistry: Send + Sync {
         offset: u64,
         deadline: SystemTime,
     ) -> OffsetRegistryResult<Option<OffsetLocation>>;
+
+    async fn list_topic_partition_values(
+        &self,
+        request: ListTopicPartitionValuesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse>;
 }
