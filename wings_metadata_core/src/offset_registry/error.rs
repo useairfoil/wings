@@ -1,5 +1,6 @@
 use std::time::SystemTimeError;
 
+use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
 use crate::{
@@ -43,3 +44,9 @@ pub enum OffsetRegistryError {
 }
 
 pub type OffsetRegistryResult<T, E = OffsetRegistryError> = ::std::result::Result<T, E>;
+
+impl From<OffsetRegistryError> for DataFusionError {
+    fn from(err: OffsetRegistryError) -> Self {
+        DataFusionError::External(Box::new(err))
+    }
+}

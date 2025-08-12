@@ -8,7 +8,10 @@ use datafusion::{
     prelude::{SessionConfig, SessionContext},
 };
 use tracing::debug;
-use wings_metadata_core::admin::{Admin, NamespaceName, Topic, collect_namespace_topics};
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName, Topic, collect_namespace_topics},
+    offset_registry::OffsetRegistry,
+};
 
 use crate::{query::topic::TopicTableProvider, system_tables::SystemSchemaProvider};
 
@@ -26,10 +29,12 @@ pub struct NamespaceProvider {
 impl NamespaceProvider {
     pub async fn new(
         admin: Arc<dyn Admin>,
+        offset_registry: Arc<dyn OffsetRegistry>,
         namespace: NamespaceName,
     ) -> Result<Self, DataFusionError> {
         let topics = collect_namespace_topics(&admin, &namespace).await?;
-        let system_schema_provider = SystemSchemaProvider::new(admin.clone(), namespace.clone());
+        let system_schema_provider =
+            SystemSchemaProvider::new(admin.clone(), offset_registry.clone(), namespace.clone());
 
         Ok(Self {
             namespace,

@@ -28,15 +28,17 @@ pub struct SqlArgs {
 impl SqlArgs {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
         let admin = self.remote.admin_client().await?;
+        let offset_registry = self.remote.offset_registry_client().await?;
 
         let namespace_name =
             NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })?;
 
-        let namespace = NamespaceProvider::new(Arc::new(admin), namespace_name)
-            .await
-            .context(DataFusionSnafu {})?;
+        let namespace =
+            NamespaceProvider::new(Arc::new(admin), Arc::new(offset_registry), namespace_name)
+                .await
+                .context(DataFusionSnafu {})?;
 
         let ctx = namespace.new_session_context();
 

@@ -7,10 +7,12 @@ use datafusion::{
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,
-    physical_plan::{ExecutionPlan, PhysicalExpr, expressions::col, projection::ProjectionExec},
+    physical_plan::ExecutionPlan,
     prelude::Expr,
 };
 use wings_metadata_core::admin::{Admin, NamespaceName};
+
+use crate::datafusion_helpers::apply_projection;
 
 use super::{exec::TopicDiscoveryExec, helpers::find_topic_name_in_filters};
 
@@ -64,24 +66,7 @@ impl TableProvider for TopicSystemTable {
             TopicDiscoveryExec::new(self.admin.clone(), self.namespace.clone(), topic_filters);
         let topic_exec = Arc::new(topic_exec);
 
-        let Some(projection) = projection else {
-            return Ok(topic_exec);
-        };
-
-        let base_schema = topic_exec.schema();
-
-        let projected_exprs: Vec<(Arc<dyn PhysicalExpr + 'static>, String)> = projection
-            .iter()
-            .map(|&i| {
-                let field_name = base_schema.field(i).name();
-                let col_expr = col(field_name, &base_schema)?;
-                Ok::<_, DataFusionError>((col_expr, field_name.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let projection_exec = ProjectionExec::try_new(projected_exprs, topic_exec)?;
-
-        Ok(Arc::new(projection_exec))
+        apply_projection(topic_exec, projection)
     }
 }
 

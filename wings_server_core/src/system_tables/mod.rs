@@ -4,6 +4,7 @@ mod namespace_info;
 mod provider;
 mod topic;
 mod topic_offset_location;
+mod topic_partition_value;
 mod topic_schema;
 
 use std::{any::Any, collections::HashMap, sync::Arc};
@@ -17,12 +18,17 @@ use namespace_info::NamespaceInfoTable;
 use provider::SystemTableProvider;
 use topic::TopicSystemTable;
 use topic_offset_location::TopicOffsetLocationSystemTable;
+use topic_partition_value::TopicPartitionValueSystemTable;
 use topic_schema::TopicSchemaTable;
-use wings_metadata_core::admin::{Admin, NamespaceName};
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName},
+    offset_registry::OffsetRegistry,
+};
 
 pub const NAMESPACE_INFO_TABLE_NAME: &str = "namespace_info";
 pub const TOPIC_TABLE_NAME: &str = "topic";
 pub const TOPIC_SCHEMA_TABLE_NAME: &str = "topic_schema";
+pub const TOPIC_PARTITION_VALUE_TABLE_NAME: &str = "topic_partition_value";
 pub const TOPIC_OFFSET_LOCATION_TABLE_NAME: &str = "topic_offset_location";
 
 pub struct SystemSchemaProvider {
@@ -50,7 +56,11 @@ impl SchemaProvider for SystemSchemaProvider {
 }
 
 impl SystemSchemaProvider {
-    pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
+    pub fn new(
+        admin: Arc<dyn Admin>,
+        offset_registry: Arc<dyn OffsetRegistry>,
+        namespace: NamespaceName,
+    ) -> Self {
         let mut tables = HashMap::<&'static str, Arc<dyn TableProvider>>::new();
 
         let namespace_info = Arc::new(SystemTableProvider::new(NamespaceInfoTable::new(
@@ -67,6 +77,13 @@ impl SystemSchemaProvider {
             namespace.clone(),
         )));
         tables.insert(TOPIC_SCHEMA_TABLE_NAME, topic_schema);
+
+        let topic_partition_value = Arc::new(TopicPartitionValueSystemTable::new(
+            admin.clone(),
+            offset_registry.clone(),
+            namespace.clone(),
+        ));
+        tables.insert(TOPIC_PARTITION_VALUE_TABLE_NAME, topic_partition_value);
 
         let topic_offset_location = Arc::new(TopicOffsetLocationSystemTable::new(
             admin.clone(),

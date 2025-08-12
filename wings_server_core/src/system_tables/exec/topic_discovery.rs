@@ -12,10 +12,12 @@ use datafusion::{
         stream::RecordBatchStreamAdapter,
     },
 };
+use futures::{Stream, StreamExt};
 use snafu::ResultExt;
 use tracing::debug;
 use wings_metadata_core::admin::{
-    Admin, ListTopicsRequest, NamespaceName, Topic, TopicName, error::InvalidResourceNameSnafu,
+    Admin, AdminError, ListTopicsRequest, NamespaceName, Topic, TopicName,
+    error::InvalidResourceNameSnafu,
 };
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
@@ -99,60 +101,70 @@ impl ExecutionPlan for TopicDiscoveryExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         assert_eq!(partition, 0);
-        let batch_size = context.session_config().batch_size() as i32;
+        let batch_size = context.session_config().batch_size();
         debug!(partition, batch_size, "TopicDiscoveryExec::execute");
 
-        let schema = self.schema();
         let stream = {
-            let schema = schema.clone();
+            let schema = self.schema();
             let admin = self.admin.clone();
             let namespace = self.namespace.clone();
             let topics_filter = self.topics.clone();
 
-            async_stream::stream! {
-                if let Some(topics_filter) = topics_filter {
-                    for topic_id in topics_filter {
-                        let topic_name = TopicName::new(topic_id, namespace.clone())
-                            .context(InvalidResourceNameSnafu { resource: "topic" })?;
-
-                        match admin.get_topic(topic_name).await {
-                            Ok(topic) => {
-                                let batch = from_topics(schema.clone(), &[topic])?;
-                                yield Ok(batch);
-                            }
-                            Err(err) => {
-                                if !err.is_not_found() {
-                                    yield Err(DataFusionError::from(err));
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    let mut page_token = None;
-                    loop {
-                        let response = admin
-                            .list_topics(ListTopicsRequest {
-                                parent: namespace.clone(),
-                                page_size: batch_size.into(),
-                                page_token: page_token.clone(),
-                            })
-                            .await?;
-                        page_token = response.next_page_token;
-                        let batch = from_topics(schema.clone(), &response.topics)?;
-
-                        yield Ok(batch);
-
-                        if page_token.is_none() {
-                            break;
-                        }
-                    }
-                }
-            }
+            paginated_topic_stream(admin, namespace, batch_size, topics_filter).map(move |result| {
+                result
+                    .map_err(DataFusionError::from)
+                    .and_then(|topics| from_topics(schema.clone(), &topics))
+            })
         };
 
         let stream = RecordBatchStreamAdapter::new(self.schema(), stream);
 
         Ok(Box::pin(stream))
+    }
+}
+
+pub fn paginated_topic_stream(
+    admin: Arc<dyn Admin>,
+    namespace: NamespaceName,
+    page_size: usize,
+    topics_filter: Option<Vec<String>>,
+) -> impl Stream<Item = Result<Vec<Topic>, AdminError>> {
+    let page_size = page_size as i32;
+    async_stream::stream! {
+        if let Some(topics_filter) = topics_filter {
+            for topic_id in topics_filter {
+                let topic_name = TopicName::new(topic_id, namespace.clone())
+                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+                match admin.get_topic(topic_name).await {
+                    Ok(topic) => {
+                        yield Ok(vec![topic]);
+                    }
+                    Err(err) => {
+                        if !err.is_not_found() {
+                            yield Err(err);
+                        }
+                    }
+                }
+            }
+        } else {
+            let mut page_token = None;
+            loop {
+                let response = admin
+                    .list_topics(ListTopicsRequest {
+                        parent: namespace.clone(),
+                        page_size: page_size.into(),
+                        page_token: page_token.clone(),
+                    })
+                    .await?;
+                page_token = response.next_page_token;
+                yield Ok(response.topics);
+
+                if page_token.is_none() {
+                    break;
+                }
+            }
+        }
     }
 }
 

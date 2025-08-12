@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
-use std::ops::{Bound, RangeBounds};
+use std::ops::Bound;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -57,11 +57,6 @@ struct BatchInfo {
 pub struct InMemoryOffsetRegistry {
     /// Maps namespace names to their offset state
     namespaces: Arc<DashMap<NamespaceName, NamespaceOffsetState>>,
-}
-
-#[derive(Debug, Clone)]
-struct PartitionKeyRange {
-    start: Option<PartitionKey>,
 }
 
 impl InMemoryOffsetRegistry {
@@ -193,13 +188,26 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
 
         let page_size = request.page_size.unwrap_or(100);
 
+        if request.page_token.is_some() {
+            // TODO: this is a hack to avoid infinite runs later
+
+            return Ok(ListTopicPartitionValuesResponse {
+                values: vec![],
+                next_page_token: None,
+            });
+        }
+
         // TODO: fetch topic schema and use it to parse partition value from string.
-        let key_range = PartitionKeyRange { start: None };
+        let start_key_range: Bound<&PartitionKey> = Bound::Unbounded;
 
         let mut values = Vec::new();
         let mut next_page_token = None;
 
-        for (key, _) in namespace_state.partitions.range(key_range).take(page_size) {
+        for (key, _) in namespace_state
+            .partitions
+            .range((start_key_range, Bound::Unbounded))
+            .take(page_size)
+        {
             next_page_token = key.partition_value.as_ref().map(|pv| pv.to_string());
             if let Some(partition_value) = key.partition_value.clone() {
                 values.push(partition_value);
@@ -245,19 +253,6 @@ impl Ord for PartitionKey {
             (None, Some(_)) => Ordering::Less,
             (Some(_), None) => Ordering::Greater,
         }
-    }
-}
-
-impl RangeBounds<PartitionKey> for PartitionKeyRange {
-    fn start_bound(&self) -> Bound<&PartitionKey> {
-        match self.start.as_ref() {
-            None => Bound::Unbounded,
-            Some(start) => Bound::Excluded(start),
-        }
-    }
-
-    fn end_bound(&self) -> Bound<&PartitionKey> {
-        Bound::Unbounded
     }
 }
 
