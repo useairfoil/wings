@@ -1,4 +1,4 @@
-use std::{sync::Arc, usize};
+use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanBuilder, RecordBatch, StringViewBuilder};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};

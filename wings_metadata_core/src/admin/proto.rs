@@ -290,7 +290,7 @@ impl From<ListTopicsRequest> for pb::ListTopicsRequest {
     fn from(request: ListTopicsRequest) -> Self {
         Self {
             parent: request.parent.name(),
-            page_size: request.page_size,
+            page_size: request.page_size.map(|size| size as i32),
             page_token: request.page_token.clone(),
         }
     }
@@ -306,7 +306,7 @@ impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
 
         Ok(Self {
             parent,
-            page_size: request.page_size,
+            page_size: request.page_size.map(|size| size as usize),
             page_token: request.page_token.clone(),
         })
     }

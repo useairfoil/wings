@@ -6,6 +6,7 @@ pub mod memory;
 pub mod proto;
 pub mod remote;
 pub mod server;
+pub mod stream;
 pub mod types;
 
 pub use error::{AdminError, AdminResult};
@@ -13,6 +14,7 @@ pub use helpers::{collect_namespace_topics, collect_namespace_topics_from_ids};
 pub use memory::InMemoryAdminService;
 pub use remote::RemoteAdminService;
 pub use server::AdminService;
+pub use stream::{PaginatedTopicStream, SendableTopicPageStream, TopicPageStream};
 pub use types::*;
 
 use async_trait::async_trait;

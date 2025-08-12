@@ -222,7 +222,7 @@ pub struct ListTopicsRequest {
     pub parent: NamespaceName,
     /// The number of topics to return.
     /// Default: 100, Maximum: 1000.
-    pub page_size: Option<i32>,
+    pub page_size: Option<usize>,
     /// The continuation token.
     pub page_token: Option<String>,
 }

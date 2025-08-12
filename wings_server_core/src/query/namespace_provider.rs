@@ -92,10 +92,7 @@ impl SchemaProvider for NamespaceProvider {
     }
 
     fn table_exist(&self, name: &str) -> bool {
-        self.topics
-            .iter()
-            .find(|topic| topic.name.id == name)
-            .is_some()
+        self.topics.iter().any(|topic| topic.name.id == name)
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>, DataFusionError> {

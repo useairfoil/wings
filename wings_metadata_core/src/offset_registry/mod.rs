@@ -5,12 +5,16 @@ pub mod memory;
 pub mod proto;
 pub mod remote;
 pub mod server;
+pub mod stream;
 pub mod types;
 
 use std::time::SystemTime;
 
 pub use error::{OffsetRegistryError, OffsetRegistryResult};
 pub use memory::InMemoryOffsetRegistry;
+pub use stream::{
+    PaginatedPartitionValueStream, PartitionValuePageStream, SendablePartitionValuePageStream,
+};
 pub use types::*;
 
 use crate::{

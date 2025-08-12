@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc, usize};
+use std::{any::Any, sync::Arc};
 
 use arrow_schema::SchemaRef;
 use async_trait::async_trait;
@@ -60,7 +60,7 @@ impl TableProvider for TopicSystemTable {
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let topic_filters = find_topic_name_in_filters(&filters);
+        let topic_filters = find_topic_name_in_filters(filters);
 
         let topic_exec =
             TopicDiscoveryExec::new(self.admin.clone(), self.namespace.clone(), topic_filters);

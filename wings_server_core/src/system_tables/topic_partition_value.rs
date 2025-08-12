@@ -7,11 +7,9 @@ use datafusion::{
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,
-    physical_plan::{ExecutionPlan, empty::EmptyExec, union::UnionExec},
+    physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use futures::TryStreamExt;
-use tokio::pin;
 
 use crate::{
     datafusion_helpers::apply_projection,
@@ -21,8 +19,6 @@ use wings_metadata_core::{
     admin::{Admin, NamespaceName},
     offset_registry::OffsetRegistry,
 };
-
-use super::exec::paginated_topic_stream;
 
 /// System table for discovering partition values for topics.
 pub struct TopicPartitionValueSystemTable {
@@ -70,39 +66,21 @@ impl TableProvider for TopicPartitionValueSystemTable {
 
     async fn scan(
         &self,
-        state: &dyn Session,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let topics_filter = find_topic_name_in_filters(&filters);
-        let batch_size = state.config().batch_size();
+        let topics_filter = find_topic_name_in_filters(filters);
 
-        let stream = {
-            let admin = self.admin.clone();
-            let namespace = self.namespace.clone();
+        let topic_partition_exec = TopicPartitionValueDiscoveryExec::new(
+            self.admin.clone(),
+            self.offset_registry.clone(),
+            self.namespace.clone(),
+            topics_filter,
+        );
 
-            paginated_topic_stream(admin, namespace, batch_size, topics_filter)
-        };
-        pin!(stream);
-
-        // TODO: we accumulate all topics into a vector to use `UnionExec`.
-        // This obviously won't work if we have too many topics.
-        let mut topic_exec: Vec<Arc<dyn ExecutionPlan>> = Vec::new();
-        while let Some(page) = stream.try_next().await.map_err(DataFusionError::from)? {
-            for topic in page {
-                let exec =
-                    TopicPartitionValueDiscoveryExec::new(self.offset_registry.clone(), topic);
-                topic_exec.push(Arc::new(exec));
-            }
-        }
-
-        let union_exec: Arc<dyn ExecutionPlan> = match topic_exec.as_slice() {
-            [] => Arc::new(EmptyExec::new(self.schema.clone())),
-            [topic] => topic.clone(),
-            _ => Arc::new(UnionExec::new(topic_exec)),
-        };
-        apply_projection(union_exec, projection)
+        apply_projection(Arc::new(topic_partition_exec), projection)
     }
 }
 

@@ -12,11 +12,11 @@ use datafusion::{
         stream::RecordBatchStreamAdapter,
     },
 };
-use futures::{Stream, StreamExt};
-use tracing::{debug, trace};
+use futures::{StreamExt, TryStreamExt};
+use tracing::debug;
 use wings_metadata_core::{
-    admin::{Topic, TopicName},
-    offset_registry::{ListTopicPartitionValuesRequest, OffsetRegistry, OffsetRegistryError},
+    admin::{Admin, NamespaceName, PaginatedTopicStream, TopicName},
+    offset_registry::{OffsetRegistry, PaginatedPartitionValueStream},
     partition::PartitionValue,
 };
 
@@ -24,19 +24,28 @@ use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
 /// Execution plan for discovering partition values for topics.
 pub struct TopicPartitionValueDiscoveryExec {
+    admin: Arc<dyn Admin>,
     offset_registry: Arc<dyn OffsetRegistry>,
-    topic: Topic,
+    namespace: NamespaceName,
+    topics: Option<Vec<String>>,
     properties: PlanProperties,
 }
 
 impl TopicPartitionValueDiscoveryExec {
-    pub fn new(offset_registry: Arc<dyn OffsetRegistry>, topic: Topic) -> Self {
+    pub fn new(
+        admin: Arc<dyn Admin>,
+        offset_registry: Arc<dyn OffsetRegistry>,
+        namespace: NamespaceName,
+        topics: Option<Vec<String>>,
+    ) -> Self {
         let schema = Self::schema();
         let properties = Self::compute_properties(&schema);
 
         Self {
+            admin,
             offset_registry,
-            topic,
+            namespace,
+            topics,
             properties,
         }
     }
@@ -96,56 +105,59 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         assert_eq!(partition, 0);
+        let batch_size = context.session_config().batch_size();
         debug!(
-            topic = %self.topic.name,
+            namespace = %self.namespace,
             "TopicPartitionValueDiscoveryExec execute"
         );
-        let batch_size = context.session_config().batch_size();
 
-        let stream = {
-            let schema = self.schema();
-            let offset_registry = self.offset_registry.clone();
-            let topic = self.topic.name.clone();
+        let topics = PaginatedTopicStream::new(
+            self.admin.clone(),
+            self.namespace.clone(),
+            batch_size,
+            self.topics.clone(),
+        );
 
-            paginated_topic_value_stream(offset_registry, topic.clone(), batch_size).map(
-                move |result| {
-                    trace!("TopicPartitionValueDiscoveryExec send_page");
-                    result.map_err(DataFusionError::from).and_then(|values| {
-                        from_partition_values(schema.clone(), topic.clone(), values)
-                    })
-                },
-            )
-        };
+        // Here we take the stream of topics and for each topic, we create a stream of partition values.
+        // Notice that the topics are paginated, so we need to further flatten the iterator of streams.
+        let offset_registry = self.offset_registry.clone();
+        let values = topics.flat_map_unordered(None, move |topic_result| {
+            let topics = match topic_result {
+                Ok(topics) => topics,
+                Err(err) => {
+                    return futures::stream::once(async { Err(DataFusionError::from(err)) })
+                        .boxed();
+                }
+            };
 
-        let stream = RecordBatchStreamAdapter::new(self.schema(), stream);
+            let stream_iter = topics.into_iter().map({
+                let offset_registry = offset_registry.clone();
+                move |topic| {
+                    let topic_name = topic.name;
+                    PaginatedPartitionValueStream::new(
+                        offset_registry.clone(),
+                        topic_name.clone(),
+                        batch_size,
+                    )
+                    .map_err(DataFusionError::from)
+                }
+            });
+            futures::stream::iter(stream_iter)
+                .flatten_unordered(None)
+                .boxed()
+        });
+
+        let schema = self.schema();
+        let stream = RecordBatchStreamAdapter::new(
+            self.schema(),
+            values.map(move |result| {
+                result.and_then(|(topic_name, values)| {
+                    from_partition_values(schema.clone(), topic_name.clone(), values)
+                })
+            }),
+        );
 
         Ok(Box::pin(stream))
-    }
-}
-
-fn paginated_topic_value_stream(
-    offset_registry: Arc<dyn OffsetRegistry>,
-    topic: TopicName,
-    page_size: usize,
-) -> impl Stream<Item = Result<Vec<PartitionValue>, OffsetRegistryError>> {
-    async_stream::stream! {
-        let mut page_token = None;
-        loop {
-            let response = offset_registry
-                .list_topic_partition_values(ListTopicPartitionValuesRequest {
-                    topic_name: topic.clone(),
-                    page_size: page_size.into(),
-                    page_token,
-                })
-                .await?;
-
-            page_token = response.next_page_token;
-            yield Ok(response.values);
-
-            if page_token.is_none() {
-                break;
-            }
-        }
     }
 }
 
@@ -186,8 +198,8 @@ impl DisplayAs for TopicPartitionValueDiscoveryExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "TopicPartitionValueDiscoveryExec: topic=[{}]",
-            self.topic.name
+            "TopicPartitionValueDiscoveryExec: namespace=[{}]",
+            self.namespace
         )
     }
 }
@@ -195,7 +207,7 @@ impl DisplayAs for TopicPartitionValueDiscoveryExec {
 impl fmt::Debug for TopicPartitionValueDiscoveryExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TopicPartitionValueDiscoveryExec")
-            .field("topic", &self.topic.name)
+            .field("namespace", &self.namespace)
             .finish()
     }
 }
