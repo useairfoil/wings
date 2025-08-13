@@ -33,10 +33,10 @@ impl From<pb::OffsetLocationResponse> for Option<OffsetLocation> {
     }
 }
 
-impl From<ListTopicPartitionValuesResponse> for pb::ListTopicPartitionValuesResponse {
-    fn from(value: ListTopicPartitionValuesResponse) -> Self {
-        pb::ListTopicPartitionValuesResponse {
-            values: value.values.iter().map(Into::into).collect(),
+impl From<ListTopicPartitionStatesResponse> for pb::ListTopicPartitionStatesResponse {
+    fn from(value: ListTopicPartitionStatesResponse) -> Self {
+        pb::ListTopicPartitionStatesResponse {
+            states: value.states.into_iter().map(Into::into).collect(),
             next_page_token: value.next_page_token,
         }
     }
@@ -63,6 +63,28 @@ impl From<pb::FolioLocation> for FolioLocation {
             start_offset: location.start_offset,
             end_offset: location.end_offset,
         }
+    }
+}
+
+impl From<PartitionValueState> for pb::PartitionValueState {
+    fn from(state: PartitionValueState) -> Self {
+        pb::PartitionValueState {
+            value: state.partition_value.as_ref().map(Into::into),
+            next_offset: state.next_offset,
+        }
+    }
+}
+
+impl TryFrom<pb::PartitionValueState> for PartitionValueState {
+    type Error = OffsetRegistryError;
+
+    fn try_from(state: pb::PartitionValueState) -> Result<Self, Self::Error> {
+        let value = state.value.map(TryFrom::try_from).transpose()?;
+
+        Ok(Self {
+            partition_value: value,
+            next_offset: state.next_offset,
+        })
     }
 }
 

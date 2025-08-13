@@ -1,7 +1,6 @@
 use std::{any::Any, sync::Arc};
 
-use arrow::array::RecordBatch;
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
+use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::{
     catalog::{Session, TableProvider},
@@ -11,24 +10,33 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_metadata_core::admin::{Admin, NamespaceName};
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName},
+    offset_registry::OffsetRegistry,
+};
 
-use crate::system_tables::exec::TopicDiscoveryExec;
+use crate::datafusion_helpers::apply_projection;
 
-use super::helpers::TOPIC_NAME_COLUMN;
+use super::{exec::TopicOffsetLocationDiscoveryExec, helpers::find_topic_name_in_filters};
 
 pub struct TopicOffsetLocationSystemTable {
     admin: Arc<dyn Admin>,
+    offset_registry: Arc<dyn OffsetRegistry>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl TopicOffsetLocationSystemTable {
-    pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
+    pub fn new(
+        admin: Arc<dyn Admin>,
+        offset_registry: Arc<dyn OffsetRegistry>,
+        namespace: NamespaceName,
+    ) -> Self {
         Self {
             admin,
+            offset_registry,
             namespace,
-            schema: topic_offset_location_schema(),
+            schema: TopicOffsetLocationDiscoveryExec::schema(),
         }
     }
 }
@@ -59,11 +67,18 @@ impl TableProvider for TopicOffsetLocationSystemTable {
         _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        limit: Option<usize>,
+        _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let schema = self.schema();
+        let topics_filter = find_topic_name_in_filters(filters);
 
-        todo!();
+        let topic_offset_exec = TopicOffsetLocationDiscoveryExec::new(
+            self.admin.clone(),
+            self.offset_registry.clone(),
+            self.namespace.clone(),
+            topics_filter,
+        );
+
+        apply_projection(Arc::new(topic_offset_exec), projection)
     }
 }
 
@@ -73,22 +88,4 @@ impl std::fmt::Debug for TopicOffsetLocationSystemTable {
             .field("namespace", &self.namespace)
             .finish()
     }
-}
-
-fn topic_offset_location_schema() -> SchemaRef {
-    let fields = vec![
-        Field::new("tenant", DataType::Utf8View, false),
-        Field::new("namespace", DataType::Utf8View, false),
-        Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-        Field::new("partition_value", DataType::Utf8View, false),
-        Field::new("start_offset", DataType::UInt64, false),
-        Field::new("end_offset", DataType::UInt64, false),
-        Field::new("location_type", DataType::Utf8View, false),
-        // Folio-specific columns
-        Field::new("folio_file_ref", DataType::Utf8View, true),
-        Field::new("folio_offset_bytes", DataType::UInt64, true),
-        Field::new("folio_size_bytes", DataType::UInt64, true),
-    ];
-
-    Arc::new(Schema::new(fields))
 }

@@ -8,7 +8,7 @@ import "google/protobuf/timestamp.proto";
 service OffsetRegistryService {
   rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
   rpc OffsetLocation(OffsetLocationRequest) returns (OffsetLocationResponse);
-  rpc ListTopicPartitionValues(ListTopicPartitionValuesRequest) returns (ListTopicPartitionValuesResponse);
+  rpc ListTopicPartitionStates(ListTopicPartitionStatesRequest) returns (ListTopicPartitionStatesResponse);
 }
 
 
@@ -35,14 +35,14 @@ message OffsetLocationResponse {
   }
 }
 
-message ListTopicPartitionValuesRequest {
+message ListTopicPartitionStatesRequest {
   string topic = 1;
   optional int32 page_size = 2;
   optional string page_token = 3;
 }
 
-message ListTopicPartitionValuesResponse {
-  repeated PartitionValue values = 1;
+message ListTopicPartitionStatesResponse {
+  repeated PartitionValueState states = 1;
   optional string next_page_token = 2;
 }
 
@@ -67,6 +67,11 @@ message FolioLocation {
   uint64 size_bytes = 3;
   uint64 start_offset = 4;
   uint64 end_offset = 5;
+}
+
+message PartitionValueState {
+    optional PartitionValue value = 1;
+    uint64 next_offset = 2;
 }
 
 message PartitionValue {

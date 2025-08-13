@@ -13,7 +13,8 @@ use std::time::SystemTime;
 pub use error::{OffsetRegistryError, OffsetRegistryResult};
 pub use memory::InMemoryOffsetRegistry;
 pub use stream::{
-    PaginatedPartitionValueStream, PartitionValuePageStream, SendablePartitionValuePageStream,
+    OffsetLocationStream, PaginatedOffsetLocationStream, PaginatedPartitionStateStream,
+    PartitionValuePageStream, SendableOffsetLocationStream,
 };
 pub use types::*;
 
@@ -46,8 +47,8 @@ pub trait OffsetRegistry: Send + Sync {
         deadline: SystemTime,
     ) -> OffsetRegistryResult<Option<OffsetLocation>>;
 
-    async fn list_topic_partition_values(
+    async fn list_topic_partition_states(
         &self,
-        request: ListTopicPartitionValuesRequest,
-    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse>;
+        request: ListTopicPartitionStatesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionStatesResponse>;
 }

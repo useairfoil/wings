@@ -1,6 +1,6 @@
 use std::{any::Any, fmt, sync::Arc};
 
-use arrow::array::{ArrayRef, RecordBatch, StringViewBuilder};
+use arrow::array::{ArrayRef, RecordBatch, StringViewBuilder, UInt64Builder};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use datafusion::{
     error::{DataFusionError, Result},
@@ -16,8 +16,7 @@ use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
 use wings_metadata_core::{
     admin::{Admin, NamespaceName, PaginatedTopicStream, TopicName},
-    offset_registry::{OffsetRegistry, PaginatedPartitionValueStream},
-    partition::PartitionValue,
+    offset_registry::{OffsetRegistry, PaginatedPartitionStateStream, PartitionValueState},
 };
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
@@ -55,7 +54,8 @@ impl TopicPartitionValueDiscoveryExec {
             Field::new("tenant", DataType::Utf8View, false),
             Field::new("namespace", DataType::Utf8View, false),
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-            Field::new("partition_value", DataType::Utf8View, false),
+            Field::new("partition_value", DataType::Utf8View, true),
+            Field::new("next_offset", DataType::UInt64, false),
         ];
 
         Arc::new(Schema::new(fields))
@@ -134,7 +134,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
                 let offset_registry = offset_registry.clone();
                 move |topic| {
                     let topic_name = topic.name;
-                    PaginatedPartitionValueStream::new(
+                    PaginatedPartitionStateStream::new(
                         offset_registry.clone(),
                         topic_name.clone(),
                         batch_size,
@@ -164,24 +164,30 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
 fn from_partition_values(
     schema: SchemaRef,
     topic_name: TopicName,
-    values: Vec<PartitionValue>,
+    states: Vec<PartitionValueState>,
 ) -> Result<RecordBatch, DataFusionError> {
-    if values.is_empty() {
+    if states.is_empty() {
         return Ok(RecordBatch::new_empty(schema));
     }
 
-    let mut tenant_arr = StringViewBuilder::with_capacity(values.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(values.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(values.len());
-    let mut partition_value_arr = StringViewBuilder::with_capacity(values.len());
+    let mut tenant_arr = StringViewBuilder::with_capacity(states.len());
+    let mut namespace_arr = StringViewBuilder::with_capacity(states.len());
+    let mut topic_arr = StringViewBuilder::with_capacity(states.len());
+    let mut partition_value_arr = StringViewBuilder::with_capacity(states.len());
+    let mut next_offset_arr = UInt64Builder::with_capacity(states.len());
 
-    for value in values {
+    for state in states {
         topic_arr.append_value(topic_name.id.clone());
         let namespace_name = topic_name.parent();
         namespace_arr.append_value(namespace_name.id.clone());
         let tenant_name = namespace_name.parent();
         tenant_arr.append_value(tenant_name.id.clone());
-        partition_value_arr.append_value(value.to_string());
+        if let Some(value) = state.partition_value {
+            partition_value_arr.append_value(value.to_string());
+        } else {
+            partition_value_arr.append_null();
+        }
+        next_offset_arr.append_value(state.next_offset);
     }
 
     let columns: Vec<ArrayRef> = vec![
@@ -189,6 +195,7 @@ fn from_partition_values(
         Arc::new(namespace_arr.finish()),
         Arc::new(topic_arr.finish()),
         Arc::new(partition_value_arr.finish()),
+        Arc::new(next_offset_arr.finish()),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)

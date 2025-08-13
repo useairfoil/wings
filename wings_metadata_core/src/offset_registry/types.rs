@@ -50,14 +50,19 @@ pub struct FolioLocation {
     pub end_offset: u64,
 }
 
-pub struct ListTopicPartitionValuesRequest {
+pub struct PartitionValueState {
+    pub partition_value: Option<PartitionValue>,
+    pub next_offset: u64,
+}
+
+pub struct ListTopicPartitionStatesRequest {
     pub topic_name: TopicName,
     pub page_size: Option<usize>,
     pub page_token: Option<String>,
 }
 
-pub struct ListTopicPartitionValuesResponse {
-    pub values: Vec<PartitionValue>,
+pub struct ListTopicPartitionStatesResponse {
+    pub states: Vec<PartitionValueState>,
     pub next_page_token: Option<String>,
 }
 

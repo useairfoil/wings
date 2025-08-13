@@ -11,11 +11,13 @@ use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::{
-    BatchToCommit, CommittedBatch, FolioLocation, ListTopicPartitionValuesRequest,
-    ListTopicPartitionValuesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
+    BatchToCommit, CommittedBatch, FolioLocation, ListTopicPartitionStatesRequest,
+    ListTopicPartitionStatesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
     OffsetRegistryResult,
 };
 use crate::partition::PartitionValue;
+
+use super::PartitionValueState;
 
 /// A partition key used to identify unique (topic, partition_value) combinations.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -174,10 +176,10 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         Ok(None)
     }
 
-    async fn list_topic_partition_values(
+    async fn list_topic_partition_states(
         &self,
-        request: ListTopicPartitionValuesRequest,
-    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse> {
+        request: ListTopicPartitionStatesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionStatesResponse> {
         let namespace_name = request.topic_name.parent().clone();
 
         let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
@@ -191,8 +193,8 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         if request.page_token.is_some() {
             // TODO: this is a hack to avoid infinite runs later
 
-            return Ok(ListTopicPartitionValuesResponse {
-                values: vec![],
+            return Ok(ListTopicPartitionStatesResponse {
+                states: vec![],
                 next_page_token: None,
             });
         }
@@ -200,22 +202,23 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         // TODO: fetch topic schema and use it to parse partition value from string.
         let start_key_range: Bound<&PartitionKey> = Bound::Unbounded;
 
-        let mut values = Vec::new();
+        let mut states = Vec::new();
         let mut next_page_token = None;
 
-        for (key, _) in namespace_state
+        for (key, state) in namespace_state
             .partitions
             .range((start_key_range, Bound::Unbounded))
             .take(page_size)
         {
             next_page_token = key.partition_value.as_ref().map(|pv| pv.to_string());
-            if let Some(partition_value) = key.partition_value.clone() {
-                values.push(partition_value);
-            }
+            states.push(PartitionValueState {
+                partition_value: key.partition_value.clone(),
+                next_offset: state.next_offset,
+            });
         }
 
-        Ok(ListTopicPartitionValuesResponse {
-            values,
+        Ok(ListTopicPartitionStatesResponse {
+            states,
             next_page_token,
         })
     }

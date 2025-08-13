@@ -17,8 +17,8 @@ use http_body::Body;
 use snafu::ResultExt;
 
 use super::{
-    BatchToCommit, CommittedBatch, ListTopicPartitionValuesRequest,
-    ListTopicPartitionValuesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
+    BatchToCommit, CommittedBatch, ListTopicPartitionStatesRequest,
+    ListTopicPartitionStatesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
     OffsetRegistryResult, error::InvalidDeadlineSnafu,
 };
 
@@ -111,11 +111,11 @@ where
         Ok(response.into())
     }
 
-    async fn list_topic_partition_values(
+    async fn list_topic_partition_states(
         &self,
-        request: ListTopicPartitionValuesRequest,
-    ) -> OffsetRegistryResult<ListTopicPartitionValuesResponse> {
-        let request = pb::ListTopicPartitionValuesRequest {
+        request: ListTopicPartitionStatesRequest,
+    ) -> OffsetRegistryResult<ListTopicPartitionStatesResponse> {
+        let request = pb::ListTopicPartitionStatesRequest {
             topic: request.topic_name.to_string(),
             page_size: request.page_size.map(|v| v as i32),
             page_token: request.page_token,
@@ -124,19 +124,19 @@ where
         let response = self
             .client
             .clone()
-            .list_topic_partition_values(request)
+            .list_topic_partition_states(request)
             .await
             .map_err(status_to_offset_registry_error)?
             .into_inner();
 
-        let values = response
-            .values
+        let states = response
+            .states
             .into_iter()
             .map(|value| value.try_into())
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(ListTopicPartitionValuesResponse {
-            values,
+        Ok(ListTopicPartitionStatesResponse {
+            states,
             next_page_token: response.next_page_token,
         })
     }

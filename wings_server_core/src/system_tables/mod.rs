@@ -87,6 +87,7 @@ impl SystemSchemaProvider {
 
         let topic_offset_location = Arc::new(TopicOffsetLocationSystemTable::new(
             admin.clone(),
+            offset_registry.clone(),
             namespace.clone(),
         ));
         tables.insert(TOPIC_OFFSET_LOCATION_TABLE_NAME, topic_offset_location);
