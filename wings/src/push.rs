@@ -4,14 +4,16 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_ingestor_http::types::BatchResponse;
-use wings_metadata_core::admin::{Admin, NamespaceName, RemoteAdminService, TopicName};
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
+    partition::PartitionValue,
+};
 
 use crate::{
     error::{
-        AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, JsonParseSnafu, PushClientSnafu,
-        Result,
+        AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, JsonParseSnafu,
+        PartitionValueParseSnafu, PushClientSnafu, Result,
     },
-    helpers::convert_partition_value,
     http_client::{HttpPushClient, PushRequestBuilder},
     remote::RemoteArgs,
 };
@@ -110,7 +112,8 @@ impl PushArgs {
                 if remaining >= 3 {
                     // Next arg is partition value, followed by payload
                     let partition_value =
-                        convert_partition_value(next_arg, partition_column.data_type())?;
+                        PartitionValue::parse_with_datatype(partition_column.data_type(), next_arg)
+                            .context(PartitionValueParseSnafu {})?;
                     (Some(partition_value), i + 2)
                 } else {
                     return Err(CliError::InvalidArgument {

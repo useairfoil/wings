@@ -4,7 +4,8 @@ use axum::http::uri::InvalidUri;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 use wings_metadata_core::{
-    admin::AdminError, offset_registry::OffsetRegistryError, resource::ResourceError,
+    admin::AdminError, offset_registry::OffsetRegistryError, partition::PartitionValueParseError,
+    resource::ResourceError,
 };
 
 /// CLI error types.
@@ -34,6 +35,8 @@ pub enum CliError {
     Io { source: std::io::Error },
     #[snafu(display("Invalid partition value"))]
     InvalidPartitionValue,
+    #[snafu(display("Failed to parse partition value"))]
+    PartitionValueParse { source: PartitionValueParseError },
     #[snafu(display("Invalid remote URL"))]
     InvalidRemoteUrl { source: InvalidUri },
     #[snafu(display("Invalid server URL"))]

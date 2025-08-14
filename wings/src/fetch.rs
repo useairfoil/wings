@@ -1,12 +1,14 @@
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_metadata_core::admin::{Admin, NamespaceName, TopicName};
+use wings_metadata_core::{
+    admin::{Admin, NamespaceName, TopicName},
+    partition::PartitionValue,
+};
 use wings_server_http::types::{FetchRequest, TopicRequest};
 
 use crate::{
-    error::{AdminSnafu, CliError, InvalidResourceNameSnafu, Result},
-    helpers::convert_partition_value,
+    error::{AdminSnafu, InvalidResourceNameSnafu, PartitionValueParseSnafu, Result},
     remote::RemoteArgs,
 };
 
@@ -68,14 +70,11 @@ impl FetchArgs {
 
         let client = reqwest::Client::new();
 
-        let partition_value = match (self.partition_value.clone(), topic.partition_column()) {
-            (None, None) => None,
-            (Some(partition_value), Some(partition_column)) => Some(convert_partition_value(
-                &partition_value,
-                partition_column.data_type(),
-            )?),
-            _ => return Err(CliError::InvalidPartitionValue),
-        };
+        let partition_value = PartitionValue::parse_with_datatype_option(
+            topic.partition_column_data_type(),
+            self.partition_value.as_ref().map(String::as_str),
+        )
+        .context(PartitionValueParseSnafu {})?;
 
         let request = FetchRequest {
             namespace: namespace_name.to_string(),

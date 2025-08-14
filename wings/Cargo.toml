@@ -18,7 +18,6 @@ axum.workspace = true
 bytesize.workspace = true
 clap.workspace = true
 datafusion.workspace = true
-hex.workspace = true
 nu-ansi-term = "0.50.1"
 object_store.workspace = true
 reqwest = { version = "0.11", features = [

@@ -18,7 +18,6 @@ bytes.workspace = true
 bytesize.workspace = true
 datafusion.workspace = true
 futures-util.workspace = true
-hex.workspace = true
 object_store.workspace = true
 parquet.workspace = true
 snafu.workspace = true

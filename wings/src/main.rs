@@ -12,7 +12,6 @@ mod debug_data;
 mod dev;
 mod error;
 mod fetch;
-mod helpers;
 mod http_client;
 mod observability;
 mod push;

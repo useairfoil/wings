@@ -103,6 +103,10 @@ impl Topic {
     pub fn partition_column(&self) -> Option<&FieldRef> {
         self.partition_key.map(|idx| &self.fields[idx])
     }
+
+    pub fn partition_column_data_type(&self) -> Option<&DataType> {
+        self.partition_column().map(|col| col.data_type())
+    }
 }
 
 /// Options for creating a namespace.

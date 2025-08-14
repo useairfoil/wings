@@ -6,15 +6,15 @@ use tokio_util::sync::CancellationToken;
 use wings_metadata_core::{
     admin::{Admin, TopicName},
     offset_registry::{OffsetLocation, OffsetRegistry},
+    partition::PartitionValue,
 };
 use wings_object_store::{LocalFileSystemFactory, ObjectStoreFactory};
 
 use crate::{
     error::{
-        AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, ObjectStoreSnafu,
-        OffsetRegistrySnafu, Result,
+        AdminSnafu, InvalidResourceNameSnafu, IoSnafu, ObjectStoreSnafu, OffsetRegistrySnafu,
+        PartitionValueParseSnafu, Result,
     },
-    helpers::convert_partition_value,
     remote::RemoteArgs,
 };
 
@@ -73,14 +73,11 @@ impl DebugDataArgs {
             .await
             .context(ObjectStoreSnafu {})?;
 
-        let partition_value = match (self.partition, topic.partition_column()) {
-            (None, None) => None,
-            (Some(value), Some(column)) => {
-                let value = convert_partition_value(&value, column.data_type())?;
-                Some(value)
-            }
-            _ => return Err(CliError::InvalidPartitionValue),
-        };
+        let partition_value = PartitionValue::parse_with_datatype_option(
+            topic.partition_column_data_type(),
+            self.partition.as_ref().map(String::as_str),
+        )
+        .context(PartitionValueParseSnafu {})?;
 
         let Some(offset_location) = offset_registry
             .offset_location(topic_name, partition_value, self.offset, SystemTime::now())

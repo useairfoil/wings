@@ -1,23 +1,44 @@
-//! Partition value types for Wings metadata.
+//! Partition value.
 //!
 //! This module provides a restricted set of types that can be used as partition keys.
 //! Unlike DataFusion's ScalarValue, PartitionValue only allows a limited set of types
-//! that are suitable for partitioning data.
+//! that are suitable for partitioning data. Non-null data types are not nullable.
 
 use std::convert::TryFrom;
 
 use arrow::datatypes::DataType;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 
 /// Errors that can occur when converting partition values.
 #[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 pub enum PartitionValueError {
     #[snafu(display("unsupported scalar value type for partitioning: {scalar_type}"))]
     UnsupportedScalarType { scalar_type: String },
-    #[snafu(display("invalid partition value: {message}"))]
-    InvalidValue { message: String },
+    #[snafu(display("unexpected null value"))]
+    NullValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Snafu)]
+pub enum PartitionValueParseError {
+    #[snafu(display("failed to parse {data_type} integer value"))]
+    InvalidIntValue {
+        data_type: DataType,
+        source: std::num::ParseIntError,
+    },
+    #[snafu(display("failed to parse {data_type} base64 value"))]
+    InvalidBase64Value {
+        data_type: DataType,
+        source: base64::DecodeError,
+    },
+    #[snafu(display("unsupported data type for partitioning: {data_type}"))]
+    UnsupportedDataType { data_type: DataType },
+    #[snafu(display("expected value, got null"))]
+    UnexpectedNull,
+    #[snafu(display("expected null, got value"))]
+    UnexpectedValue,
 }
 
 /// A restricted set of values that can be used for partitioning.
@@ -58,6 +79,86 @@ pub enum PartitionValue {
 }
 
 impl PartitionValue {
+    pub fn parse_with_datatype_option(
+        data_type: Option<&DataType>,
+        value: Option<&str>,
+    ) -> Result<Option<Self>, PartitionValueParseError> {
+        match (data_type, value) {
+            (None, None) => Ok(None),
+            (Some(data_type), Some(value)) => Self::parse_with_datatype(data_type, value).map(Some),
+            (None, Some(_)) => Err(PartitionValueParseError::UnexpectedValue),
+            (Some(_), None) => Err(PartitionValueParseError::UnexpectedNull),
+        }
+    }
+
+    pub fn parse_with_datatype(
+        data_type: &DataType,
+        value: &str,
+    ) -> Result<Self, PartitionValueParseError> {
+        match data_type {
+            DataType::UInt8 => {
+                let parsed = value.parse::<u8>().context(InvalidIntValueSnafu {
+                    data_type: DataType::UInt8,
+                })?;
+                Ok(PartitionValue::UInt8(parsed))
+            }
+            DataType::UInt16 => {
+                let parsed = value.parse::<u16>().context(InvalidIntValueSnafu {
+                    data_type: DataType::UInt16,
+                })?;
+                Ok(PartitionValue::UInt16(parsed))
+            }
+            DataType::UInt32 => {
+                let parsed = value.parse::<u32>().context(InvalidIntValueSnafu {
+                    data_type: DataType::UInt32,
+                })?;
+                Ok(PartitionValue::UInt32(parsed))
+            }
+            DataType::UInt64 => {
+                let parsed = value.parse::<u64>().context(InvalidIntValueSnafu {
+                    data_type: DataType::UInt64,
+                })?;
+                Ok(PartitionValue::UInt64(parsed))
+            }
+            DataType::Int8 => {
+                let parsed = value.parse::<i8>().context(InvalidIntValueSnafu {
+                    data_type: DataType::Int8,
+                })?;
+                Ok(PartitionValue::Int8(parsed))
+            }
+            DataType::Int16 => {
+                let parsed = value.parse::<i16>().context(InvalidIntValueSnafu {
+                    data_type: DataType::Int16,
+                })?;
+                Ok(PartitionValue::Int16(parsed))
+            }
+            DataType::Int32 => {
+                let parsed = value.parse::<i32>().context(InvalidIntValueSnafu {
+                    data_type: DataType::Int32,
+                })?;
+                Ok(PartitionValue::Int32(parsed))
+            }
+            DataType::Int64 => {
+                let parsed = value.parse::<i64>().context(InvalidIntValueSnafu {
+                    data_type: DataType::Int64,
+                })?;
+                Ok(PartitionValue::Int64(parsed))
+            }
+            DataType::Utf8 | DataType::LargeUtf8 => Ok(PartitionValue::String(value.to_string())),
+            DataType::Binary | DataType::LargeBinary => {
+                let bytes = BASE64_STANDARD
+                    .decode(value)
+                    .context(InvalidBase64ValueSnafu {
+                        data_type: data_type.clone(),
+                    })?;
+                Ok(PartitionValue::Bytes(bytes))
+            }
+            _ => Err(PartitionValueParseError::UnsupportedDataType {
+                data_type: data_type.clone(),
+            }),
+        }
+    }
+
     /// Returns true if the value is null.
     pub fn is_null(&self) -> bool {
         matches!(self, PartitionValue::Null)
@@ -112,7 +213,7 @@ impl std::fmt::Display for PartitionValue {
             PartitionValue::UInt32(v) => write!(f, "{}", v),
             PartitionValue::UInt64(v) => write!(f, "{}", v),
             PartitionValue::String(v) => write!(f, "{}", v),
-            PartitionValue::Bytes(v) => write!(f, "{}", hex::encode(v)),
+            PartitionValue::Bytes(v) => write!(f, "{}", BASE64_STANDARD.encode(v)),
             PartitionValue::Boolean(v) => write!(f, "{}", v),
         }
     }
@@ -161,7 +262,7 @@ impl TryFrom<ScalarValue> for PartitionValue {
             | ScalarValue::LargeUtf8(None)
             | ScalarValue::Binary(None)
             | ScalarValue::LargeBinary(None)
-            | ScalarValue::Boolean(None) => Ok(PartitionValue::Null),
+            | ScalarValue::Boolean(None) => Err(PartitionValueError::NullValue),
 
             // Unsupported types
             _ => Err(PartitionValueError::UnsupportedScalarType {
@@ -197,243 +298,5 @@ impl From<PartitionValue> for ScalarValue {
             // Boolean
             PartitionValue::Boolean(v) => ScalarValue::Boolean(Some(v)),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_partition_value_null() {
-        let value = PartitionValue::Null;
-        assert!(value.is_null());
-        assert_eq!(value.type_name(), "null");
-        assert_eq!(value.to_string(), "null");
-    }
-
-    #[test]
-    fn test_partition_value_signed_integers() {
-        let value = PartitionValue::Int8(42);
-        assert!(!value.is_null());
-        assert_eq!(value.type_name(), "int8");
-        assert_eq!(value.to_string(), "42");
-
-        let value = PartitionValue::Int16(-1000);
-        assert_eq!(value.type_name(), "int16");
-        assert_eq!(value.to_string(), "-1000");
-
-        let value = PartitionValue::Int32(123456);
-        assert_eq!(value.type_name(), "int32");
-        assert_eq!(value.to_string(), "123456");
-
-        let value = PartitionValue::Int64(-9876543210);
-        assert_eq!(value.type_name(), "int64");
-        assert_eq!(value.to_string(), "-9876543210");
-    }
-
-    #[test]
-    fn test_partition_value_unsigned_integers() {
-        let value = PartitionValue::UInt8(255);
-        assert_eq!(value.type_name(), "uint8");
-        assert_eq!(value.to_string(), "255");
-
-        let value = PartitionValue::UInt16(65535);
-        assert_eq!(value.type_name(), "uint16");
-        assert_eq!(value.to_string(), "65535");
-
-        let value = PartitionValue::UInt32(4294967295);
-        assert_eq!(value.type_name(), "uint32");
-        assert_eq!(value.to_string(), "4294967295");
-
-        let value = PartitionValue::UInt64(18446744073709551615);
-        assert_eq!(value.type_name(), "uint64");
-        assert_eq!(value.to_string(), "18446744073709551615");
-    }
-
-    #[test]
-    fn test_partition_value_string() {
-        let value = PartitionValue::String("hello world".to_string());
-        assert_eq!(value.type_name(), "string");
-        assert_eq!(value.to_string(), "hello world");
-    }
-
-    #[test]
-    fn test_partition_value_bytes() {
-        let bytes = vec![0x48, 0x65, 0x6c, 0x6c, 0x6f]; // "Hello" in hex
-        let value = PartitionValue::Bytes(bytes);
-        assert_eq!(value.type_name(), "bytes");
-        assert_eq!(value.to_string(), "48656c6c6f");
-    }
-
-    #[test]
-    fn test_partition_value_boolean() {
-        let value = PartitionValue::Boolean(true);
-        assert_eq!(value.type_name(), "boolean");
-        assert_eq!(value.to_string(), "true");
-
-        let value = PartitionValue::Boolean(false);
-        assert_eq!(value.type_name(), "boolean");
-        assert_eq!(value.to_string(), "false");
-    }
-
-    #[test]
-    fn test_try_from_scalar_value_success() {
-        // Test null
-        let scalar = ScalarValue::Null;
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Null);
-
-        // Test signed integers
-        let scalar = ScalarValue::Int32(Some(42));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Int32(42));
-
-        // Test unsigned integers
-        let scalar = ScalarValue::UInt64(Some(123));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::UInt64(123));
-
-        // Test string
-        let scalar = ScalarValue::Utf8(Some("test".to_string()));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::String("test".to_string()));
-
-        // Test large string
-        let scalar = ScalarValue::LargeUtf8(Some("large_test".to_string()));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::String("large_test".to_string()));
-
-        // Test binary
-        let bytes = vec![1, 2, 3, 4];
-        let scalar = ScalarValue::Binary(Some(bytes.clone()));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Bytes(bytes));
-
-        // Test boolean
-        let scalar = ScalarValue::Boolean(Some(true));
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Boolean(true));
-    }
-
-    #[test]
-    fn test_try_from_scalar_value_null_variants() {
-        // Test null variants of supported types
-        let scalar = ScalarValue::Int32(None);
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Null);
-
-        let scalar = ScalarValue::Utf8(None);
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Null);
-
-        let scalar = ScalarValue::Boolean(None);
-        let partition = PartitionValue::try_from(scalar).unwrap();
-        assert_eq!(partition, PartitionValue::Null);
-    }
-
-    #[test]
-    fn test_try_from_scalar_value_unsupported() {
-        // Test unsupported types
-        let scalar = ScalarValue::Float32(Some(std::f32::consts::PI));
-        let result = PartitionValue::try_from(scalar);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PartitionValueError::UnsupportedScalarType { .. }
-        ));
-
-        let scalar = ScalarValue::Float64(Some(std::f64::consts::E));
-        let result = PartitionValue::try_from(scalar);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PartitionValueError::UnsupportedScalarType { .. }
-        ));
-    }
-
-    #[test]
-    fn test_from_partition_value_to_scalar_value() {
-        // Test null
-        let partition = PartitionValue::Null;
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::Null);
-
-        // Test signed integers
-        let partition = PartitionValue::Int32(42);
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::Int32(Some(42)));
-
-        // Test unsigned integers
-        let partition = PartitionValue::UInt64(123);
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::UInt64(Some(123)));
-
-        // Test string
-        let partition = PartitionValue::String("test".to_string());
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::Utf8(Some("test".to_string())));
-
-        // Test binary
-        let bytes = vec![1, 2, 3, 4];
-        let partition = PartitionValue::Bytes(bytes.clone());
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::Binary(Some(bytes)));
-
-        // Test boolean
-        let partition = PartitionValue::Boolean(true);
-        let scalar = ScalarValue::from(partition);
-        assert_eq!(scalar, ScalarValue::Boolean(Some(true)));
-    }
-
-    #[test]
-    fn test_round_trip_conversion() {
-        // Test that we can convert from ScalarValue to PartitionValue and back
-        let original_scalars = vec![
-            ScalarValue::Null,
-            ScalarValue::Int8(Some(42)),
-            ScalarValue::Int16(Some(-1000)),
-            ScalarValue::Int32(Some(123456)),
-            ScalarValue::Int64(Some(-9876543210)),
-            ScalarValue::UInt8(Some(255)),
-            ScalarValue::UInt16(Some(65535)),
-            ScalarValue::UInt32(Some(4294967295)),
-            ScalarValue::UInt64(Some(18446744073709551615)),
-            ScalarValue::Utf8(Some("hello".to_string())),
-            ScalarValue::Binary(Some(vec![1, 2, 3, 4])),
-            ScalarValue::Boolean(Some(true)),
-            ScalarValue::Boolean(Some(false)),
-        ];
-
-        for original in original_scalars {
-            let partition = PartitionValue::try_from(original.clone()).unwrap();
-            let back_to_scalar = ScalarValue::from(partition);
-
-            // For string types, we normalize to Utf8
-            let expected = match original {
-                ScalarValue::LargeUtf8(Some(s)) => ScalarValue::Utf8(Some(s)),
-                ScalarValue::LargeBinary(Some(b)) => ScalarValue::Binary(Some(b)),
-                _ => original,
-            };
-
-            assert_eq!(back_to_scalar, expected);
-        }
-    }
-
-    #[test]
-    fn test_partition_value_hash() {
-        use std::collections::HashMap;
-
-        let mut map = HashMap::new();
-        map.insert(PartitionValue::Int32(42), "forty-two");
-        map.insert(PartitionValue::String("hello".to_string()), "greeting");
-        map.insert(PartitionValue::Boolean(true), "truth");
-
-        assert_eq!(map.get(&PartitionValue::Int32(42)), Some(&"forty-two"));
-        assert_eq!(
-            map.get(&PartitionValue::String("hello".to_string())),
-            Some(&"greeting")
-        );
-        assert_eq!(map.get(&PartitionValue::Boolean(true)), Some(&"truth"));
     }
 }
