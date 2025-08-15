@@ -6,6 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "2"
+default-members = ["wings"]
 members = [
     "wings",
     "wings_ingestor_core",
