@@ -126,16 +126,16 @@
           tag=''${GITHUB_REF#refs/tags/}
           base="ghcr.io/apibara/wings"
 
-          echo "::group::Pushing docker image to $''${tag}"
+          echo "::group::Pushing docker image to ''${tag}"
           skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${tag}-x86_64"
           skopeo copy "docker-archive:''${IMAGE_ARCHIVE_aarch64}" "docker://''${base}:''${tag}-aarch64"
           echo "::endgroup::"
 
-          images=("''${base}:''${tag}-x86_64" "''${base}:''${tag}-aarch64")
-          echo "::group::Create manifest ''${base}:''${tag}"
-          manifest="''${base}:''${tag}"
-          buildah manifest create "''${manifest}" "''${images[@]}"
-          echo "::endgroup::"
+          # images=("''${base}:''${tag}-x86_64" "''${base}:''${tag}-aarch64")
+          # echo "::group::Create manifest ''${base}:''${tag}"
+          # manifest="''${base}:''${tag}"
+          # buildah manifest create "''${manifest}" "''${images[@]}"
+          # echo "::endgroup::"
         '';
       in
       {
