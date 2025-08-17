@@ -27,6 +27,11 @@ jobs:
 
   publish-docker-image:
     name: "Docker Image: Publish"
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
     needs: [build-linux-x86_64, build-linux-aarch64]
     runs-on: warp-ubuntu-latest-x64-4x
     steps:
