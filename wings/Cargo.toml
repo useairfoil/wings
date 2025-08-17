@@ -1,6 +1,6 @@
 [package]
 name = "wings"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
