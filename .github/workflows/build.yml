@@ -30,7 +30,6 @@ jobs:
           fi
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix build .#${{ inputs.target }} -L --accept-flake-config
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.artifact_name != '' }}
