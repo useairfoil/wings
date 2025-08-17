@@ -4,14 +4,17 @@ use async_trait::async_trait;
 use datafusion::{
     catalog::{CatalogProvider, SchemaProvider, TableProvider},
     error::DataFusionError,
-    execution::SessionStateBuilder,
+    execution::{
+        SessionStateBuilder, object_store::ObjectStoreRegistry, runtime_env::RuntimeEnvBuilder,
+    },
     prelude::{SessionConfig, SessionContext},
 };
 use tracing::debug;
 use wings_metadata_core::{
-    admin::{Admin, NamespaceName, Topic, collect_namespace_topics},
+    admin::{Admin, Namespace, NamespaceName, Topic, collect_namespace_topics},
     offset_registry::OffsetRegistry,
 };
+use wings_object_store::ObjectStoreFactory;
 
 use crate::{query::topic::TopicTableProvider, system_tables::SystemSchemaProvider};
 
@@ -21,7 +24,9 @@ pub const SYSTEM_SCHEMA: &str = "system";
 
 #[derive(Clone)]
 pub struct NamespaceProvider {
-    namespace: NamespaceName,
+    offset_registry: Arc<dyn OffsetRegistry>,
+    object_store_factory: Arc<dyn ObjectStoreFactory>,
+    namespace: Namespace,
     topics: Vec<Topic>,
     system_schema_provider: Arc<SystemSchemaProvider>,
 }
@@ -30,20 +35,24 @@ impl NamespaceProvider {
     pub async fn new(
         admin: Arc<dyn Admin>,
         offset_registry: Arc<dyn OffsetRegistry>,
-        namespace: NamespaceName,
+        object_store_factory: Arc<dyn ObjectStoreFactory>,
+        namespace_name: NamespaceName,
     ) -> Result<Self, DataFusionError> {
-        let topics = collect_namespace_topics(&admin, &namespace).await?;
+        let namespace = admin.get_namespace(namespace_name.clone()).await?;
+        let topics = collect_namespace_topics(&admin, &namespace_name).await?;
         let system_schema_provider =
-            SystemSchemaProvider::new(admin.clone(), offset_registry.clone(), namespace.clone());
+            SystemSchemaProvider::new(admin.clone(), offset_registry.clone(), namespace_name);
 
         Ok(Self {
+            offset_registry,
+            object_store_factory,
             namespace,
             topics,
             system_schema_provider: Arc::new(system_schema_provider),
         })
     }
 
-    pub fn new_session_context(&self) -> SessionContext {
+    pub async fn new_session_context(&self) -> Result<SessionContext, DataFusionError> {
         let config = SessionConfig::new()
             .with_information_schema(true)
             .with_default_catalog_and_schema(DEFAULT_CATALOG, DEFAULT_SCHEMA);
@@ -54,7 +63,18 @@ impl NamespaceProvider {
 
         ctx.register_catalog(DEFAULT_CATALOG, Arc::new(self.clone()));
 
-        ctx
+        let object_store = self
+            .object_store_factory
+            .create_object_store(self.namespace.default_object_store_config.clone())
+            .await?;
+
+        let object_store_url = self
+            .namespace
+            .default_object_store_config
+            .to_object_store_url()?;
+        ctx.register_object_store(object_store_url.as_ref(), object_store);
+
+        Ok(ctx)
     }
 }
 
@@ -100,7 +120,13 @@ impl SchemaProvider for NamespaceProvider {
             .topics
             .iter()
             .find(|topic| topic.name.id == name)
-            .map(|topic| TopicTableProvider::new_provider(topic.clone()));
+            .map(|topic| {
+                TopicTableProvider::new_provider(
+                    self.offset_registry.clone(),
+                    self.namespace.clone(),
+                    topic.clone(),
+                )
+            });
         Ok(provider)
     }
 }

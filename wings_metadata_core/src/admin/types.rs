@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaBuilder, SchemaRef};
 use bytesize::ByteSize;
+use datafusion::{error::DataFusionError, execution::object_store::ObjectStoreUrl};
 
 use crate::resource_type;
 
@@ -156,6 +157,12 @@ impl TopicOptions {
             fields: fields.into(),
             partition_key,
         }
+    }
+}
+
+impl SecretName {
+    pub fn to_object_store_url(&self) -> Result<ObjectStoreUrl, DataFusionError> {
+        ObjectStoreUrl::parse(format!("wings://{}", self.id))
     }
 }
 

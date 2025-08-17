@@ -67,6 +67,12 @@ pub struct ListTopicPartitionStatesResponse {
 }
 
 impl OffsetLocation {
+    pub fn as_folio(&self) -> Option<&FolioLocation> {
+        match self {
+            OffsetLocation::Folio(location) => Some(location),
+        }
+    }
+
     pub fn start_offset(&self) -> u64 {
         match self {
             OffsetLocation::Folio(location) => location.start_offset,

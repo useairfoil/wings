@@ -1,4 +1,5 @@
 use std::{
+    ops::RangeInclusive,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -74,6 +75,23 @@ impl PaginatedOffsetLocationStream {
             inner: Box::pin(inner),
         }
     }
+
+    pub fn new_in_range(
+        offset_registry: Arc<dyn OffsetRegistry>,
+        topic_name: TopicName,
+        partition_value: Option<PartitionValue>,
+        offset_range: RangeInclusive<u64>,
+    ) -> Self {
+        let inner = gen_offset_location_stream_in_range(
+            offset_registry,
+            topic_name,
+            partition_value,
+            offset_range,
+        );
+        Self {
+            inner: Box::pin(inner),
+        }
+    }
 }
 
 impl Stream for PaginatedPartitionStateStream {
@@ -126,6 +144,39 @@ pub fn gen_offset_location_stream(
     async_stream::stream! {
         let mut current_offset = 0;
         loop {
+            let response = offset_registry
+                .offset_location(
+                    topic_name.clone(),
+                    partition_value.clone(),
+                    current_offset,
+                    SystemTime::now(),
+                )
+                .await?;
+
+            let Some(location) = response else {
+                break;
+            };
+
+            current_offset = location.end_offset() + 1;
+
+            yield Ok((topic_name.clone(), partition_value.clone(), location));
+        }
+    }
+}
+
+pub fn gen_offset_location_stream_in_range(
+    offset_registry: Arc<dyn OffsetRegistry>,
+    topic_name: TopicName,
+    partition_value: Option<PartitionValue>,
+    offset_range: RangeInclusive<u64>,
+) -> impl OffsetLocationStream {
+    async_stream::stream! {
+        let mut current_offset = *offset_range.start();
+        loop {
+            if current_offset > *offset_range.end() {
+                break;
+            }
+
             let response = offset_registry
                 .offset_location(
                     topic_name.clone(),

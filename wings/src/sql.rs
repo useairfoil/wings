@@ -4,10 +4,11 @@ use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::NamespaceName;
+use wings_object_store::LocalFileSystemFactory;
 use wings_server_core::query::NamespaceProvider;
 
 use crate::{
-    error::{DataFusionSnafu, InvalidResourceNameSnafu, Result},
+    error::{DataFusionSnafu, InvalidResourceNameSnafu, ObjectStoreSnafu, Result},
     remote::RemoteArgs,
 };
 
@@ -20,6 +21,10 @@ pub struct SqlArgs {
     /// Namespace (format: tenants/<tenant>/namespaces/<namespace>)
     #[clap(default_value = "tenants/default/namespaces/default")]
     namespace: String,
+
+    /// The base path where the data is stored
+    #[arg(long)]
+    base_path: String,
 
     #[clap(flatten)]
     remote: RemoteArgs,
@@ -35,12 +40,22 @@ impl SqlArgs {
                 resource: "namespace",
             })?;
 
-        let namespace =
-            NamespaceProvider::new(Arc::new(admin), Arc::new(offset_registry), namespace_name)
-                .await
-                .context(DataFusionSnafu {})?;
+        let object_store_factory =
+            LocalFileSystemFactory::new(self.base_path).context(ObjectStoreSnafu {})?;
 
-        let ctx = namespace.new_session_context();
+        let namespace = NamespaceProvider::new(
+            Arc::new(admin),
+            Arc::new(offset_registry),
+            Arc::new(object_store_factory),
+            namespace_name,
+        )
+        .await
+        .context(DataFusionSnafu {})?;
+
+        let ctx = namespace
+            .new_session_context()
+            .await
+            .context(DataFusionSnafu {})?;
 
         let result = ctx.sql(&self.query).await.context(DataFusionSnafu {})?;
 

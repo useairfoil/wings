@@ -1,3 +1,4 @@
+pub mod helpers;
 mod namespace_provider;
 mod topic;
 

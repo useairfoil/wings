@@ -20,7 +20,6 @@ pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 /// based on configurations referenced by secret names. The actual secret
 /// resolution and object store instantiation is left to the implementor.
 ///
-
 #[async_trait::async_trait]
 pub trait ObjectStoreFactory: Send + Sync {
     /// Create an ObjectStore instance from the configuration referenced by the secret name.
