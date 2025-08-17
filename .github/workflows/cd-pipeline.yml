@@ -15,7 +15,7 @@ jobs:
     with:
       os: warp-ubuntu-latest-x64-4x
       target: image
-      artifact_name: "docker-x86_64-linux"
+      artifact_name: "docker-x86_64-linux.tar.gz"
 
   build-linux-aarch64:
     name: "Linux aarch64: Build"
@@ -23,7 +23,7 @@ jobs:
     with:
       os: warp-ubuntu-latest-arm64-8x
       target: image
-      artifact_name: "docker-aarch64-linux"
+      artifact_name: "docker-aarch64-linux.tar.gz"
 
   publish-docker-image:
     name: "Docker Image: Publish"
