@@ -49,7 +49,7 @@ jobs:
           path: /tmp/aarch64
       - name: Publish docker image
         run: |
-          nix develop .#ci --accept-flake-config -c publish-docker-image
+          nix develop .#ci --accept-flake-config -c publish-docker-image --impure
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
