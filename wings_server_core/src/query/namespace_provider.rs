@@ -4,9 +4,7 @@ use async_trait::async_trait;
 use datafusion::{
     catalog::{CatalogProvider, SchemaProvider, TableProvider},
     error::DataFusionError,
-    execution::{
-        SessionStateBuilder, object_store::ObjectStoreRegistry, runtime_env::RuntimeEnvBuilder,
-    },
+    execution::SessionStateBuilder,
     prelude::{SessionConfig, SessionContext},
 };
 use tracing::debug;

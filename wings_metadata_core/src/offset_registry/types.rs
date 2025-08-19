@@ -73,6 +73,12 @@ impl OffsetLocation {
         }
     }
 
+    pub fn file_ref(&self) -> &str {
+        match self {
+            OffsetLocation::Folio(location) => &location.file_ref,
+        }
+    }
+
     pub fn start_offset(&self) -> u64 {
         match self {
             OffsetLocation::Folio(location) => location.start_offset,

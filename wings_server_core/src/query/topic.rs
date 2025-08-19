@@ -1,29 +1,27 @@
-use std::{any::Any, future, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::{
-    catalog::{Session, TableProvider, memory::DataSourceExec},
-    datasource::{
-        TableType,
-        listing::PartitionedFile,
-        physical_plan::{FileGroup, FileScanConfigBuilder, ParquetSource},
-    },
+    catalog::{Session, TableProvider},
+    datasource::TableType,
     error::DataFusionError,
-    execution::object_store::ObjectStoreUrl,
     logical_expr::TableProviderFilterPushDown,
-    physical_plan::ExecutionPlan,
+    physical_plan::{ExecutionPlan, empty::EmptyExec, union::UnionExec},
     prelude::Expr,
 };
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use tracing::debug;
 use wings_metadata_core::{
     admin::{Namespace, Topic},
-    offset_registry::{OffsetRegistry, OffsetRegistryError, PaginatedOffsetLocationStream},
+    offset_registry::{OffsetLocation, OffsetRegistry, PaginatedOffsetLocationStream},
     partition::PartitionValue,
 };
 
-use crate::query::helpers::{find_partition_column_value, validate_offset_filters};
+use crate::query::{
+    exec::FolioExec,
+    helpers::{find_partition_column_value, validate_offset_filters},
+};
 
 pub struct TopicTableProvider {
     offset_registry: Arc<dyn OffsetRegistry>,
@@ -85,28 +83,29 @@ impl TableProvider for TopicTableProvider {
 
         let offset_range = validate_offset_filters(filters)?;
 
-        let partition_value = if let Some(partition_column) = self.topic.partition_column() {
-            let partition_value: PartitionValue =
-                find_partition_column_value(partition_column.name(), filters)?
-                    .try_into()
-                    .map_err(|err| {
-                        DataFusionError::Plan(format!(
-                            "Failed to parse partition column value: {err}"
-                        ))
-                    })?;
+        let (partition_value, partition_column) =
+            if let Some(partition_column) = self.topic.partition_column() {
+                let partition_value: PartitionValue =
+                    find_partition_column_value(partition_column.name(), filters)?
+                        .try_into()
+                        .map_err(|err| {
+                            DataFusionError::Plan(format!(
+                                "Failed to parse partition column value: {err}"
+                            ))
+                        })?;
 
-            if partition_column.data_type() != &partition_value.data_type() {
-                return Err(DataFusionError::Plan(format!(
-                    "Partition column data type mismatch. Have {:?}, expected {:?}",
-                    partition_value.data_type(),
-                    partition_column.data_type()
-                )));
-            }
+                if partition_column.data_type() != &partition_value.data_type() {
+                    return Err(DataFusionError::Plan(format!(
+                        "Partition column data type mismatch. Have {:?}, expected {:?}",
+                        partition_value.data_type(),
+                        partition_column.data_type()
+                    )));
+                }
 
-            Some(partition_value)
-        } else {
-            None
-        };
+                (Some(partition_value), Some(partition_column.clone()))
+            } else {
+                (None, None)
+            };
 
         let offset_location_stream = PaginatedOffsetLocationStream::new_in_range(
             self.offset_registry.clone(),
@@ -121,27 +120,28 @@ impl TableProvider for TopicTableProvider {
             .namespace
             .default_object_store_config
             .to_object_store_url()?;
-        let file_source = Arc::new(ParquetSource::default());
-        let file_group = FileGroup::new(
-            locations
-                .into_iter()
-                .map(|(_, _, location)| {
-                    let loc = location.as_folio().unwrap();
-                    PartitionedFile::new(loc.file_ref.clone(), loc.size_bytes)
-                })
-                .collect(),
-        );
-        let config = FileScanConfigBuilder::new(
-            object_store_url,
-            self.topic.schema_without_partition_column(),
-            file_source,
-        )
-        .with_limit(limit)
-        // .with_projection(projection.cloned())
-        .with_file_group(file_group)
-        .build();
 
-        Ok(DataSourceExec::from_data_source(config))
+        let schema = self.topic.schema_with_offset_column();
+        let file_schema = self.topic.schema_without_partition_column();
+        let locations_exec = locations
+            .into_iter()
+            .map(|(_, partition_value, location)| match location {
+                OffsetLocation::Folio(folio) => FolioExec::try_new_exec(
+                    schema.clone(),
+                    file_schema.clone(),
+                    partition_value,
+                    partition_column.clone(),
+                    folio,
+                    object_store_url.clone(),
+                ),
+            })
+            .collect::<Result<Vec<_>, DataFusionError>>()?;
+
+        match locations_exec.as_slice() {
+            [] => Ok(Arc::new(EmptyExec::new(schema))),
+            [exec] => Ok(exec.clone()),
+            _ => Ok(Arc::new(UnionExec::new(locations_exec))),
+        }
     }
 }
 

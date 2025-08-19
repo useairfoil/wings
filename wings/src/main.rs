@@ -61,6 +61,7 @@ enum Commands {
 }
 
 #[tokio::main]
+#[snafu::report]
 async fn main() -> Result<()> {
     init_observability(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
