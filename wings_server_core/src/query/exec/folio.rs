@@ -163,7 +163,17 @@ impl ExecutionPlan for FolioExec {
 
 impl DisplayAs for FolioExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Folio: location=[{}]", &self.location.file_ref)
+        let file_start = self.location.offset_bytes;
+        let file_end = file_start + self.location.size_bytes;
+        write!(
+            f,
+            "FolioExec: location=[{}[{}..{}]] start_offset=[{}], end_offset=[{}]",
+            &self.location.file_ref,
+            file_start,
+            file_end,
+            self.location.start_offset,
+            self.location.end_offset
+        )
     }
 }
 
