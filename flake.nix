@@ -75,8 +75,11 @@
             pathsToLink = [ "/bin" ];
           };
           config = {
-            Cmd = [ "/bin/wings" ];
-            ExposedPorts = {};
+            Entrypoint = "/bin/wings";
+            ExposedPorts = {
+              "7777" = { };
+              "7780" = { };
+            };
           };
         };
 
