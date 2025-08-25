@@ -49,9 +49,10 @@ message ListTopicPartitionStatesResponse {
 message BatchToCommit {
   string topic = 1;
   optional PartitionValue partition = 2;
-  uint32 num_messages = 3;
-  uint64 offset_bytes = 4;
-  uint64 batch_size_bytes = 5;
+  repeated RecordBatchMetadata metadata = 3;
+  uint32 num_messages = 4;
+  uint64 offset_bytes = 5;
+  uint64 batch_size_bytes = 6;
 }
 
 message CommittedBatch {
@@ -92,4 +93,8 @@ message PartitionValue {
     bytes bytes_value = 11;
     bool bool_value = 12;
   }
+}
+
+message RecordBatchMetadata {
+    optional google.protobuf.Timestamp timestamp = 1;
 }

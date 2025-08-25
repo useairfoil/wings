@@ -54,10 +54,16 @@ impl FolioExec {
 
         let file_source = Arc::new(ParquetSource::default());
         let config = FileScanConfigBuilder::new(object_store_url, file_schema, file_source)
-            .with_file(PartitionedFile::new(
-                &location.file_ref,
-                location.size_bytes,
-            ))
+            .with_file(
+                PartitionedFile::new(
+                    &location.file_ref,
+                    location.offset_bytes + location.size_bytes,
+                )
+                .with_range(
+                    location.offset_bytes as _,
+                    (location.offset_bytes + location.size_bytes) as _,
+                ),
+            )
             .build();
         let inner = DataSourceExec::from_data_source(config);
 

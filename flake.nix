@@ -156,6 +156,7 @@
             ];
             inputsFrom = [ binary ];
             nativeBuildInputs = with pkgs; [
+              tcl
               opentelemetry-collector
             ];
           };

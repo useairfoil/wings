@@ -62,10 +62,14 @@ where
         file_ref: String,
         batches: &[BatchToCommit],
     ) -> OffsetRegistryResult<Vec<CommittedBatch>> {
+        let batches = batches
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
         let request = pb::CommitFolioRequest {
             namespace: namespace.to_string(),
             file_ref,
-            batches: batches.iter().map(Into::into).collect(),
+            batches,
         };
 
         self.client

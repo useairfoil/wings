@@ -1,5 +1,7 @@
 //! Conversions between offset registry domain types and protobuf types.
 
+use std::time::{Duration, SystemTime};
+
 use snafu::{ResultExt, ensure};
 
 use crate::admin::TopicName;
@@ -98,10 +100,16 @@ impl TryFrom<pb::BatchToCommit> for BatchToCommit {
             })?;
 
         let partition_value = batch.partition.map(TryFrom::try_from).transpose()?;
+        let metadata = batch
+            .metadata
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             topic_name,
             partition_value,
+            metadata,
             num_messages: batch.num_messages,
             offset_bytes: batch.offset_bytes,
             batch_size_bytes: batch.batch_size_bytes,
@@ -109,15 +117,23 @@ impl TryFrom<pb::BatchToCommit> for BatchToCommit {
     }
 }
 
-impl From<&BatchToCommit> for pb::BatchToCommit {
-    fn from(batch: &BatchToCommit) -> Self {
-        pb::BatchToCommit {
+impl TryFrom<&BatchToCommit> for pb::BatchToCommit {
+    type Error = OffsetRegistryError;
+
+    fn try_from(batch: &BatchToCommit) -> Result<Self, Self::Error> {
+        let metadata = batch
+            .metadata
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(pb::BatchToCommit {
             topic: batch.topic_name.to_string(),
             partition: batch.partition_value.as_ref().map(Into::into),
+            metadata,
             num_messages: batch.num_messages,
             offset_bytes: batch.offset_bytes,
             batch_size_bytes: batch.batch_size_bytes,
-        }
+        })
     }
 }
 
@@ -245,5 +261,58 @@ impl From<&PartitionValue> for pb::PartitionValue {
         };
 
         pb::PartitionValue { value: Some(value) }
+    }
+}
+
+impl TryFrom<pb::RecordBatchMetadata> for RecordBatchMetadata {
+    type Error = OffsetRegistryError;
+
+    fn try_from(value: pb::RecordBatchMetadata) -> Result<Self, Self::Error> {
+        let Some(timestamp) = value.timestamp else {
+            return Ok(RecordBatchMetadata { timestamp: None });
+        };
+
+        assert!(timestamp.seconds >= 0);
+        assert!(timestamp.nanos >= 0);
+
+        let millis_since_epoch =
+            (timestamp.seconds as u64) * 1000 + (timestamp.nanos as u64) / 1_000_000;
+        let duration_since_epoch = Duration::from_millis(millis_since_epoch);
+        let timestamp = SystemTime::UNIX_EPOCH
+            .checked_add(duration_since_epoch)
+            .ok_or_else(|| OffsetRegistryError::Internal {
+                message: "failed to create RecordBatchMetadata.timestamp from Protobuf".to_string(),
+            })?;
+
+        Ok(RecordBatchMetadata {
+            timestamp: Some(timestamp),
+        })
+    }
+}
+
+impl TryFrom<&RecordBatchMetadata> for pb::RecordBatchMetadata {
+    type Error = OffsetRegistryError;
+
+    fn try_from(meta: &RecordBatchMetadata) -> Result<Self, Self::Error> {
+        let timestamp = meta
+            .timestamp
+            .map(|ts| {
+                let duration_since_epoch =
+                    ts.duration_since(SystemTime::UNIX_EPOCH).map_err(|_| {
+                        OffsetRegistryError::Internal {
+                            message: "failed to convert RecordBatchMetadata.timestamp to Protobuf"
+                                .to_string(),
+                        }
+                    })?;
+                let seconds = duration_since_epoch.as_secs();
+                let nanos = duration_since_epoch.subsec_nanos();
+                Ok(prost_types::Timestamp {
+                    seconds: seconds as _,
+                    nanos: nanos as _,
+                })
+            })
+            .transpose()?;
+
+        Ok(pb::RecordBatchMetadata { timestamp })
     }
 }

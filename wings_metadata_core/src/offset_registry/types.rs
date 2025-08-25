@@ -1,6 +1,15 @@
 //! Data types for the offset registry.
 
+use std::time::SystemTime;
+
 use crate::{admin::TopicName, partition::PartitionValue};
+
+/// Represents metadata associated with a record batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordBatchMetadata {
+    /// The requested timestamp for the batch.
+    pub timestamp: Option<SystemTime>,
+}
 
 /// A batch that needs to be committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,6 +18,8 @@ pub struct BatchToCommit {
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
+    /// The metadata associated with each record batch.
+    pub metadata: Vec<RecordBatchMetadata>,
     /// The number of messages in the batch.
     pub num_messages: u32,
     /// The start offset of the batch in the folio file.
