@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Trait for generating unique IDs for folios.
-pub trait FolioIdGenerator {
+pub trait FolioIdGenerator: Send + Sync + 'static {
     fn generate_id(&self) -> String;
 }
 

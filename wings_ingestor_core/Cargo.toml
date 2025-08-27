@@ -29,3 +29,4 @@ wings-metadata-core = { path = "../wings_metadata_core" }
 
 [dev-dependencies]
 bytesize.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

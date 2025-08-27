@@ -133,6 +133,36 @@ impl NamespaceOptions {
             frozen_object_store_config: None,
         }
     }
+
+    /// Change the flush size for the namespace.
+    pub fn with_flush_size(mut self, flush_size: ByteSize) -> Self {
+        self.flush_size = flush_size;
+        self
+    }
+
+    /// Change the flush interval for the namespace.
+    pub fn with_flush_interval(mut self, flush_interval: Duration) -> Self {
+        self.flush_interval = flush_interval;
+        self
+    }
+
+    /// Change the default object store configuration for the namespace.
+    pub fn with_default_object_store_config(
+        mut self,
+        default_object_store_config: SecretName,
+    ) -> Self {
+        self.default_object_store_config = default_object_store_config;
+        self
+    }
+
+    /// Change the frozen object store configuration for the namespace.
+    pub fn with_frozen_object_store_config(
+        mut self,
+        frozen_object_store_config: Option<SecretName>,
+    ) -> Self {
+        self.frozen_object_store_config = frozen_object_store_config;
+        self
+    }
 }
 
 /// Options for creating a topic.

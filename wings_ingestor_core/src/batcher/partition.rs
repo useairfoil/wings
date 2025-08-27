@@ -20,6 +20,7 @@ const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 /// Combines multiple partition batches into a single folio.
 pub struct PartitionFolioWriter {
     writer: ArrowWriter<Vec<u8>>,
+    schema: SchemaRef,
     batches: Vec<BatchContext>,
 }
 
@@ -42,14 +43,14 @@ impl PartitionFolioWriter {
 
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
-        let writer = ArrowWriter::try_new(buffer, schema, write_properties.into()).context(
-            ParquetSnafu {
+        let writer = ArrowWriter::try_new(buffer, schema.clone(), write_properties.into())
+            .context(ParquetSnafu {
                 message: "failed to initialize writer",
-            },
-        )?;
+            })?;
 
         Ok(Self {
             writer,
+            schema,
             batches: Vec::new(),
         })
     }
@@ -63,6 +64,14 @@ impl PartitionFolioWriter {
         batch: &RecordBatch,
         reply: WriteReplySender,
     ) -> std::result::Result<usize, ReplyWithError> {
+        // The writer will error if the schema does not match (which is good!), but it will also become poisoned.
+        if self.schema != batch.schema() {
+            let error = IngestorError::Schema {
+                message: "batch schema does not match writer's schema".to_string(),
+            };
+            return Err(ReplyWithError { reply, error });
+        }
+
         let initial_size = self.buffer_size();
 
         if let Err(err) = self.writer.write(batch) {

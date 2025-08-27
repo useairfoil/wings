@@ -60,7 +60,7 @@ impl BatchIngestor {
         }
     }
 
-    async fn run(mut self, ct: CancellationToken) -> Result<()> {
+    pub async fn run(mut self, ct: CancellationToken) -> Result<()> {
         let _ct_guard = ct.child_token().drop_guard();
         let mut folio_timer = DelayQueue::new();
         let mut folio_writer = NamespaceFolioWriter::default();
