@@ -5,7 +5,7 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::NamespaceName;
 use wings_object_store::LocalFileSystemFactory;
-use wings_server_core::query::NamespaceProvider;
+use wings_server_core::query::{NamespaceProvider, NamespaceProviderFactory};
 
 use crate::{
     error::{DataFusionSnafu, InvalidResourceNameSnafu, ObjectStoreSnafu, Result},
@@ -43,14 +43,16 @@ impl SqlArgs {
         let object_store_factory =
             LocalFileSystemFactory::new(self.base_path).context(ObjectStoreSnafu {})?;
 
-        let namespace = NamespaceProvider::new(
+        let factory = NamespaceProviderFactory::new(
             Arc::new(admin),
             Arc::new(offset_registry),
             Arc::new(object_store_factory),
-            namespace_name,
-        )
-        .await
-        .context(DataFusionSnafu {})?;
+        );
+
+        let namespace = factory
+            .create_provider(namespace_name)
+            .await
+            .context(DataFusionSnafu {})?;
 
         let ctx = namespace
             .new_session_context()

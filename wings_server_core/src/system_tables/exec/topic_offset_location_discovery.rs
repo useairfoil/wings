@@ -58,7 +58,7 @@ impl TopicOffsetLocationDiscoveryExec {
             Field::new("tenant", DataType::Utf8View, false),
             Field::new("namespace", DataType::Utf8View, false),
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-            Field::new("partition_value", DataType::Utf8View, false),
+            Field::new("partition_value", DataType::Utf8View, true),
             Field::new("start_offset", DataType::UInt64, false),
             Field::new("end_offset", DataType::UInt64, false),
             Field::new("location_type", DataType::Utf8View, false),

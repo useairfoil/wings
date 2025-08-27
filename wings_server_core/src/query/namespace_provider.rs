@@ -21,12 +21,46 @@ pub const DEFAULT_SCHEMA: &str = "public";
 pub const SYSTEM_SCHEMA: &str = "system";
 
 #[derive(Clone)]
+pub struct NamespaceProviderFactory {
+    admin: Arc<dyn Admin>,
+    offset_registry: Arc<dyn OffsetRegistry>,
+    object_store_factory: Arc<dyn ObjectStoreFactory>,
+}
+
+#[derive(Clone)]
 pub struct NamespaceProvider {
     offset_registry: Arc<dyn OffsetRegistry>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
     namespace: Namespace,
     topics: Vec<Topic>,
     system_schema_provider: Arc<SystemSchemaProvider>,
+}
+
+impl NamespaceProviderFactory {
+    pub fn new(
+        admin: Arc<dyn Admin>,
+        offset_registry: Arc<dyn OffsetRegistry>,
+        object_store_factory: Arc<dyn ObjectStoreFactory>,
+    ) -> Self {
+        Self {
+            admin,
+            offset_registry,
+            object_store_factory,
+        }
+    }
+
+    pub async fn create_provider(
+        &self,
+        namespace_name: NamespaceName,
+    ) -> Result<NamespaceProvider, DataFusionError> {
+        NamespaceProvider::new(
+            self.admin.clone(),
+            self.offset_registry.clone(),
+            self.object_store_factory.clone(),
+            namespace_name,
+        )
+        .await
+    }
 }
 
 impl NamespaceProvider {

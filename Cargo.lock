@@ -4641,6 +4641,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "wings-ingestor-core",
  "wings-metadata-core",
  "wings-object-store",
 ]

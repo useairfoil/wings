@@ -61,6 +61,7 @@ pub struct FolioLocation {
     pub end_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionValueState {
     pub partition_value: Option<PartitionValue>,
     pub next_offset: u64,

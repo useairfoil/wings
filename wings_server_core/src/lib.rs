@@ -5,6 +5,5 @@
 
 pub mod datafusion_helpers;
 pub mod error;
-pub mod fetcher;
 pub mod query;
 pub mod system_tables;

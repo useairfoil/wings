@@ -32,7 +32,7 @@ struct PartitionKey {
 /// It's primarily intended for testing and development purposes.
 /// State for a single namespace
 #[derive(Debug, Clone)]
-struct NamespaceOffsetState {
+struct TopicOffsetState {
     /// Maps partition keys to their offset tracking
     partitions: BTreeMap<PartitionKey, PartitionOffsetState>,
 }
@@ -57,15 +57,15 @@ struct BatchInfo {
 
 #[derive(Debug, Clone)]
 pub struct InMemoryOffsetRegistry {
-    /// Maps namespace names to their offset state
-    namespaces: Arc<DashMap<NamespaceName, NamespaceOffsetState>>,
+    /// Maps topic names to their offset state
+    topics: Arc<DashMap<TopicName, TopicOffsetState>>,
 }
 
 impl InMemoryOffsetRegistry {
     /// Create a new in-memory batch committer.
     pub fn new() -> Self {
         Self {
-            namespaces: Arc::new(DashMap::new()),
+            topics: Arc::new(DashMap::new()),
         }
     }
 }
@@ -78,13 +78,6 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         file_ref: String,
         batches: &[BatchToCommit],
     ) -> OffsetRegistryResult<Vec<CommittedBatch>> {
-        let mut namespace_state =
-            self.namespaces
-                .entry(namespace.clone())
-                .or_insert_with(|| NamespaceOffsetState {
-                    partitions: BTreeMap::new(),
-                });
-
         let mut seen_partitions = HashSet::new();
         for batch in batches {
             if !seen_partitions.insert((batch.topic_name.clone(), batch.partition_value.clone())) {
@@ -98,10 +91,20 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         let mut committed_batches = Vec::with_capacity(batches.len());
 
         for batch in batches {
+            // This should have been checked already by the caller.
+            assert_eq!(batch.topic_name.parent(), &namespace);
+
             let partition_key =
                 PartitionKey::new(batch.topic_name.clone(), batch.partition_value.clone());
 
-            let partition_state = namespace_state
+            let mut topic_state =
+                self.topics
+                    .entry(batch.topic_name.clone())
+                    .or_insert_with(|| TopicOffsetState {
+                        partitions: BTreeMap::new(),
+                    });
+
+            let partition_state = topic_state
                 .partitions
                 .entry(partition_key.clone())
                 .or_insert_with(|| PartitionOffsetState {
@@ -141,17 +144,13 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         offset: u64,
         _deadline: SystemTime,
     ) -> OffsetRegistryResult<Option<OffsetLocation>> {
-        let namespace_name = topic.parent().clone();
-
-        let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
-            OffsetRegistryError::NamespaceNotFound {
-                namespace: namespace_name.clone(),
-            }
-        })?;
+        let Some(topic_state) = self.topics.get(&topic) else {
+            return Ok(None);
+        };
 
         let partition_key = PartitionKey::new(topic.clone(), partition_value.clone());
 
-        let Some(partition_state) = namespace_state.partitions.get(&partition_key) else {
+        let Some(partition_state) = topic_state.partitions.get(&partition_key) else {
             return Ok(None);
         };
 
@@ -180,13 +179,12 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         &self,
         request: ListTopicPartitionStatesRequest,
     ) -> OffsetRegistryResult<ListTopicPartitionStatesResponse> {
-        let namespace_name = request.topic_name.parent().clone();
-
-        let namespace_state = self.namespaces.get(&namespace_name).ok_or_else(|| {
-            OffsetRegistryError::NamespaceNotFound {
-                namespace: namespace_name.clone(),
-            }
-        })?;
+        let Some(topic_state) = self.topics.get(&request.topic_name) else {
+            return Ok(ListTopicPartitionStatesResponse {
+                states: vec![],
+                next_page_token: None,
+            });
+        };
 
         let page_size = request.page_size.unwrap_or(100);
 
@@ -205,7 +203,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         let mut states = Vec::new();
         let mut next_page_token = None;
 
-        for (key, state) in namespace_state
+        for (key, state) in topic_state
             .partitions
             .range((start_key_range, Bound::Unbounded))
             .take(page_size)

@@ -29,3 +29,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 wings-metadata-core = { path = "../wings_metadata_core" }
 wings-object-store = { path = "../wings_object_store" }
+
+[dev-dependencies]
+wings-ingestor-core = { path = "../wings_ingestor_core" }
+tokio = { workspace = true, features = ["test-util"] }
