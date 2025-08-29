@@ -1,7 +1,7 @@
 [workspace.package]
 edition = "2024"
 authors = ["Francesco Ceccon", "The Wings contributors"]
-repository = "https://github.com/apibara/wings"
+repository = "https://github.com/useairfoil/wings"
 license = "Apache-2.0"
 
 [workspace]

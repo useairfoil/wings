@@ -18,13 +18,5 @@ craft the CHANGELOG for the next release.
 ### Testing strategy
 
 <!--
-How did you test that your code is working? For example:
-
-Before this PR:
-- run `apibara-sink-postgres` using a connection string that requires a SSL
-connection.
-- note that the sinks exits with an error.
-After:
-- run the sink with the same connection string as before.
-- note that the sink is working and writes data to the database.
+How did you test that your code is working?
 -->

@@ -66,7 +66,7 @@
         });
 
         dockerImage = pkgs.dockerTools.buildImage {
-          name = "ghcr.io/apibara/wings";
+          name = "ghcr.io/useairfoil/wings";
           tag = "latest";
           created = "now";
           copyToRoot = pkgs.buildEnv {
@@ -127,7 +127,7 @@
           echo "::endgroup::"
 
           tag=''${GITHUB_REF#refs/tags/}
-          base="ghcr.io/apibara/wings"
+          base="ghcr.io/useairfoil/wings"
 
           echo "::group::Pushing docker image to ''${tag}"
           skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${tag}-x86_64"
