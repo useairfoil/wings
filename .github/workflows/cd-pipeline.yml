@@ -13,7 +13,7 @@ jobs:
     name: "Linux x86_64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: warp-ubuntu-latest-x64-4x
+      os: ubuntu-latest
       target: image
       artifact_name: "docker-x86_64-linux.tar.gz"
 
@@ -21,7 +21,7 @@ jobs:
     name: "Linux aarch64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: warp-ubuntu-latest-arm64-8x
+      os: ubuntu-24.04-arm
       target: image
       artifact_name: "docker-aarch64-linux.tar.gz"
 
@@ -33,7 +33,7 @@ jobs:
       attestations: write
       id-token: write
     needs: [build-linux-x86_64, build-linux-aarch64]
-    runs-on: warp-ubuntu-latest-x64-4x
+    runs-on: ubuntu-latest
     steps:
       - name: Set $USER if needed
         run: |
