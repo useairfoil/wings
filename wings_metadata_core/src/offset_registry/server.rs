@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::error::OffsetRegistryError;
-use crate::offset_registry::{BatchToCommit, ListTopicPartitionStatesRequest, OffsetRegistry};
+use crate::offset_registry::{ListTopicPartitionStatesRequest, OffsetRegistry, WriteToCommit};
 use crate::protocol::wings::v1::{
     self as pb,
     offset_registry_service_server::{
@@ -50,21 +50,21 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
             .map_err(Into::into)
             .map_err(offset_registry_error_to_status)?;
 
-        let batches: Vec<BatchToCommit> = request
-            .batches
+        let batches: Vec<WriteToCommit> = request
+            .writes
             .into_iter()
             .map(|batch| batch.try_into())
             .collect::<Result<Vec<_>, OffsetRegistryError>>()
             .map_err(offset_registry_error_to_status)?;
 
-        let committed_batches = self
+        let committed_writes = self
             .offset_registry
             .commit_folio(namespace_name, request.file_ref, &batches)
             .await
             .map_err(offset_registry_error_to_status)?;
 
         let response = pb::CommitFolioResponse {
-            batches: committed_batches.into_iter().map(Into::into).collect(),
+            writes: committed_writes.into_iter().map(Into::into).collect(),
         };
 
         Ok(Response::new(response))

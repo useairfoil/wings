@@ -11,9 +11,9 @@ use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::{
-    BatchToCommit, CommittedBatch, FolioLocation, ListTopicPartitionStatesRequest,
+    CommittedWrite, FolioLocation, ListTopicPartitionStatesRequest,
     ListTopicPartitionStatesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
-    OffsetRegistryResult,
+    OffsetRegistryResult, WriteToCommit,
 };
 use crate::partition::PartitionValue;
 
@@ -76,8 +76,8 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         &self,
         namespace: NamespaceName,
         file_ref: String,
-        batches: &[BatchToCommit],
-    ) -> OffsetRegistryResult<Vec<CommittedBatch>> {
+        batches: &[WriteToCommit],
+    ) -> OffsetRegistryResult<Vec<CommittedWrite>> {
         let mut seen_partitions = HashSet::new();
         for batch in batches {
             if !seen_partitions.insert((batch.topic_name.clone(), batch.partition_value.clone())) {
@@ -126,7 +126,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             partition_state.batches.insert(start_offset, batch_info);
             partition_state.next_offset = end_offset + 1;
 
-            committed_batches.push(CommittedBatch {
+            committed_batches.push(CommittedWrite {
                 topic_name: batch.topic_name.clone(),
                 partition_value: batch.partition_value.clone(),
                 start_offset,

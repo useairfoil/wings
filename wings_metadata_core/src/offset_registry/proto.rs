@@ -90,17 +90,17 @@ impl TryFrom<pb::PartitionValueState> for PartitionValueState {
     }
 }
 
-impl TryFrom<pb::BatchToCommit> for BatchToCommit {
+impl TryFrom<pb::WriteToCommit> for WriteToCommit {
     type Error = OffsetRegistryError;
 
-    fn try_from(batch: pb::BatchToCommit) -> Result<Self, Self::Error> {
+    fn try_from(write: pb::WriteToCommit) -> Result<Self, Self::Error> {
         let topic_name =
-            TopicName::parse(&batch.topic).map_err(|_| OffsetRegistryError::InvalidArgument {
+            TopicName::parse(&write.topic).map_err(|_| OffsetRegistryError::InvalidArgument {
                 message: "invalid topic name format".to_string(),
             })?;
 
-        let partition_value = batch.partition.map(TryFrom::try_from).transpose()?;
-        let metadata = batch
+        let partition_value = write.partition.map(TryFrom::try_from).transpose()?;
+        let metadata = write
             .metadata
             .into_iter()
             .map(TryFrom::try_from)
@@ -110,70 +110,66 @@ impl TryFrom<pb::BatchToCommit> for BatchToCommit {
             topic_name,
             partition_value,
             metadata,
-            num_messages: batch.num_messages,
-            offset_bytes: batch.offset_bytes,
-            batch_size_bytes: batch.batch_size_bytes,
+            num_messages: write.num_messages,
+            offset_bytes: write.offset_bytes,
+            batch_size_bytes: write.batch_size_bytes,
         })
     }
 }
 
-impl TryFrom<&BatchToCommit> for pb::BatchToCommit {
+impl TryFrom<&WriteToCommit> for pb::WriteToCommit {
     type Error = OffsetRegistryError;
 
-    fn try_from(batch: &BatchToCommit) -> Result<Self, Self::Error> {
-        let metadata = batch
+    fn try_from(write: &WriteToCommit) -> Result<Self, Self::Error> {
+        let metadata = write
             .metadata
             .iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(pb::BatchToCommit {
-            topic: batch.topic_name.to_string(),
-            partition: batch.partition_value.as_ref().map(Into::into),
+        Ok(pb::WriteToCommit {
+            topic: write.topic_name.to_string(),
+            partition: write.partition_value.as_ref().map(Into::into),
             metadata,
-            num_messages: batch.num_messages,
-            offset_bytes: batch.offset_bytes,
-            batch_size_bytes: batch.batch_size_bytes,
+            num_messages: write.num_messages,
+            offset_bytes: write.offset_bytes,
+            batch_size_bytes: write.batch_size_bytes,
         })
     }
 }
 
-impl TryFrom<pb::CommitFolioResponse> for Vec<CommittedBatch> {
+impl TryFrom<pb::CommitFolioResponse> for Vec<CommittedWrite> {
     type Error = OffsetRegistryError;
 
     fn try_from(response: pb::CommitFolioResponse) -> Result<Self, Self::Error> {
-        response
-            .batches
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect()
+        response.writes.into_iter().map(TryFrom::try_from).collect()
     }
 }
 
-impl From<CommittedBatch> for pb::CommittedBatch {
-    fn from(batch: CommittedBatch) -> Self {
+impl From<CommittedWrite> for pb::CommittedWrite {
+    fn from(write: CommittedWrite) -> Self {
         Self {
-            topic: batch.topic_name.to_string(),
-            partition: batch.partition_value.as_ref().map(Into::into),
-            start_offset: batch.start_offset,
-            end_offset: batch.end_offset,
+            topic: write.topic_name.to_string(),
+            partition: write.partition_value.as_ref().map(Into::into),
+            start_offset: write.start_offset,
+            end_offset: write.end_offset,
         }
     }
 }
 
-impl TryFrom<pb::CommittedBatch> for CommittedBatch {
+impl TryFrom<pb::CommittedWrite> for CommittedWrite {
     type Error = OffsetRegistryError;
 
-    fn try_from(batch: pb::CommittedBatch) -> Result<Self, Self::Error> {
-        let topic_name = TopicName::parse(&batch.topic)
+    fn try_from(write: pb::CommittedWrite) -> Result<Self, Self::Error> {
+        let topic_name = TopicName::parse(&write.topic)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-        let partition_value = batch.partition.map(TryFrom::try_from).transpose()?;
+        let partition_value = write.partition.map(TryFrom::try_from).transpose()?;
 
         Ok(Self {
             topic_name,
             partition_value,
-            start_offset: batch.start_offset,
-            end_offset: batch.end_offset,
+            start_offset: write.start_offset,
+            end_offset: write.end_offset,
         })
     }
 }
@@ -264,12 +260,12 @@ impl From<&PartitionValue> for pb::PartitionValue {
     }
 }
 
-impl TryFrom<pb::RecordBatchMetadata> for RecordBatchMetadata {
+impl TryFrom<pb::WriteMetadata> for WriteMetadata {
     type Error = OffsetRegistryError;
 
-    fn try_from(value: pb::RecordBatchMetadata) -> Result<Self, Self::Error> {
-        let Some(timestamp) = value.timestamp else {
-            return Ok(RecordBatchMetadata { timestamp: None });
+    fn try_from(meta: pb::WriteMetadata) -> Result<Self, Self::Error> {
+        let Some(timestamp) = meta.timestamp else {
+            return Ok(WriteMetadata { timestamp: None });
         };
 
         assert!(timestamp.seconds >= 0);
@@ -284,16 +280,16 @@ impl TryFrom<pb::RecordBatchMetadata> for RecordBatchMetadata {
                 message: "failed to create RecordBatchMetadata.timestamp from Protobuf".to_string(),
             })?;
 
-        Ok(RecordBatchMetadata {
+        Ok(WriteMetadata {
             timestamp: Some(timestamp),
         })
     }
 }
 
-impl TryFrom<&RecordBatchMetadata> for pb::RecordBatchMetadata {
+impl TryFrom<&WriteMetadata> for pb::WriteMetadata {
     type Error = OffsetRegistryError;
 
-    fn try_from(meta: &RecordBatchMetadata) -> Result<Self, Self::Error> {
+    fn try_from(meta: &WriteMetadata) -> Result<Self, Self::Error> {
         let timestamp = meta
             .timestamp
             .map(|ts| {
@@ -313,6 +309,6 @@ impl TryFrom<&RecordBatchMetadata> for pb::RecordBatchMetadata {
             })
             .transpose()?;
 
-        Ok(pb::RecordBatchMetadata { timestamp })
+        Ok(pb::WriteMetadata { timestamp })
     }
 }

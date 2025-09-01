@@ -17,9 +17,9 @@ use http_body::Body;
 use snafu::ResultExt;
 
 use super::{
-    BatchToCommit, CommittedBatch, ListTopicPartitionStatesRequest,
-    ListTopicPartitionStatesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
-    OffsetRegistryResult, error::InvalidDeadlineSnafu,
+    CommittedWrite, ListTopicPartitionStatesRequest, ListTopicPartitionStatesResponse,
+    OffsetLocation, OffsetRegistry, OffsetRegistryError, OffsetRegistryResult, WriteToCommit,
+    error::InvalidDeadlineSnafu,
 };
 
 pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -60,16 +60,16 @@ where
         &self,
         namespace: NamespaceName,
         file_ref: String,
-        batches: &[BatchToCommit],
-    ) -> OffsetRegistryResult<Vec<CommittedBatch>> {
-        let batches = batches
+        writes: &[WriteToCommit],
+    ) -> OffsetRegistryResult<Vec<CommittedWrite>> {
+        let writes = writes
             .iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?;
         let request = pb::CommitFolioRequest {
             namespace: namespace.to_string(),
             file_ref,
-            batches,
+            writes,
         };
 
         self.client

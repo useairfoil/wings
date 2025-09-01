@@ -13,7 +13,7 @@ use arrow::array::RecordBatch;
 use tokio_util::time::delay_queue;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicName, TopicRef},
-    offset_registry::{BatchToCommit, RecordBatchMetadata},
+    offset_registry::{WriteMetadata, WriteToCommit},
     partition::PartitionValue,
 };
 
@@ -145,14 +145,14 @@ impl Debug for PartitionFolio {
 }
 
 impl SerializedPartitionFolioMetadata {
-    pub fn into_batch_to_commit(self) -> (BatchToCommit, Vec<BatchContext>) {
+    pub fn into_batch_to_commit(self) -> (WriteToCommit, Vec<BatchContext>) {
         let metadata = self
             .batches
             .iter()
-            .map(|_ctx| RecordBatchMetadata { timestamp: None })
+            .map(|_ctx| WriteMetadata { timestamp: None })
             .collect();
 
-        let commit = BatchToCommit {
+        let commit = WriteToCommit {
             topic_name: self.topic_name,
             partition_value: self.partition_value,
             metadata,

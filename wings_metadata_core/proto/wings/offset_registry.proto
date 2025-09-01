@@ -11,15 +11,14 @@ service OffsetRegistryService {
   rpc ListTopicPartitionStates(ListTopicPartitionStatesRequest) returns (ListTopicPartitionStatesResponse);
 }
 
-
 message CommitFolioRequest {
   string namespace = 1;
   string file_ref = 2;
-  repeated BatchToCommit batches = 3;
+  repeated WriteToCommit writes = 3;
 }
 
 message CommitFolioResponse {
-  repeated CommittedBatch batches = 1;
+  repeated CommittedWrite writes = 1;
 }
 
 message OffsetLocationRequest {
@@ -46,16 +45,16 @@ message ListTopicPartitionStatesResponse {
   optional string next_page_token = 2;
 }
 
-message BatchToCommit {
+message WriteToCommit {
   string topic = 1;
   optional PartitionValue partition = 2;
-  repeated RecordBatchMetadata metadata = 3;
+  repeated WriteMetadata metadata = 3;
   uint32 num_messages = 4;
   uint64 offset_bytes = 5;
   uint64 batch_size_bytes = 6;
 }
 
-message CommittedBatch {
+message CommittedWrite {
   string topic = 1;
   optional PartitionValue partition = 2;
   uint64 start_offset = 3;
@@ -95,6 +94,6 @@ message PartitionValue {
   }
 }
 
-message RecordBatchMetadata {
+message WriteMetadata {
     optional google.protobuf.Timestamp timestamp = 1;
 }

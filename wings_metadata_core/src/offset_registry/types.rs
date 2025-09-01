@@ -4,22 +4,22 @@ use std::time::SystemTime;
 
 use crate::{admin::TopicName, partition::PartitionValue};
 
-/// Represents metadata associated with a record batch.
+/// Represents metadata associated with a write operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecordBatchMetadata {
+pub struct WriteMetadata {
     /// The requested timestamp for the batch.
     pub timestamp: Option<SystemTime>,
 }
 
 /// A batch that needs to be committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchToCommit {
+pub struct WriteToCommit {
     /// The topic id of the batch to commit.
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The metadata associated with each record batch.
-    pub metadata: Vec<RecordBatchMetadata>,
+    pub metadata: Vec<WriteMetadata>,
     /// The number of messages in the batch.
     pub num_messages: u32,
     /// The start offset of the batch in the folio file.
@@ -30,7 +30,7 @@ pub struct BatchToCommit {
 
 /// A batch that has been successfully committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommittedBatch {
+pub struct CommittedWrite {
     /// The topic id of the batch that was committed.
     pub topic_name: TopicName,
     /// The partition value, if any.
