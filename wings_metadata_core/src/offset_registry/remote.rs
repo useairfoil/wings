@@ -112,7 +112,7 @@ where
             .map_err(status_to_offset_registry_error)?
             .into_inner();
 
-        Ok(response.into())
+        response.try_into()
     }
 
     async fn list_topic_partition_states(

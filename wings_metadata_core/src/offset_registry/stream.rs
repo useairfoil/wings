@@ -157,7 +157,11 @@ pub fn gen_offset_location_stream(
                 break;
             };
 
-            current_offset = location.end_offset() + 1;
+            let Some(end_offset) = location.end_offset() else {
+                break;
+            };
+
+            current_offset = end_offset + 1;
 
             yield Ok((topic_name.clone(), partition_value.clone(), location));
         }
@@ -190,7 +194,11 @@ pub fn gen_offset_location_stream_in_range(
                 break;
             };
 
-            current_offset = location.end_offset() + 1;
+            let Some(end_offset) = location.end_offset() else {
+                break;
+            };
+
+            current_offset = end_offset + 1;
 
             yield Ok((topic_name.clone(), partition_value.clone(), location));
         }

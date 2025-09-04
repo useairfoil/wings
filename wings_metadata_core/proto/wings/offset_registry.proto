@@ -57,17 +57,14 @@ message CommitPageRequest {
 message CommitPageResponse {
   string topic = 1;
   optional PartitionValue partition = 2;
-  uint64 start_offset = 3;
-  uint64 end_offset = 4;
-  repeated CommitBatchResponse batches = 5;
+  repeated CommittedBatch batches = 3;
 }
 
 message FolioLocation {
   string file_ref = 1;
   uint64 offset_bytes = 2;
   uint64 size_bytes = 3;
-  uint64 start_offset = 4;
-  uint64 end_offset = 5;
+  repeated CommittedBatch batches = 4;
 }
 
 message PartitionValueState {
@@ -102,8 +99,8 @@ message CommitBatchRequest {
   uint32 num_messages = 2;
 }
 
-message CommitBatchResponse {
-  message Success {
+message CommittedBatch {
+  message Accepted {
     /// The offset assigned to the first message in the batch.
     uint64 start_offset = 1;
     /// The offset assigned to the last message in the batch.
@@ -112,15 +109,13 @@ message CommitBatchResponse {
     google.protobuf.Timestamp timestamp = 3;
   }
 
-  message Failure {
-    /// The numerical error code.
-    uint32 error_code = 1;
-    /// The human-readable error message.
-    string error_message = 2;
+  message Rejected {
+    // How many messages were rejected.
+    uint32 num_messages = 1;
   }
 
   oneof result {
-    Success success = 1;
-    Failure failure = 2;
+    Accepted accepted = 1;
+    Rejected rejected = 2;
   }
 }

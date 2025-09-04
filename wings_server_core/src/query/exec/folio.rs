@@ -1,6 +1,6 @@
 use std::{any::Any, fmt, sync::Arc};
 
-use arrow::array::{RecordBatch, UInt64Array};
+use arrow::array::{RecordBatch, UInt64Builder};
 use arrow_schema::{FieldRef, SchemaRef};
 use datafusion::{
     catalog::memory::DataSourceExec,
@@ -20,7 +20,9 @@ use datafusion::{
 };
 use futures::StreamExt;
 use wings_metadata_core::{
-    admin::OFFSET_COLUMN_NAME, offset_registry::FolioLocation, partition::PartitionValue,
+    admin::OFFSET_COLUMN_NAME,
+    offset_registry::{CommittedBatch, FolioLocation},
+    partition::PartitionValue,
 };
 
 pub struct FolioExec {
@@ -153,9 +155,19 @@ impl ExecutionPlan for FolioExec {
                         }
                     }
 
-                    columns.push(Arc::new(UInt64Array::from_iter_values(
-                        location.start_offset..=location.end_offset,
-                    )));
+                    let mut offset_arr = UInt64Builder::new();
+                    for batch in location.batches.iter() {
+                        match batch {
+                            CommittedBatch::Rejected { num_messages } => {
+                                offset_arr.append_nulls(*num_messages as _);
+                            }
+                            CommittedBatch::Accepted(info) => {
+                                offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
+                            }
+                        }
+                    }
+
+                    columns.push(Arc::new(offset_arr.finish()));
 
                     let output = RecordBatch::try_new(output_schema.clone(), columns)?;
                     Ok(output)
@@ -173,12 +185,12 @@ impl DisplayAs for FolioExec {
         let file_end = file_start + self.location.size_bytes;
         write!(
             f,
-            "FolioExec: location=[{}[{}..{}]] start_offset=[{}], end_offset=[{}]",
+            "FolioExec: location=[{}[{}..{}]] start_offset=[{:?}], end_offset=[{:?}]",
             &self.location.file_ref,
             file_start,
             file_end,
-            self.location.start_offset,
-            self.location.end_offset
+            self.location.start_offset(),
+            self.location.end_offset()
         )
     }
 }

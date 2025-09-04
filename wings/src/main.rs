@@ -3,12 +3,11 @@ use observability::init_observability;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    admin::AdminCommands, debug_data::DebugDataArgs, dev::DevArgs, error::Result, fetch::FetchArgs,
-    push::PushArgs, sql::SqlArgs,
+    admin::AdminCommands, dev::DevArgs, error::Result, fetch::FetchArgs, push::PushArgs,
+    sql::SqlArgs,
 };
 
 mod admin;
-mod debug_data;
 mod dev;
 mod error;
 mod fetch;
@@ -44,10 +43,6 @@ enum Commands {
         #[clap(flatten)]
         inner: PushArgs,
     },
-    DebugData {
-        #[clap(flatten)]
-        inner: DebugDataArgs,
-    },
     /// Run SQL queries against a namespace
     Sql {
         #[clap(flatten)]
@@ -79,7 +74,6 @@ async fn main() -> Result<()> {
         Commands::Dev { inner } => inner.run(ct).await,
         Commands::Admin { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
-        Commands::DebugData { inner } => inner.run(ct).await,
         Commands::Sql { inner } => inner.run(ct).await,
         Commands::Fetch { inner } => inner.run(ct).await,
     }

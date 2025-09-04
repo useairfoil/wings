@@ -134,6 +134,9 @@ fn offset_registry_error_to_status(error: OffsetRegistryError) -> Status {
                 "duplicate partition value: topic={topic}, partition={partition:?}",
             ))
         }
+        OffsetRegistryError::UnorderedPageBatches { topic, partition } => Status::invalid_argument(
+            format!("unordered page batches: topic={topic}, partition={partition:?}",),
+        ),
         OffsetRegistryError::NamespaceNotFound { namespace } => {
             Status::not_found(format!("namespace not found: {namespace}"))
         }

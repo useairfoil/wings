@@ -18,6 +18,11 @@ pub enum OffsetRegistryError {
         topic: TopicName,
         partition: Option<PartitionValue>,
     },
+    #[snafu(display("unordered page batches: {topic} {partition:?}"))]
+    UnorderedPageBatches {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+    },
     #[snafu(display("namespace not found: {namespace}"))]
     NamespaceNotFound { namespace: NamespaceName },
     #[snafu(display(

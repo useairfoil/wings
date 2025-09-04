@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
-use wings_metadata_core::offset_registry::OffsetRegistry;
+use wings_metadata_core::offset_registry::{CommittedBatch, OffsetRegistry};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
@@ -202,11 +202,11 @@ async fn upload_and_commit_folio(
         .into_iter()
         .zip(batch_context.into_iter())
         .map(|(committed, (topic_name, partition_value, batches))| {
+            assert_eq!(committed.batches.len(), batches.len());
             CommittedPartitionFolioMetadata {
                 topic_name,
                 partition_value,
-                start_offset: committed.start_offset,
-                end_offset: committed.end_offset,
+                commited_batches: committed.batches,
                 batches,
             }
         })
@@ -220,16 +220,28 @@ async fn upload_and_commit_folio(
 
 fn reply_with_committed_offset(committed_namespace: CommittedNamespaceFolioMetadata) {
     for partition in committed_namespace.partitions.into_iter() {
-        let mut current_offset = partition.start_offset;
-        for batch in partition.batches.into_iter() {
-            let start_offset = current_offset;
-            let end_offset = current_offset + (batch.num_messages as u64) - 1;
-            let _ = batch.reply.send(Ok(WriteInfo {
-                start_offset,
-                end_offset,
-            }));
-            current_offset = end_offset + 1;
+        assert_eq!(partition.commited_batches.len(), partition.batches.len());
+        for (ctx, committed) in partition
+            .batches
+            .into_iter()
+            .zip(partition.commited_batches.into_iter())
+        {
+            match committed {
+                CommittedBatch::Rejected { .. } => {
+                    // TODO: send a better error message.
+                    let _ = ctx.reply.send(Err(IngestorError::Internal {
+                        message: "batch rejected".to_string(),
+                    }));
+                }
+                CommittedBatch::Accepted(accepted) => {
+                    let start_offset = accepted.start_offset;
+                    let end_offset = accepted.end_offset;
+                    let _ = ctx.reply.send(Ok(WriteInfo {
+                        start_offset,
+                        end_offset,
+                    }));
+                }
+            }
         }
-        assert_eq!(partition.end_offset, current_offset - 1);
     }
 }

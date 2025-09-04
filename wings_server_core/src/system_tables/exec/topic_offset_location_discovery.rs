@@ -229,8 +229,14 @@ fn from_offset_location(
             partition_value_arr.append_null();
         }
 
-        start_offset_arr.append_value(offset_location.start_offset());
-        end_offset_arr.append_value(offset_location.end_offset());
+        match offset_location.start_offset() {
+            None => start_offset_arr.append_null(),
+            Some(offset) => start_offset_arr.append_value(offset),
+        }
+        match offset_location.end_offset() {
+            None => end_offset_arr.append_null(),
+            Some(offset) => end_offset_arr.append_value(offset),
+        }
         match offset_location {
             OffsetLocation::Folio(folio) => {
                 location_type_arr.append_value("folio".to_string());

@@ -24,14 +24,21 @@ impl From<Option<OffsetLocation>> for pb::OffsetLocationResponse {
     }
 }
 
-impl From<pb::OffsetLocationResponse> for Option<OffsetLocation> {
-    fn from(response: pb::OffsetLocationResponse) -> Self {
+impl TryFrom<pb::OffsetLocationResponse> for Option<OffsetLocation> {
+    type Error = OffsetRegistryError;
+
+    fn try_from(response: pb::OffsetLocationResponse) -> Result<Self, Self::Error> {
         use pb::offset_location_response::Location as ProtoLocation;
 
-        let location = response.location?;
+        let Some(location) = response.location else {
+            return Ok(None);
+        };
 
         match location {
-            ProtoLocation::FolioLocation(folio) => OffsetLocation::Folio(folio.into()).into(),
+            ProtoLocation::FolioLocation(folio) => {
+                let inner = folio.try_into()?;
+                Ok(OffsetLocation::Folio(inner).into())
+            }
         }
     }
 }
@@ -51,21 +58,26 @@ impl From<FolioLocation> for pb::FolioLocation {
             file_ref: location.file_ref,
             offset_bytes: location.offset_bytes,
             size_bytes: location.size_bytes,
-            start_offset: location.start_offset,
-            end_offset: location.end_offset,
+            batches: location.batches.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<pb::FolioLocation> for FolioLocation {
-    fn from(location: pb::FolioLocation) -> Self {
-        Self {
+impl TryFrom<pb::FolioLocation> for FolioLocation {
+    type Error = OffsetRegistryError;
+
+    fn try_from(location: pb::FolioLocation) -> Result<Self, Self::Error> {
+        let batches = location
+            .batches
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
             file_ref: location.file_ref,
             offset_bytes: location.offset_bytes,
             size_bytes: location.size_bytes,
-            start_offset: location.start_offset,
-            end_offset: location.end_offset,
-        }
+            batches,
+        })
     }
 }
 
@@ -154,8 +166,6 @@ impl From<CommitPageResponse> for pb::CommitPageResponse {
         Self {
             topic: response.topic_name.to_string(),
             partition: response.partition_value.as_ref().map(Into::into),
-            start_offset: response.start_offset,
-            end_offset: response.end_offset,
             batches,
         }
     }
@@ -179,8 +189,6 @@ impl TryFrom<pb::CommitPageResponse> for CommitPageResponse {
         Ok(Self {
             topic_name,
             partition_value,
-            start_offset: response.start_offset,
-            end_offset: response.end_offset,
             batches,
         })
     }
@@ -311,19 +319,19 @@ impl TryFrom<&CommitBatchRequest> for pb::CommitBatchRequest {
     }
 }
 
-impl TryFrom<pb::CommitBatchResponse> for CommitBatchResponse {
+impl TryFrom<pb::CommittedBatch> for CommittedBatch {
     type Error = OffsetRegistryError;
 
-    fn try_from(meta: pb::CommitBatchResponse) -> Result<Self, OffsetRegistryError> {
-        use pb::commit_batch_response::*;
+    fn try_from(meta: pb::CommittedBatch) -> Result<Self, OffsetRegistryError> {
+        use pb::committed_batch::*;
 
         let result = meta.result.ok_or_else(|| OffsetRegistryError::Internal {
             message: "failed to convert CommittedWrite.result to CommittedWrite".to_string(),
         })?;
 
         match result {
-            Result::Success(s) => {
-                let timestamp = s
+            Result::Accepted(info) => {
+                let timestamp = info
                     .timestamp
                     .ok_or_else(|| OffsetRegistryError::Internal {
                         message: "missing timestamp in committed write".to_string(),
@@ -331,41 +339,34 @@ impl TryFrom<pb::CommitBatchResponse> for CommitBatchResponse {
                     .try_into()
                     .map_err(Arc::new)
                     .context(InvalidTimestampSnafu {})?;
-                Ok(CommitBatchResponse::Success {
-                    start_offset: s.start_offset,
-                    end_offset: s.end_offset,
+                let accepted = AcceptedBatchInfo {
+                    start_offset: info.start_offset,
+                    end_offset: info.end_offset,
                     timestamp,
-                })
+                };
+                Ok(CommittedBatch::Accepted(accepted))
             }
-            Result::Failure(f) => Ok(CommitBatchResponse::Error {
-                code: f.error_code,
-                message: f.error_message,
+            Result::Rejected(rejected) => Ok(CommittedBatch::Rejected {
+                num_messages: rejected.num_messages,
             }),
         }
     }
 }
 
-impl From<CommitBatchResponse> for pb::CommitBatchResponse {
-    fn from(write: CommitBatchResponse) -> Self {
-        use pb::commit_batch_response::*;
+impl From<CommittedBatch> for pb::CommittedBatch {
+    fn from(write: CommittedBatch) -> Self {
+        use pb::committed_batch::*;
 
         match write {
-            CommitBatchResponse::Success {
-                start_offset,
-                end_offset,
-                timestamp,
-            } => pb::CommitBatchResponse {
-                result: Some(Result::Success(Success {
-                    start_offset,
-                    end_offset,
-                    timestamp: Some((timestamp).into()),
+            CommittedBatch::Accepted(info) => pb::CommittedBatch {
+                result: Some(Result::Accepted(Accepted {
+                    start_offset: info.start_offset,
+                    end_offset: info.end_offset,
+                    timestamp: Some((info.timestamp).into()),
                 })),
             },
-            CommitBatchResponse::Error { code, message } => pb::CommitBatchResponse {
-                result: Some(Result::Failure(Failure {
-                    error_code: code,
-                    error_message: message.clone(),
-                })),
+            CommittedBatch::Rejected { num_messages } => pb::CommittedBatch {
+                result: Some(Result::Rejected(Rejected { num_messages })),
             },
         }
     }

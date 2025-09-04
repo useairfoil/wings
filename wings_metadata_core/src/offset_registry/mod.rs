@@ -6,6 +6,7 @@ pub mod proto;
 pub mod remote;
 pub mod server;
 pub mod stream;
+pub mod timestamp;
 pub mod types;
 
 use std::time::SystemTime;

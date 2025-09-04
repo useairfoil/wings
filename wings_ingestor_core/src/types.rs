@@ -13,7 +13,7 @@ use arrow::array::RecordBatch;
 use tokio_util::time::delay_queue;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicName, TopicRef},
-    offset_registry::{CommitBatchRequest, CommitPageRequest},
+    offset_registry::{CommitBatchRequest, CommitPageRequest, CommittedBatch},
     partition::PartitionValue,
 };
 
@@ -111,10 +111,8 @@ pub struct CommittedPartitionFolioMetadata {
     pub topic_name: TopicName,
     /// The partition.
     pub partition_value: Option<PartitionValue>,
-    /// The first offset in the committed messages.
-    pub start_offset: u64,
-    /// The last offset in the committed messages.
-    pub end_offset: u64,
+    /// The committed batches.
+    pub commited_batches: Vec<CommittedBatch>,
     /// The batches that contributed to the folio.
     pub batches: Vec<BatchContext>,
 }

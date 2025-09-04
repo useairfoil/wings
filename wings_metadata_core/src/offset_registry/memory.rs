@@ -10,14 +10,16 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
+use crate::offset_registry::timestamp::{LogOffset, compare_batch_timestamps};
 use crate::offset_registry::{
-    CommitBatchResponse, CommitPageRequest, CommitPageResponse, FolioLocation,
+    AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation,
     ListTopicPartitionStatesRequest, ListTopicPartitionStatesResponse, OffsetLocation,
     OffsetRegistry, OffsetRegistryError, OffsetRegistryResult,
 };
 use crate::partition::PartitionValue;
 
 use super::PartitionValueState;
+use super::timestamp::ValidateRequestResult;
 
 /// A partition key used to identify unique (topic, partition_value) combinations.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,20 +43,24 @@ struct TopicOffsetState {
 #[derive(Debug, Clone)]
 struct PartitionOffsetState {
     /// Next offset to be assigned
-    next_offset: u64,
-    /// Maps start offset to batch information for lookup
-    batches: BTreeMap<u64, BatchInfo>,
+    next_offset: LogOffset,
+    /// Maps start offset to page information for lookup.
+    pages: BTreeMap<u64, PageInfo>,
 }
 
-/// Information about a committed batch
+/// Information about a committed page of batches.
 #[derive(Debug, Clone)]
-struct BatchInfo {
+struct PageInfo {
+    /// The file reference for the page.
     pub file_ref: String,
+    /// Where the Parquet file starts in the folio.
     pub offset_bytes: u64,
+    /// The size of the Parquet file.
     pub size_bytes: u64,
-    pub end_offset: u64,
-    pub skip_messages: u32,
-    pub num_messages: u32,
+    /// The end offset of the messages in the page.
+    pub end_offset: LogOffset,
+    /// The batches in the page.
+    pub batches: Vec<CommittedBatch>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,35 +84,47 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         &self,
         namespace: NamespaceName,
         file_ref: String,
-        writes: &[CommitPageRequest],
+        pages: &[CommitPageRequest],
     ) -> OffsetRegistryResult<Vec<CommitPageResponse>> {
         let mut seen_partitions = HashSet::new();
-        for write_req in writes {
-            if !seen_partitions.insert((
-                write_req.topic_name.clone(),
-                write_req.partition_value.clone(),
-            )) {
+        for page in pages {
+            if !seen_partitions.insert((page.topic_name.clone(), page.partition_value.clone())) {
                 return Err(OffsetRegistryError::DuplicatePartitionValue {
-                    topic: write_req.topic_name.clone(),
-                    partition: write_req.partition_value.clone(),
+                    topic: page.topic_name.clone(),
+                    partition: page.partition_value.clone(),
+                });
+            }
+
+            // Validate that the batches are sorted by timestamp.
+            // We do it here because it's a protocol requirement to provide batches sorted by timestamp.
+            // The timestamp validation is done later.
+            if !page
+                .batches
+                .iter()
+                .is_sorted_by(|a, b| compare_batch_timestamps(a, b) != Ordering::Greater)
+            {
+                return Err(OffsetRegistryError::UnorderedPageBatches {
+                    topic: page.topic_name.clone(),
+                    partition: page.partition_value.clone(),
                 });
             }
         }
 
-        let mut committed_writes = Vec::with_capacity(writes.len());
+        let mut committed_pages = Vec::with_capacity(pages.len());
 
-        for tp_write_req in writes {
+        // Assign the same timestamp to all batches across pages.
+        let now_ts = SystemTime::now();
+
+        for page in pages {
             // This should have been checked already by the caller.
-            assert_eq!(tp_write_req.topic_name.parent(), &namespace);
+            assert_eq!(page.topic_name.parent(), &namespace);
 
-            let partition_key = PartitionKey::new(
-                tp_write_req.topic_name.clone(),
-                tp_write_req.partition_value.clone(),
-            );
+            let partition_key =
+                PartitionKey::new(page.topic_name.clone(), page.partition_value.clone());
 
             let mut topic_state = self
                 .topics
-                .entry(tp_write_req.topic_name.clone())
+                .entry(page.topic_name.clone())
                 .or_insert_with(|| TopicOffsetState {
                     partitions: BTreeMap::new(),
                 });
@@ -115,73 +133,66 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
                 .partitions
                 .entry(partition_key.clone())
                 .or_insert_with(|| PartitionOffsetState {
-                    next_offset: 0,
-                    batches: BTreeMap::new(),
+                    next_offset: LogOffset::default(),
+                    pages: BTreeMap::new(),
                 });
 
             let start_offset = partition_state.next_offset;
 
-            // TODO: check timestamp are 1) sorted 2) not smaller than the current one
-            // then generate the responses for the write request accordingly
-            // let end_offset = start_offset + tp_write_req.num_messages as u64 - 1;
-            let mut tp_writes = Vec::new();
+            let mut batches = Vec::new();
 
             let mut current_offset = start_offset;
-            let mut skip_messages = 0;
-            let mut num_messages = 0;
 
-            let timestamp = SystemTime::now();
-            for write_req in tp_write_req.batches.iter() {
-                let is_valid = true;
-                // Three cases:
-                // 1. timestamp is before the current one
-                //   -> skip_messages += write_req.num_messages;
-                // 2. timestamp is after the current one
-                //   -> num_messages += write_req.num_messages;
-                // 3. timestamp is after the now()
-                //   -> everything after is an error
-                if is_valid {
-                    let end_offset = current_offset + write_req.num_messages as u64 - 1;
-                    num_messages += write_req.num_messages;
-                    tp_writes.push(CommitBatchResponse::Success {
-                        start_offset: current_offset,
+            for batch in page.batches.iter() {
+                match current_offset.validate_request(batch) {
+                    ValidateRequestResult::Reject => {
+                        batches.push(CommittedBatch::Rejected {
+                            num_messages: batch.num_messages,
+                        });
+                    }
+                    ValidateRequestResult::Accept {
+                        start_offset,
                         end_offset,
                         timestamp,
-                    });
-                    current_offset = end_offset + 1;
-                } else {
-                    todo!();
+                        next_offset,
+                    } => {
+                        let accepted = AcceptedBatchInfo {
+                            start_offset,
+                            end_offset,
+                            timestamp: timestamp.unwrap_or(now_ts),
+                        };
+                        batches.push(CommittedBatch::Accepted(accepted));
+                        current_offset = next_offset;
+                    }
                 }
             }
-            let end_offset = current_offset - 1;
 
-            if current_offset == start_offset {
-                todo!();
+            // Update state only if we accepted any data.
+            if current_offset != start_offset {
+                let end_offset = current_offset.previous();
+
+                let batch_info = PageInfo {
+                    file_ref: file_ref.clone(),
+                    offset_bytes: page.offset_bytes,
+                    size_bytes: page.batch_size_bytes,
+                    end_offset,
+                    batches: batches.clone(),
+                };
+
+                partition_state
+                    .pages
+                    .insert(start_offset.offset, batch_info);
+                partition_state.next_offset = current_offset;
             }
 
-            // Store batch information
-            let batch_info = BatchInfo {
-                file_ref: file_ref.clone(),
-                offset_bytes: tp_write_req.offset_bytes,
-                size_bytes: tp_write_req.batch_size_bytes,
-                end_offset,
-                skip_messages,
-                num_messages,
-            };
-
-            partition_state.batches.insert(start_offset, batch_info);
-            partition_state.next_offset = end_offset + 1;
-
-            committed_writes.push(CommitPageResponse {
-                topic_name: tp_write_req.topic_name.clone(),
-                partition_value: tp_write_req.partition_value.clone(),
-                start_offset,
-                end_offset,
-                batches: tp_writes,
+            committed_pages.push(CommitPageResponse {
+                topic_name: page.topic_name.clone(),
+                partition_value: page.partition_value.clone(),
+                batches,
             });
         }
 
-        Ok(committed_writes)
+        Ok(committed_pages)
     }
 
     async fn offset_location(
@@ -202,19 +213,18 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         };
 
         // Find the batch containing this offset
-        let batch_start = partition_state.batches.range(..=offset).next_back();
+        let batch_start = partition_state.pages.range(..=offset).next_back();
 
-        let Some((&start_offset, batch_info)) = batch_start else {
+        let Some((&_start_offset, batch_info)) = batch_start else {
             return Ok(None);
         };
 
-        if offset <= batch_info.end_offset {
+        if offset <= batch_info.end_offset.offset {
             return Ok(OffsetLocation::Folio(FolioLocation {
                 file_ref: batch_info.file_ref.clone(),
                 offset_bytes: batch_info.offset_bytes,
                 size_bytes: batch_info.size_bytes,
-                start_offset,
-                end_offset: batch_info.end_offset,
+                batches: batch_info.batches.clone(),
             })
             .into());
         }
@@ -258,7 +268,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             next_page_token = key.partition_value.as_ref().map(|pv| pv.to_string());
             states.push(PartitionValueState {
                 partition_value: key.partition_value.clone(),
-                next_offset: state.next_offset,
+                next_offset: state.next_offset.offset,
             });
         }
 
