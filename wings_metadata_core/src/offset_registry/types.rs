@@ -4,22 +4,37 @@ use std::time::SystemTime;
 
 use crate::{admin::TopicName, partition::PartitionValue};
 
-/// Represents metadata associated with a write operation.
+/// Represents a single write operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WriteMetadata {
-    /// The requested timestamp for the batch.
+pub struct CommitBatchRequest {
+    /// The requested timestamp for the write request.
     pub timestamp: Option<SystemTime>,
+    /// The number of messages in the write request.
+    pub num_messages: u32,
 }
 
-/// A batch that needs to be committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WriteToCommit {
+pub enum CommitBatchResponse {
+    Success {
+        start_offset: u64,
+        end_offset: u64,
+        timestamp: SystemTime,
+    },
+    Error {
+        code: u32,
+        message: String,
+    },
+}
+
+/// Request to commit a page of batches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitPageRequest {
     /// The topic id of the batch to commit.
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The metadata associated with each record batch.
-    pub metadata: Vec<WriteMetadata>,
+    /// The individual batches to commit.
+    pub batches: Vec<CommitBatchRequest>,
     /// The number of messages in the batch.
     pub num_messages: u32,
     /// The start offset of the batch in the folio file.
@@ -30,7 +45,7 @@ pub struct WriteToCommit {
 
 /// A batch that has been successfully committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommittedWrite {
+pub struct CommitPageResponse {
     /// The topic id of the batch that was committed.
     pub topic_name: TopicName,
     /// The partition value, if any.
@@ -39,6 +54,8 @@ pub struct CommittedWrite {
     pub start_offset: u64,
     /// The last assigned offset of the batch.
     pub end_offset: u64,
+    /// The result of committing the batches.
+    pub batches: Vec<CommitBatchResponse>,
 }
 
 /// Location of a specific offset.

@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::error::OffsetRegistryError;
-use crate::offset_registry::{ListTopicPartitionStatesRequest, OffsetRegistry, WriteToCommit};
+use crate::offset_registry::{CommitPageRequest, ListTopicPartitionStatesRequest, OffsetRegistry};
 use crate::protocol::wings::v1::{
     self as pb,
     offset_registry_service_server::{
@@ -50,21 +50,21 @@ impl OffsetRegistryServiceTrait for OffsetRegistryService {
             .map_err(Into::into)
             .map_err(offset_registry_error_to_status)?;
 
-        let batches: Vec<WriteToCommit> = request
-            .writes
+        let pages: Vec<CommitPageRequest> = request
+            .pages
             .into_iter()
             .map(|batch| batch.try_into())
             .collect::<Result<Vec<_>, OffsetRegistryError>>()
             .map_err(offset_registry_error_to_status)?;
 
-        let committed_writes = self
+        let committed_pages = self
             .offset_registry
-            .commit_folio(namespace_name, request.file_ref, &batches)
+            .commit_folio(namespace_name, request.file_ref, &pages)
             .await
             .map_err(offset_registry_error_to_status)?;
 
         let response = pb::CommitFolioResponse {
-            writes: committed_writes.into_iter().map(Into::into).collect(),
+            pages: committed_pages.into_iter().map(Into::into).collect(),
         };
 
         Ok(Response::new(response))
@@ -167,6 +167,9 @@ fn offset_registry_error_to_status(error: OffsetRegistryError) -> Status {
         }
         OffsetRegistryError::InvalidDeadline { source } => {
             Status::invalid_argument(format!("invalid deadline: {source}"))
+        }
+        OffsetRegistryError::InvalidTimestamp { source } => {
+            Status::invalid_argument(format!("invalid timestamp: {source}"))
         }
     }
 }

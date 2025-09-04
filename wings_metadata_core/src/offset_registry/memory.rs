@@ -11,9 +11,9 @@ use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::{
-    CommittedWrite, FolioLocation, ListTopicPartitionStatesRequest,
-    ListTopicPartitionStatesResponse, OffsetLocation, OffsetRegistry, OffsetRegistryError,
-    OffsetRegistryResult, WriteToCommit,
+    CommitBatchResponse, CommitPageRequest, CommitPageResponse, FolioLocation,
+    ListTopicPartitionStatesRequest, ListTopicPartitionStatesResponse, OffsetLocation,
+    OffsetRegistry, OffsetRegistryError, OffsetRegistryResult,
 };
 use crate::partition::PartitionValue;
 
@@ -53,6 +53,8 @@ struct BatchInfo {
     pub offset_bytes: u64,
     pub size_bytes: u64,
     pub end_offset: u64,
+    pub skip_messages: u32,
+    pub num_messages: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -76,33 +78,38 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
         &self,
         namespace: NamespaceName,
         file_ref: String,
-        batches: &[WriteToCommit],
-    ) -> OffsetRegistryResult<Vec<CommittedWrite>> {
+        writes: &[CommitPageRequest],
+    ) -> OffsetRegistryResult<Vec<CommitPageResponse>> {
         let mut seen_partitions = HashSet::new();
-        for batch in batches {
-            if !seen_partitions.insert((batch.topic_name.clone(), batch.partition_value.clone())) {
+        for write_req in writes {
+            if !seen_partitions.insert((
+                write_req.topic_name.clone(),
+                write_req.partition_value.clone(),
+            )) {
                 return Err(OffsetRegistryError::DuplicatePartitionValue {
-                    topic: batch.topic_name.clone(),
-                    partition: batch.partition_value.clone(),
+                    topic: write_req.topic_name.clone(),
+                    partition: write_req.partition_value.clone(),
                 });
             }
         }
 
-        let mut committed_batches = Vec::with_capacity(batches.len());
+        let mut committed_writes = Vec::with_capacity(writes.len());
 
-        for batch in batches {
+        for tp_write_req in writes {
             // This should have been checked already by the caller.
-            assert_eq!(batch.topic_name.parent(), &namespace);
+            assert_eq!(tp_write_req.topic_name.parent(), &namespace);
 
-            let partition_key =
-                PartitionKey::new(batch.topic_name.clone(), batch.partition_value.clone());
+            let partition_key = PartitionKey::new(
+                tp_write_req.topic_name.clone(),
+                tp_write_req.partition_value.clone(),
+            );
 
-            let mut topic_state =
-                self.topics
-                    .entry(batch.topic_name.clone())
-                    .or_insert_with(|| TopicOffsetState {
-                        partitions: BTreeMap::new(),
-                    });
+            let mut topic_state = self
+                .topics
+                .entry(tp_write_req.topic_name.clone())
+                .or_insert_with(|| TopicOffsetState {
+                    partitions: BTreeMap::new(),
+                });
 
             let partition_state = topic_state
                 .partitions
@@ -113,28 +120,68 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
                 });
 
             let start_offset = partition_state.next_offset;
-            let end_offset = start_offset + batch.num_messages as u64 - 1;
+
+            // TODO: check timestamp are 1) sorted 2) not smaller than the current one
+            // then generate the responses for the write request accordingly
+            // let end_offset = start_offset + tp_write_req.num_messages as u64 - 1;
+            let mut tp_writes = Vec::new();
+
+            let mut current_offset = start_offset;
+            let mut skip_messages = 0;
+            let mut num_messages = 0;
+
+            let timestamp = SystemTime::now();
+            for write_req in tp_write_req.batches.iter() {
+                let is_valid = true;
+                // Three cases:
+                // 1. timestamp is before the current one
+                //   -> skip_messages += write_req.num_messages;
+                // 2. timestamp is after the current one
+                //   -> num_messages += write_req.num_messages;
+                // 3. timestamp is after the now()
+                //   -> everything after is an error
+                if is_valid {
+                    let end_offset = current_offset + write_req.num_messages as u64 - 1;
+                    num_messages += write_req.num_messages;
+                    tp_writes.push(CommitBatchResponse::Success {
+                        start_offset: current_offset,
+                        end_offset,
+                        timestamp,
+                    });
+                    current_offset = end_offset + 1;
+                } else {
+                    todo!();
+                }
+            }
+            let end_offset = current_offset - 1;
+
+            if current_offset == start_offset {
+                todo!();
+            }
 
             // Store batch information
             let batch_info = BatchInfo {
                 file_ref: file_ref.clone(),
-                offset_bytes: batch.offset_bytes,
-                size_bytes: batch.batch_size_bytes,
+                offset_bytes: tp_write_req.offset_bytes,
+                size_bytes: tp_write_req.batch_size_bytes,
                 end_offset,
+                skip_messages,
+                num_messages,
             };
 
             partition_state.batches.insert(start_offset, batch_info);
             partition_state.next_offset = end_offset + 1;
 
-            committed_batches.push(CommittedWrite {
-                topic_name: batch.topic_name.clone(),
-                partition_value: batch.partition_value.clone(),
+            committed_writes.push(CommitPageResponse {
+                topic_name: tp_write_req.topic_name.clone(),
+                partition_value: tp_write_req.partition_value.clone(),
                 start_offset,
                 end_offset,
+                batches: tp_writes,
             });
         }
 
-        Ok(committed_batches)
+        Ok(committed_writes)
     }
 
     async fn offset_location(

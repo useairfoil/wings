@@ -14,11 +14,11 @@ service OffsetRegistryService {
 message CommitFolioRequest {
   string namespace = 1;
   string file_ref = 2;
-  repeated WriteToCommit writes = 3;
+  repeated CommitPageRequest pages = 3;
 }
 
 message CommitFolioResponse {
-  repeated CommittedWrite writes = 1;
+  repeated CommitPageResponse pages = 1;
 }
 
 message OffsetLocationRequest {
@@ -45,20 +45,21 @@ message ListTopicPartitionStatesResponse {
   optional string next_page_token = 2;
 }
 
-message WriteToCommit {
+message CommitPageRequest {
   string topic = 1;
   optional PartitionValue partition = 2;
-  repeated WriteMetadata metadata = 3;
-  uint32 num_messages = 4;
-  uint64 offset_bytes = 5;
-  uint64 batch_size_bytes = 6;
+  uint32 num_messages = 3;
+  uint64 offset_bytes = 4;
+  uint64 batch_size_bytes = 5;
+  repeated CommitBatchRequest batches = 6;
 }
 
-message CommittedWrite {
+message CommitPageResponse {
   string topic = 1;
   optional PartitionValue partition = 2;
   uint64 start_offset = 3;
   uint64 end_offset = 4;
+  repeated CommitBatchResponse batches = 5;
 }
 
 message FolioLocation {
@@ -94,6 +95,32 @@ message PartitionValue {
   }
 }
 
-message WriteMetadata {
-    optional google.protobuf.Timestamp timestamp = 1;
+message CommitBatchRequest {
+  /// The requested timestamp (if any) of the batch.
+  optional google.protobuf.Timestamp timestamp = 1;
+  /// The number of messages in the batch.
+  uint32 num_messages = 2;
+}
+
+message CommitBatchResponse {
+  message Success {
+    /// The offset assigned to the first message in the batch.
+    uint64 start_offset = 1;
+    /// The offset assigned to the last message in the batch.
+    uint64 end_offset = 2;
+    /// The timestamp assigned to the batch.
+    google.protobuf.Timestamp timestamp = 3;
+  }
+
+  message Failure {
+    /// The numerical error code.
+    uint32 error_code = 1;
+    /// The human-readable error message.
+    string error_message = 2;
+  }
+
+  oneof result {
+    Success success = 1;
+    Failure failure = 2;
+  }
 }

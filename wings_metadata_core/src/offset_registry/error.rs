@@ -1,4 +1,4 @@
-use std::time::SystemTimeError;
+use std::{sync::Arc, time::SystemTimeError};
 
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
@@ -41,6 +41,10 @@ pub enum OffsetRegistryError {
     },
     #[snafu(display("invalid deadline"))]
     InvalidDeadline { source: SystemTimeError },
+    #[snafu(display("invalid timestamp"))]
+    InvalidTimestamp {
+        source: Arc<prost_types::TimestampError>,
+    },
 }
 
 pub type OffsetRegistryResult<T, E = OffsetRegistryError> = ::std::result::Result<T, E>;

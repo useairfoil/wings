@@ -32,8 +32,8 @@ pub trait OffsetRegistry: Send + Sync {
         &self,
         namespace: NamespaceName,
         file_ref: String,
-        writes: &[WriteToCommit],
-    ) -> OffsetRegistryResult<Vec<CommittedWrite>>;
+        pagse: &[CommitPageRequest],
+    ) -> OffsetRegistryResult<Vec<CommitPageResponse>>;
 
     /// Returns the location of the offset for a given topic and partition.
     ///

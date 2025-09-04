@@ -1,10 +1,11 @@
 //! Conversions between offset registry domain types and protobuf types.
 
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
 
 use snafu::{ResultExt, ensure};
 
 use crate::admin::TopicName;
+use crate::offset_registry::error::InvalidTimestampSnafu;
 use crate::offset_registry::types::*;
 use crate::partition::PartitionValue;
 use crate::protocol::wings::v1::{self as pb};
@@ -90,18 +91,19 @@ impl TryFrom<pb::PartitionValueState> for PartitionValueState {
     }
 }
 
-impl TryFrom<pb::WriteToCommit> for WriteToCommit {
+impl TryFrom<pb::CommitPageRequest> for CommitPageRequest {
     type Error = OffsetRegistryError;
 
-    fn try_from(write: pb::WriteToCommit) -> Result<Self, Self::Error> {
+    fn try_from(request: pb::CommitPageRequest) -> Result<Self, Self::Error> {
         let topic_name =
-            TopicName::parse(&write.topic).map_err(|_| OffsetRegistryError::InvalidArgument {
+            TopicName::parse(&request.topic).map_err(|_| OffsetRegistryError::InvalidArgument {
                 message: "invalid topic name format".to_string(),
             })?;
 
-        let partition_value = write.partition.map(TryFrom::try_from).transpose()?;
-        let metadata = write
-            .metadata
+        let partition_value = request.partition.map(TryFrom::try_from).transpose()?;
+
+        let batches = request
+            .batches
             .into_iter()
             .map(TryFrom::try_from)
             .collect::<Result<Vec<_>, _>>()?;
@@ -109,67 +111,77 @@ impl TryFrom<pb::WriteToCommit> for WriteToCommit {
         Ok(Self {
             topic_name,
             partition_value,
-            metadata,
-            num_messages: write.num_messages,
-            offset_bytes: write.offset_bytes,
-            batch_size_bytes: write.batch_size_bytes,
+            batches,
+            num_messages: request.num_messages,
+            offset_bytes: request.offset_bytes,
+            batch_size_bytes: request.batch_size_bytes,
         })
     }
 }
 
-impl TryFrom<&WriteToCommit> for pb::WriteToCommit {
+impl TryFrom<&CommitPageRequest> for pb::CommitPageRequest {
     type Error = OffsetRegistryError;
 
-    fn try_from(write: &WriteToCommit) -> Result<Self, Self::Error> {
-        let metadata = write
-            .metadata
+    fn try_from(request: &CommitPageRequest) -> Result<Self, Self::Error> {
+        let batches = request
+            .batches
             .iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(pb::WriteToCommit {
-            topic: write.topic_name.to_string(),
-            partition: write.partition_value.as_ref().map(Into::into),
-            metadata,
-            num_messages: write.num_messages,
-            offset_bytes: write.offset_bytes,
-            batch_size_bytes: write.batch_size_bytes,
+
+        Ok(pb::CommitPageRequest {
+            topic: request.topic_name.to_string(),
+            partition: request.partition_value.as_ref().map(Into::into),
+            num_messages: request.num_messages,
+            offset_bytes: request.offset_bytes,
+            batch_size_bytes: request.batch_size_bytes,
+            batches,
         })
     }
 }
 
-impl TryFrom<pb::CommitFolioResponse> for Vec<CommittedWrite> {
+impl TryFrom<pb::CommitFolioResponse> for Vec<CommitPageResponse> {
     type Error = OffsetRegistryError;
 
     fn try_from(response: pb::CommitFolioResponse) -> Result<Self, Self::Error> {
-        response.writes.into_iter().map(TryFrom::try_from).collect()
+        response.pages.into_iter().map(TryFrom::try_from).collect()
     }
 }
 
-impl From<CommittedWrite> for pb::CommittedWrite {
-    fn from(write: CommittedWrite) -> Self {
+impl From<CommitPageResponse> for pb::CommitPageResponse {
+    fn from(response: CommitPageResponse) -> Self {
+        let batches = response.batches.into_iter().map(Into::into).collect();
         Self {
-            topic: write.topic_name.to_string(),
-            partition: write.partition_value.as_ref().map(Into::into),
-            start_offset: write.start_offset,
-            end_offset: write.end_offset,
+            topic: response.topic_name.to_string(),
+            partition: response.partition_value.as_ref().map(Into::into),
+            start_offset: response.start_offset,
+            end_offset: response.end_offset,
+            batches,
         }
     }
 }
 
-impl TryFrom<pb::CommittedWrite> for CommittedWrite {
+impl TryFrom<pb::CommitPageResponse> for CommitPageResponse {
     type Error = OffsetRegistryError;
 
-    fn try_from(write: pb::CommittedWrite) -> Result<Self, Self::Error> {
-        let topic_name = TopicName::parse(&write.topic)
+    fn try_from(response: pb::CommitPageResponse) -> Result<Self, Self::Error> {
+        let topic_name = TopicName::parse(&response.topic)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-        let partition_value = write.partition.map(TryFrom::try_from).transpose()?;
+        let partition_value = response.partition.map(TryFrom::try_from).transpose()?;
+
+        let batches = response
+            .batches
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             topic_name,
             partition_value,
-            start_offset: write.start_offset,
-            end_offset: write.end_offset,
+            start_offset: response.start_offset,
+            end_offset: response.end_offset,
+            batches,
         })
     }
 }
@@ -260,55 +272,101 @@ impl From<&PartitionValue> for pb::PartitionValue {
     }
 }
 
-impl TryFrom<pb::WriteMetadata> for WriteMetadata {
+impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
     type Error = OffsetRegistryError;
 
-    fn try_from(meta: pb::WriteMetadata) -> Result<Self, Self::Error> {
+    fn try_from(meta: pb::CommitBatchRequest) -> Result<Self, Self::Error> {
         let Some(timestamp) = meta.timestamp else {
-            return Ok(WriteMetadata { timestamp: None });
+            return Ok(CommitBatchRequest {
+                timestamp: None,
+                num_messages: meta.num_messages,
+            });
         };
 
         assert!(timestamp.seconds >= 0);
         assert!(timestamp.nanos >= 0);
 
-        let millis_since_epoch =
-            (timestamp.seconds as u64) * 1000 + (timestamp.nanos as u64) / 1_000_000;
-        let duration_since_epoch = Duration::from_millis(millis_since_epoch);
-        let timestamp = SystemTime::UNIX_EPOCH
-            .checked_add(duration_since_epoch)
-            .ok_or_else(|| OffsetRegistryError::Internal {
-                message: "failed to create RecordBatchMetadata.timestamp from Protobuf".to_string(),
-            })?;
+        let timestamp = timestamp
+            .try_into()
+            .map_err(Arc::new)
+            .context(InvalidTimestampSnafu {})?;
 
-        Ok(WriteMetadata {
+        Ok(CommitBatchRequest {
             timestamp: Some(timestamp),
+            num_messages: meta.num_messages,
         })
     }
 }
 
-impl TryFrom<&WriteMetadata> for pb::WriteMetadata {
+impl TryFrom<&CommitBatchRequest> for pb::CommitBatchRequest {
     type Error = OffsetRegistryError;
 
-    fn try_from(meta: &WriteMetadata) -> Result<Self, Self::Error> {
-        let timestamp = meta
-            .timestamp
-            .map(|ts| {
-                let duration_since_epoch =
-                    ts.duration_since(SystemTime::UNIX_EPOCH).map_err(|_| {
-                        OffsetRegistryError::Internal {
-                            message: "failed to convert RecordBatchMetadata.timestamp to Protobuf"
-                                .to_string(),
-                        }
-                    })?;
-                let seconds = duration_since_epoch.as_secs();
-                let nanos = duration_since_epoch.subsec_nanos();
-                Ok(prost_types::Timestamp {
-                    seconds: seconds as _,
-                    nanos: nanos as _,
-                })
-            })
-            .transpose()?;
+    fn try_from(meta: &CommitBatchRequest) -> Result<Self, Self::Error> {
+        let timestamp = meta.timestamp.map(Into::into);
 
-        Ok(pb::WriteMetadata { timestamp })
+        Ok(pb::CommitBatchRequest {
+            timestamp,
+            num_messages: meta.num_messages,
+        })
+    }
+}
+
+impl TryFrom<pb::CommitBatchResponse> for CommitBatchResponse {
+    type Error = OffsetRegistryError;
+
+    fn try_from(meta: pb::CommitBatchResponse) -> Result<Self, OffsetRegistryError> {
+        use pb::commit_batch_response::*;
+
+        let result = meta.result.ok_or_else(|| OffsetRegistryError::Internal {
+            message: "failed to convert CommittedWrite.result to CommittedWrite".to_string(),
+        })?;
+
+        match result {
+            Result::Success(s) => {
+                let timestamp = s
+                    .timestamp
+                    .ok_or_else(|| OffsetRegistryError::Internal {
+                        message: "missing timestamp in committed write".to_string(),
+                    })?
+                    .try_into()
+                    .map_err(Arc::new)
+                    .context(InvalidTimestampSnafu {})?;
+                Ok(CommitBatchResponse::Success {
+                    start_offset: s.start_offset,
+                    end_offset: s.end_offset,
+                    timestamp,
+                })
+            }
+            Result::Failure(f) => Ok(CommitBatchResponse::Error {
+                code: f.error_code,
+                message: f.error_message,
+            }),
+        }
+    }
+}
+
+impl From<CommitBatchResponse> for pb::CommitBatchResponse {
+    fn from(write: CommitBatchResponse) -> Self {
+        use pb::commit_batch_response::*;
+
+        match write {
+            CommitBatchResponse::Success {
+                start_offset,
+                end_offset,
+                timestamp,
+            } => pb::CommitBatchResponse {
+                result: Some(Result::Success(Success {
+                    start_offset,
+                    end_offset,
+                    timestamp: Some((timestamp).into()),
+                })),
+            },
+            CommitBatchResponse::Error { code, message } => pb::CommitBatchResponse {
+                result: Some(Result::Failure(Failure {
+                    error_code: code,
+                    error_message: message.clone(),
+                })),
+            },
+        }
     }
 }
