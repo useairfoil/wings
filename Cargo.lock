@@ -2996,6 +2996,8 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
  "rand_core 0.6.4",
 ]
 
@@ -3005,8 +3007,18 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "rand_core 0.9.3",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -3024,6 +3036,9 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom 0.2.16",
+]
 
 [[package]]
 name = "rand_core"
@@ -4535,6 +4550,7 @@ dependencies = [
  "wings-ingestor-http",
  "wings-metadata-core",
  "wings-object-store",
+ "wings-push-client",
  "wings-server-core",
  "wings-server-http",
 ]
@@ -4622,6 +4638,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-push-client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde_json",
+ "snafu",
+ "wings-ingestor-http",
+ "wings-metadata-core",
+]
+
+[[package]]
 name = "wings-server-core"
 version = "0.1.0"
 dependencies = [
@@ -4663,6 +4690,37 @@ dependencies = [
  "tower",
  "wings-metadata-core",
  "wings-server-core",
+]
+
+[[package]]
+name = "wings-stress"
+version = "0.1.0-alpha.0"
+dependencies = [
+ "arrow",
+ "arrow-json",
+ "arrow-schema",
+ "axum",
+ "bytesize",
+ "clap",
+ "datafusion",
+ "nu-ansi-term 0.50.1",
+ "object_store",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "snafu",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "wings-ingestor-core",
+ "wings-ingestor-http",
+ "wings-metadata-core",
+ "wings-object-store",
+ "wings-server-core",
+ "wings-server-http",
 ]
 
 [[package]]

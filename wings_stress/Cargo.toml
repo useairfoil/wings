@@ -1,5 +1,5 @@
 [package]
-name = "wings"
+name = "wings-stress"
 version = "0.1.0-alpha.0"
 edition.workspace = true
 authors.workspace = true
@@ -7,7 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "wings"
+name = "wings-stress"
 path = "src/main.rs"
 
 [dependencies]
@@ -20,12 +20,14 @@ clap.workspace = true
 datafusion.workspace = true
 nu-ansi-term = "0.50.1"
 object_store.workspace = true
-reqwest.workspace = true
+rand = "0.8"
+reqwest = { version = "0.11", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
-tonic.workspace = true
-tonic-reflection.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
@@ -38,7 +40,6 @@ wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-metadata-core = { path = "../wings_metadata_core" }
 wings-object-store = { path = "../wings_object_store" }
-wings-push-client = { path = "../wings_push_client" }
 wings-server-core = { path = "../wings_server_core" }
 wings-server-http = { path = "../wings_server_http" }
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }

@@ -8,13 +8,13 @@ use wings_metadata_core::{
     admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
     partition::PartitionValue,
 };
+use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 use crate::{
     error::{
         AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, JsonParseSnafu,
         PartitionValueParseSnafu, PushClientSnafu, Result,
     },
-    http_client::{HttpPushClient, PushRequestBuilder},
     remote::RemoteArgs,
 };
 

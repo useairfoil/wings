@@ -1,0 +1,18 @@
+[package]
+name = "wings-push-client"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_push_client"
+path = "src/lib.rs"
+
+[dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
+wings-ingestor-http = { path = "../wings_ingestor_http" }
+wings-metadata-core = { path = "../wings_metadata_core" }

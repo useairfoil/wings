@@ -13,8 +13,10 @@ members = [
     "wings_ingestor_http",
     "wings_metadata_core",
     "wings_object_store",
+    "wings_push_client",
     "wings_server_core",
     "wings_server_http",
+    "wings_stress",
 ]
 
 [profile.maxperf]
@@ -58,6 +60,10 @@ paste = "1.0.15"
 pin-project = "1.1.10"
 prost = "0.13.5"
 prost-types = "0.13.5"
+reqwest = { version = "0.11", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
 serde_json = "1.0"
 snafu = "0.8.0"
 tonic = "0.13.1"

@@ -11,7 +11,6 @@ mod admin;
 mod dev;
 mod error;
 mod fetch;
-mod http_client;
 mod observability;
 mod push;
 mod remote;
