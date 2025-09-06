@@ -1,9 +1,10 @@
-use arrow::array::RecordBatch;
 use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_partitioned_topic,
     schema_without_partition,
 };
-use datafusion::{assert_batches_sorted_eq, common::create_array};
+use datafusion::{
+    assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
+};
 use wings_ingestor_core::{Batch, error::Result};
 use wings_metadata_core::partition::PartitionValue;
 

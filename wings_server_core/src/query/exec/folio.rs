@@ -1,9 +1,11 @@
 use std::{any::Any, fmt, sync::Arc};
 
-use arrow::array::{RecordBatch, UInt64Builder};
-use arrow_schema::{FieldRef, SchemaRef};
 use datafusion::{
     catalog::memory::DataSourceExec,
+    common::arrow::{
+        array::{RecordBatch, UInt64Builder},
+        datatypes::{FieldRef, SchemaRef},
+    },
     datasource::{
         listing::PartitionedFile,
         physical_plan::{FileScanConfigBuilder, ParquetSource},

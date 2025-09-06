@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::{sync::Arc, time::Duration};
 
-use arrow_schema::{DataType, Field, Schema};
+use datafusion::common::arrow::datatypes::{DataType, Field, Schema};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};

@@ -1,9 +1,9 @@
 use std::{any::Any, sync::Arc};
 
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::{
     catalog::{Session, TableProvider},
+    common::arrow::datatypes::SchemaRef,
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,

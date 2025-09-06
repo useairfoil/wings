@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use arrow::array::{Int32Array, UInt64Array};
-use arrow::record_batch::RecordBatch;
-use arrow_schema::{DataType, Field, Fields, Schema};
+use datafusion::common::arrow::{
+    array::{Int32Array, UInt64Array},
+    datatypes::{DataType, Field, Fields, Schema},
+    record_batch::RecordBatch,
+};
 
 /// Generate a test batch with the specified number of rows.
 /// The batch contains:

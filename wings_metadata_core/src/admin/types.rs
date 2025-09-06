@@ -2,9 +2,14 @@
 
 use std::{sync::Arc, time::Duration};
 
-use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaBuilder, SchemaRef};
 use bytesize::ByteSize;
-use datafusion::{error::DataFusionError, execution::object_store::ObjectStoreUrl};
+use datafusion::{
+    common::arrow::datatypes::{
+        DataType, Field, FieldRef, Fields, Schema, SchemaBuilder, SchemaRef,
+    },
+    error::DataFusionError,
+    execution::object_store::ObjectStoreUrl,
+};
 
 use crate::resource_type;
 
@@ -290,7 +295,7 @@ pub struct ListTopicsResponse {
 
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::arrow::datatypes::{DataType, Field};
 
     use super::*;
 

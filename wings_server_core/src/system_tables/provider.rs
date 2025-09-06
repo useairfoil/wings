@@ -15,11 +15,10 @@
 // limitations under the License.
 use std::{any::Any, sync::Arc};
 
-use arrow::array::RecordBatch;
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::{
     catalog::{Session, TableProvider, memory::MemorySourceConfig},
+    common::arrow::{array::RecordBatch, datatypes::SchemaRef},
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,

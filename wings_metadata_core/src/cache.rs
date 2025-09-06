@@ -128,7 +128,7 @@ mod tests {
     use super::*;
     use crate::admin::memory::InMemoryAdminService;
     use crate::admin::{NamespaceOptions, SecretName, TenantName, TopicOptions};
-    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::arrow::datatypes::{DataType, Field};
     use std::time::Duration;
 
     #[tokio::test]

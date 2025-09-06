@@ -30,6 +30,7 @@ serde_json.workspace = true
 snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tonic.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = [
     "std",
@@ -40,6 +41,8 @@ wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-metadata-core = { path = "../wings_metadata_core" }
 wings-object-store = { path = "../wings_object_store" }
+wings-push-client = { path = "../wings_push_client" }
 wings-server-core = { path = "../wings_server_core" }
 wings-server-http = { path = "../wings_server_http" }
+tpchgen = "2.0.0"
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }

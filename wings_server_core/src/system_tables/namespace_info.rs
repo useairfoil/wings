@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
-use arrow::array::{RecordBatch, StringArray, UInt64Array};
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use async_trait::async_trait;
-use datafusion::{error::DataFusionError, prelude::Expr};
+use datafusion::{
+    common::arrow::{
+        array::{RecordBatch, StringArray, UInt64Array},
+        datatypes::{DataType, Field, Schema, SchemaRef},
+    },
+    error::DataFusionError,
+    prelude::Expr,
+};
 use wings_metadata_core::admin::{Admin, NamespaceName};
 
 use super::provider::SystemTable;

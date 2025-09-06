@@ -1,4 +1,4 @@
-use arrow::array::RecordBatch;
+use datafusion::common::arrow::array::RecordBatch;
 use tokio::sync::oneshot;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicRef},

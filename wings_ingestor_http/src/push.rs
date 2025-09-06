@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use arrow::compute::concat_batches;
-use arrow::datatypes::SchemaRef;
-use arrow::record_batch::RecordBatch;
+use datafusion::common::arrow::{
+    compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
+};
+
 use arrow_json::ReaderBuilder;
-use arrow_schema::ArrowError;
 use axum::response::{IntoResponse, Response};
 use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
 use futures::StreamExt;

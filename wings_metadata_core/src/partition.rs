@@ -6,8 +6,8 @@
 
 use std::convert::TryFrom;
 
-use arrow::datatypes::DataType;
 use base64::{Engine, prelude::BASE64_STANDARD};
+use datafusion::common::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};

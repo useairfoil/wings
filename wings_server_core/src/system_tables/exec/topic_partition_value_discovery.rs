@@ -1,8 +1,10 @@
 use std::{any::Any, fmt, sync::Arc};
 
-use arrow::array::{ArrayRef, RecordBatch, StringViewBuilder, UInt64Builder};
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use datafusion::{
+    common::arrow::{
+        array::{ArrayRef, RecordBatch, StringViewBuilder, UInt64Builder},
+        datatypes::{DataType, Field, Schema, SchemaRef},
+    },
     error::{DataFusionError, Result},
     execution::{SendableRecordBatchStream, TaskContext},
     physical_expr::EquivalenceProperties,

@@ -9,7 +9,7 @@
 //! **Committer**: [`UploadedNamespaceFolioMetadata`] -> [`CommittedNamespaceFolioMetadata`].
 use std::fmt::Debug;
 
-use arrow::array::RecordBatch;
+use datafusion::common::arrow::array::RecordBatch;
 use tokio_util::time::delay_queue;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicName, TopicRef},

@@ -421,7 +421,7 @@ impl Admin for InMemoryAdminService {
 
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::arrow::datatypes::{DataType, Field};
 
     use super::*;
     use crate::admin::{NamespaceName, SecretName, TenantName};

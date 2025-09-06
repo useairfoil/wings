@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use arrow::datatypes::{DataType, Field};
+use datafusion::common::arrow::datatypes::{DataType, Field};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::{

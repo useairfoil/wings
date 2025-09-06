@@ -45,3 +45,13 @@ pub enum BatchResponse {
     #[serde(rename = "error")]
     Error { message: String },
 }
+
+impl BatchResponse {
+    pub fn is_success(&self) -> bool {
+        matches!(self, BatchResponse::Success { .. })
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, BatchResponse::Error { .. })
+    }
+}

@@ -2,10 +2,14 @@
 
 use std::time::Duration;
 
-use arrow::datatypes::Schema;
-use arrow_ipc::convert::{IpcSchemaEncoder, fb_to_schema};
-use arrow_ipc::root_as_schema;
 use bytesize::ByteSize;
+use datafusion::common::arrow::{
+    datatypes::{Fields, Schema},
+    ipc::{
+        convert::{IpcSchemaEncoder, fb_to_schema},
+        root_as_schema,
+    },
+};
 use snafu::ResultExt;
 
 use crate::admin::error::{AdminError, AdminResult, InvalidResourceNameSnafu};
@@ -356,7 +360,7 @@ fn serialize_fields(fields: &arrow::datatypes::Fields) -> Vec<u8> {
     fb.finished_data().to_vec()
 }
 
-fn deserialize_fields(data: &[u8]) -> AdminResult<arrow::datatypes::Fields> {
+fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
     let ipc_schema = root_as_schema(data).map_err(|inner| AdminError::InvalidArgument {
         resource: "topic",
         message: format!("invalid topic schema: {}", inner),
@@ -368,7 +372,7 @@ fn deserialize_fields(data: &[u8]) -> AdminResult<arrow::datatypes::Fields> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::arrow::datatypes::{DataType, Field};
 
     #[test]
     fn test_tenant_conversion() {

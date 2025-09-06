@@ -11,10 +11,9 @@ name = "wings_ingestor_http"
 path = "src/lib.rs"
 
 [dependencies]
-arrow.workspace = true
 arrow-json.workspace = true
-arrow-schema.workspace = true
 axum.workspace = true
+datafusion.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

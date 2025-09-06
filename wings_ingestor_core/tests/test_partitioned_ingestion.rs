@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
-use arrow::array::RecordBatch;
-use arrow_schema::{DataType, Field, Schema};
 use common::{create_batch_ingestor, initialize_test_namespace};
-use datafusion::common::create_array;
+use datafusion::common::{
+    arrow::{
+        array::RecordBatch,
+        datatypes::{DataType, Field, Schema},
+    },
+    create_array,
+};
 use wings_ingestor_core::{Batch, error::Result};
 use wings_metadata_core::{
     admin::{Admin, Namespace, Topic, TopicName, TopicOptions},

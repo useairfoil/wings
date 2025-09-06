@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::record_batch::RecordBatch;
-use arrow_schema::SchemaRef;
+use datafusion::common::arrow::datatypes::SchemaRef;
+use datafusion::common::arrow::record_batch::RecordBatch;
 use parquet::{
     arrow::ArrowWriter,
     file::{metadata::KeyValue, properties::WriterProperties},

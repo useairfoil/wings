@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanBuilder, RecordBatch, StringViewBuilder};
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use async_trait::async_trait;
-use datafusion::{error::DataFusionError, prelude::Expr};
+use datafusion::{
+    common::arrow::{
+        array::{ArrayRef, BooleanBuilder, RecordBatch, StringViewBuilder},
+        datatypes::{DataType, Field, Schema, SchemaRef},
+    },
+    error::DataFusionError,
+    prelude::Expr,
+};
 use wings_metadata_core::admin::{
     Admin, NamespaceName, Topic, collect_namespace_topics, collect_namespace_topics_from_ids,
 };
