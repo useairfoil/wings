@@ -41,6 +41,13 @@ pub fn compare_timestamps(a: &Option<SystemTime>, b: &Option<SystemTime>) -> Ord
 }
 
 impl LogOffset {
+    pub fn with_timestamp(self, timestamp: SystemTime) -> LogOffset {
+        LogOffset {
+            offset: self.offset,
+            timestamp,
+        }
+    }
+
     pub fn previous(&self) -> LogOffset {
         LogOffset {
             offset: self.offset.saturating_sub(1),

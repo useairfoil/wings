@@ -8,6 +8,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use tracing::debug;
 
 use crate::admin::{NamespaceName, TopicName};
 use crate::offset_registry::timestamp::{LogOffset, compare_batch_request_timestamps};
@@ -169,6 +170,8 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
 
             // Update state only if we accepted any data.
             if current_offset != start_offset {
+                current_offset = current_offset.with_timestamp(now_ts);
+
                 let end_offset = current_offset.previous();
 
                 let batch_info = PageInfo {
@@ -178,6 +181,13 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
                     end_offset,
                     batches: batches.clone(),
                 };
+
+                debug!(
+                    offset = start_offset.offset,
+                    next_offset = ?current_offset,
+                    batch_info = ?batch_info,
+                    "Updating partition state"
+                );
 
                 partition_state
                     .pages

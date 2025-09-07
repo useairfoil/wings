@@ -35,6 +35,7 @@ prost-types.workspace = true
 snafu.workspace = true
 tokio.workspace = true
 tonic.workspace = true
+tracing.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true

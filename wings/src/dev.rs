@@ -4,6 +4,7 @@ use axum::Router;
 use clap::Args;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
 use wings_metadata_core::{
@@ -46,10 +47,10 @@ impl DevArgs {
             .parse::<SocketAddr>()
             .context(InvalidServerUrlSnafu {})?;
 
-        println!("Starting Wings in development mode");
-        println!("Default namespace: {}", default_namespace);
-        println!("gRPC server listening on {}", metadata_address);
-        println!("HTTP ingestor listening on {}", http_address);
+        info!("Starting Wings in development mode");
+        info!("Default namespace: {}", default_namespace);
+        info!("gRPC server listening on {}", metadata_address);
+        info!("HTTP ingestor listening on {}", http_address);
 
         let _ct_guard = ct.child_token().drop_guard();
         let object_store_factory =
@@ -58,7 +59,7 @@ impl DevArgs {
         let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
         let object_store_factory = Arc::new(object_store_factory);
 
-        println!(
+        info!(
             "Object store root path: {}",
             object_store_factory.root_path().display()
         );
@@ -79,13 +80,13 @@ impl DevArgs {
 
         tokio::select! {
             res = grpc_server_fut => {
-                println!("gRPC server exited with {:?}", res);
+                info!("gRPC server exited with {:?}", res);
             },
             res = http_ingestor_fut => {
-                println!("HTTP ingestor server exited with {:?}", res);
+                info!("HTTP ingestor server exited with {:?}", res);
             },
             res = ingestor_fut => {
-                println!("Background ingestor exited with {:?}", res);
+                info!("Background ingestor exited with {:?}", res);
             },
         }
 
