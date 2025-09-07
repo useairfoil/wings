@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use datafusion::common::arrow::array::RecordBatch;
 use tokio::sync::oneshot;
 use wings_metadata_core::{
@@ -13,6 +15,7 @@ pub struct Batch {
     pub topic: TopicRef,
     pub partition: Option<PartitionValue>,
     pub records: RecordBatch,
+    pub timestamp: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone)]

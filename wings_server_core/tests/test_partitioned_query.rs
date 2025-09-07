@@ -76,6 +76,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),
                 records,
+                timestamp: None,
             })
             .await
             .expect("first_write");
@@ -98,6 +99,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(200)),
                 records,
+                timestamp: None,
             })
             .await
             .expect("second_write");
@@ -127,6 +129,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),
                 records,
+                timestamp: None,
             })
             .await
             .expect("third_write");

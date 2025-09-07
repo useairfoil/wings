@@ -69,7 +69,7 @@ impl NamespaceFolioWriter {
             }
         };
 
-        let written = folio_writer.write_batch(&batch.records, reply)?;
+        let written = folio_writer.write_batch(&batch.records, batch.timestamp, reply)?;
         folio_state.current_size += written as u64;
 
         if folio_state.current_size >= folio_state.flush_size {

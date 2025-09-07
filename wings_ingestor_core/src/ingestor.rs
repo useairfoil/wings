@@ -160,7 +160,7 @@ async fn upload_and_commit_folio(
     let mut batches_to_commit = Vec::new();
     let mut batch_context = Vec::new();
     for partition in uploaded.partitions.into_iter() {
-        let (batch, context) = partition.into_batch_to_commit();
+        let (batch, context) = partition.into_commit_page_request();
         batch_context.push((
             batch.topic_name.clone(),
             batch.partition_value.clone(),

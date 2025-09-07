@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::time::{Duration, SystemTime};
 
 use datafusion::common::arrow::{
     compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
@@ -45,13 +46,11 @@ async fn process_push_request(
     state: &HttpIngestorState,
     request: PushRequest,
 ) -> Result<PushResponse> {
-    // Parse namespace name
     let namespace_name =
         NamespaceName::parse(&request.namespace).map_err(|err| HttpIngestorError::BadRequest {
             message: format!("invalid namespace format: {} {err}", request.namespace,),
         })?;
 
-    // Get namespace definition from cache
     let namespace_ref = state
         .namespace_cache
         .get(namespace_name.clone())
@@ -60,12 +59,10 @@ async fn process_push_request(
             message: format!("failed to resolve namespace: {namespace_name} {err}"),
         })?;
 
-    // Process each topic's batches
     let mut seen = HashSet::new();
     let mut writes = FuturesOrdered::new();
 
     for batch in request.batches {
-        // Parse topic name
         let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
             HttpIngestorError::BadRequest {
                 message: format!("invalid topic name: {} {err}", batch.topic),
@@ -82,7 +79,6 @@ async fn process_push_request(
             });
         }
 
-        // Get topic definition from cache
         let topic_ref = state
             .topic_cache
             .get(topic_name.clone())
@@ -91,7 +87,6 @@ async fn process_push_request(
                 message: format!("failed to resolve topic: {topic_name} {err}"),
             })?;
 
-        // Process each batch for this topic
         if batch.data.is_empty() {
             return Err(HttpIngestorError::BadRequest {
                 message: "no data provided".to_string(),
@@ -105,11 +100,16 @@ async fn process_push_request(
             }
         })?;
 
+        let timestamp = batch
+            .timestamp
+            .map(|ts| SystemTime::UNIX_EPOCH + Duration::from_millis(ts));
+
         let batch = Batch {
             namespace: namespace_ref.clone(),
             topic: topic_ref,
             partition: batch.partition,
             records: record_batch,
+            timestamp,
         };
 
         writes.push_back(state.batch_ingestion.write(batch));

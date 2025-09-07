@@ -22,8 +22,17 @@ pub enum ValidateRequestResult {
 
 /// Compare the two batches by their timestamps.
 /// We expect all `None` timestamps to come after `Some(timestamp)`.
-pub fn compare_batch_timestamps(a: &CommitBatchRequest, b: &CommitBatchRequest) -> Ordering {
-    match (a.timestamp.as_ref(), b.timestamp.as_ref()) {
+pub fn compare_batch_request_timestamps(
+    a: &CommitBatchRequest,
+    b: &CommitBatchRequest,
+) -> Ordering {
+    compare_timestamps(&a.timestamp, &b.timestamp)
+}
+
+/// Compare the two batches by their timestamps.
+/// We expect all `None` timestamps to come after `Some(timestamp)`.
+pub fn compare_timestamps(a: &Option<SystemTime>, b: &Option<SystemTime>) -> Ordering {
+    match (a.as_ref(), b.as_ref()) {
         (None, None) => Ordering::Equal,
         (None, Some(_)) => Ordering::Greater,
         (Some(_), None) => Ordering::Less,
@@ -105,18 +114,27 @@ mod tests {
         };
 
         assert_eq!(
-            compare_batch_timestamps(&batch1, &batch2),
+            compare_batch_request_timestamps(&batch1, &batch2),
             Ordering::Greater
         );
 
-        assert_eq!(compare_batch_timestamps(&batch2, &batch3), Ordering::Less);
         assert_eq!(
-            compare_batch_timestamps(&batch1, &batch3),
+            compare_batch_request_timestamps(&batch2, &batch3),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_batch_request_timestamps(&batch1, &batch3),
             Ordering::Greater
         );
 
-        assert_eq!(compare_batch_timestamps(&batch1, &batch1), Ordering::Equal);
-        assert_eq!(compare_batch_timestamps(&batch3, &batch3), Ordering::Equal);
+        assert_eq!(
+            compare_batch_request_timestamps(&batch1, &batch1),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare_batch_request_timestamps(&batch3, &batch3),
+            Ordering::Equal
+        );
     }
 
     #[test]

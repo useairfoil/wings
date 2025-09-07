@@ -75,6 +75,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
                 topic: topic.clone(),
                 partition: None,
                 records,
+                timestamp: None,
             })
             .await
             .expect("first_write");
@@ -97,6 +98,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
                 topic: topic.clone(),
                 partition: None,
                 records,
+                timestamp: None,
             })
             .await
             .expect("second_write");

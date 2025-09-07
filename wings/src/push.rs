@@ -137,9 +137,9 @@ impl PushArgs {
 
             let topic_request = request.topic(topic_id.clone());
             request = if let Some(partition_value) = partition_value {
-                topic_request.partitioned(partition_value, messages)
+                topic_request.partitioned(partition_value, messages, None)
             } else {
-                topic_request.unpartitioned(messages)
+                topic_request.unpartitioned(messages, None)
             };
 
             i = payload_index + 1;

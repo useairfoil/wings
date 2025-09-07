@@ -1,5 +1,7 @@
 //! HTTP client for pushing messages to Wings.
 
+use std::time::SystemTime;
+
 use reqwest::StatusCode;
 use serde_json::Value;
 use snafu::{ResultExt, Snafu};
@@ -119,21 +121,38 @@ impl TopicRequestBuilder {
         mut self,
         partition_value: PartitionValue,
         data: Vec<Value>,
+        timestamp: Option<SystemTime>,
     ) -> PushRequestBuilder {
+        let timestamp = timestamp.map(|ts| {
+            ts.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
+        });
         let batch = Batch {
             topic: self.topic,
             partition: Some(partition_value),
             data,
+            timestamp,
         };
         self.push.add_batch(batch);
         self.push
     }
 
-    pub fn unpartitioned(mut self, data: Vec<Value>) -> PushRequestBuilder {
+    pub fn unpartitioned(
+        mut self,
+        data: Vec<Value>,
+        timestamp: Option<SystemTime>,
+    ) -> PushRequestBuilder {
+        let timestamp = timestamp.map(|ts| {
+            ts.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
+        });
         let batch = Batch {
             topic: self.topic,
             partition: None,
             data,
+            timestamp,
         };
         self.push.add_batch(batch);
         self.push

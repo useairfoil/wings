@@ -7,13 +7,15 @@
 //! **Uploader**: [`NamespaceFolio`] -> [`UploadedNamespaceFolioMetadata`].
 //!
 //! **Committer**: [`UploadedNamespaceFolioMetadata`] -> [`CommittedNamespaceFolioMetadata`].
-use std::fmt::Debug;
+use std::{fmt::Debug, time::SystemTime};
 
 use datafusion::common::arrow::array::RecordBatch;
 use tokio_util::time::delay_queue;
 use wings_metadata_core::{
     admin::{NamespaceRef, TopicName, TopicRef},
-    offset_registry::{CommitBatchRequest, CommitPageRequest, CommittedBatch},
+    offset_registry::{
+        CommitBatchRequest, CommitPageRequest, CommittedBatch, timestamp::compare_timestamps,
+    },
     partition::PartitionValue,
 };
 
@@ -51,6 +53,8 @@ pub struct BatchContext {
     pub reply: WriteReplySender,
     /// The number of messages in the batch.
     pub num_messages: u32,
+    /// The timestamp of the batch.
+    pub timestamp: Option<SystemTime>,
 }
 
 /// A folio of data for a partition.
@@ -143,12 +147,15 @@ impl Debug for PartitionFolio {
 }
 
 impl SerializedPartitionFolioMetadata {
-    pub fn into_batch_to_commit(self) -> (CommitPageRequest, Vec<BatchContext>) {
+    pub fn into_commit_page_request(mut self) -> (CommitPageRequest, Vec<BatchContext>) {
+        self.batches
+            .sort_by(|a, b| compare_timestamps(&a.timestamp, &b.timestamp));
+
         let metadata = self
             .batches
             .iter()
             .map(|ctx| CommitBatchRequest {
-                timestamp: None,
+                timestamp: ctx.timestamp,
                 num_messages: ctx.num_messages,
             })
             .collect();

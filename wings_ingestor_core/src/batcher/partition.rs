@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 use datafusion::common::arrow::datatypes::SchemaRef;
 use datafusion::common::arrow::record_batch::RecordBatch;
@@ -62,6 +62,7 @@ impl PartitionFolioWriter {
     pub fn write_batch(
         &mut self,
         batch: &RecordBatch,
+        timestamp: Option<SystemTime>,
         reply: WriteReplySender,
     ) -> std::result::Result<usize, ReplyWithError> {
         // The writer will error if the schema does not match (which is good!), but it will also become poisoned.
@@ -85,6 +86,7 @@ impl PartitionFolioWriter {
         self.batches.push(BatchContext {
             reply,
             num_messages: batch.num_rows() as _,
+            timestamp,
         });
 
         let bytes_written = self.buffer_size() - initial_size;

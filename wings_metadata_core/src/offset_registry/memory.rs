@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 
 use crate::admin::{NamespaceName, TopicName};
-use crate::offset_registry::timestamp::{LogOffset, compare_batch_timestamps};
+use crate::offset_registry::timestamp::{LogOffset, compare_batch_request_timestamps};
 use crate::offset_registry::{
     AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation,
     ListTopicPartitionStatesRequest, ListTopicPartitionStatesResponse, OffsetLocation,
@@ -101,7 +101,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             if !page
                 .batches
                 .iter()
-                .is_sorted_by(|a, b| compare_batch_timestamps(a, b) != Ordering::Greater)
+                .is_sorted_by(|a, b| compare_batch_request_timestamps(a, b) != Ordering::Greater)
             {
                 return Err(OffsetRegistryError::UnorderedPageBatches {
                     topic: page.topic_name.clone(),

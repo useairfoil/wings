@@ -72,6 +72,7 @@ async fn test_ingest_different_partitions() -> Result<()> {
         topic: topic.clone(),
         partition: Some(PartitionValue::Int32(100)),
         records: partitioned_ingestion_records(),
+        timestamp: None,
     });
 
     let write_region_200_fut = client.write(Batch {
@@ -79,6 +80,7 @@ async fn test_ingest_different_partitions() -> Result<()> {
         topic: topic.clone(),
         partition: Some(PartitionValue::Int32(200)),
         records: partitioned_ingestion_records(),
+        timestamp: None,
     });
 
     let write_region_100 = write_region_100_fut.await?;
@@ -108,6 +110,7 @@ async fn test_ingest_fails_with_invalid_partition_type() -> Result<()> {
         topic: topic.clone(),
         partition: Some(PartitionValue::UInt64(100)),
         records: partitioned_ingestion_records(),
+        timestamp: None,
     });
 
     let write_err = write_fut.await.unwrap_err();
@@ -135,6 +138,7 @@ async fn test_ingest_fails_with_missing_partition() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: partitioned_ingestion_records(),
+        timestamp: None,
     });
 
     let write_err = write_fut.await.unwrap_err();

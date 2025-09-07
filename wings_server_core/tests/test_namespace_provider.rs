@@ -253,6 +253,7 @@ async fn ingest_some_data(
             topic: simple_topic.clone(),
             partition: None,
             records: records.clone(),
+            timestamp: None,
         });
 
         let second_write = client.write(Batch {
@@ -260,6 +261,7 @@ async fn ingest_some_data(
             topic: simple_topic.clone(),
             partition: None,
             records: records.clone(),
+            timestamp: None,
         });
 
         let third_write = client.write(Batch {
@@ -267,6 +269,7 @@ async fn ingest_some_data(
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),
             records: records.clone(),
+            timestamp: None,
         });
 
         let fourth_write = client.write(Batch {
@@ -274,6 +277,7 @@ async fn ingest_some_data(
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(200)),
             records: records.clone(),
+            timestamp: None,
         });
 
         tokio::time::advance(Duration::from_secs(2)).await;
@@ -290,6 +294,7 @@ async fn ingest_some_data(
             topic: simple_topic.clone(),
             partition: None,
             records: records.clone(),
+            timestamp: None,
         })
         .await?;
 
@@ -299,6 +304,7 @@ async fn ingest_some_data(
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),
             records: records.clone(),
+            timestamp: None,
         })
         .await?;
 

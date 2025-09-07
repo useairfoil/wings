@@ -5,7 +5,7 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_metadata_core::admin::NamespaceName;
 use wings_object_store::LocalFileSystemFactory;
-use wings_server_core::query::{NamespaceProvider, NamespaceProviderFactory};
+use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
     error::{DataFusionSnafu, InvalidResourceNameSnafu, ObjectStoreSnafu, Result},

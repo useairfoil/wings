@@ -59,6 +59,7 @@ async fn test_simple_ingestion() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: simple_ingestion_records(),
+        timestamp: None,
     });
 
     tokio::time::advance(Duration::from_secs(2)).await;
@@ -72,6 +73,7 @@ async fn test_simple_ingestion() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: simple_ingestion_records(),
+        timestamp: None,
     });
 
     let second_write_fut = client.write(Batch {
@@ -79,6 +81,7 @@ async fn test_simple_ingestion() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: simple_ingestion_records(),
+        timestamp: None,
     });
 
     tokio::time::advance(Duration::from_secs(2)).await;
@@ -115,6 +118,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: simple_ingestion_records(),
+        timestamp: None,
     });
 
     // Notice that the schema created by record_batch! contains nullable fields
@@ -130,6 +134,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: bad_record_batch,
+        timestamp: None,
     });
 
     let second_write_fut = client.write(Batch {
@@ -137,6 +142,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
         topic: topic.clone(),
         partition: None,
         records: simple_ingestion_records(),
+        timestamp: None,
     });
 
     tokio::time::advance(Duration::from_secs(2)).await;

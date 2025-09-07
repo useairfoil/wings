@@ -68,7 +68,7 @@ impl FetchArgs {
                 operation: "get_topic",
             })?;
 
-        let client = reqwest::Client::new();
+        let _client = reqwest::Client::new();
 
         let partition_value = PartitionValue::parse_with_datatype_option(
             topic.partition_column_data_type(),
@@ -76,7 +76,7 @@ impl FetchArgs {
         )
         .context(PartitionValueParseSnafu {})?;
 
-        let request = FetchRequest {
+        let _request = FetchRequest {
             namespace: namespace_name.to_string(),
             timeout_ms: self.timeout,
             min_messages: self.min_messages,

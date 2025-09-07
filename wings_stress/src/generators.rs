@@ -47,7 +47,9 @@ impl RequestGenerator {
         let mut req = client.push();
         for topic_gen in self.inner.iter_mut() {
             let (partition, batch) = topic_gen.new_batch(batch_size as usize);
-            req = req.topic(topic_gen.topic()).partitioned(partition, batch);
+            req = req
+                .topic(topic_gen.topic())
+                .partitioned(partition, batch, None);
         }
 
         req

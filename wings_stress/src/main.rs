@@ -111,7 +111,14 @@ async fn main() -> Result<()> {
                 let response = response.context(HttpPushSnafu {})?;
                 let success_count = response.batches.iter().filter(|b| b.is_success()).count();
                 let error_count = response.batches.iter().filter(|b| b.is_error()).count();
-                println!("Success {} Error {}", success_count, error_count);
+                let success_offsets = response
+                    .batches
+                    .iter()
+                    .flat_map(|b| b.as_success())
+                    .map(|(s, e)| format!("{}-{}", s, e))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                println!("Success {} Error {}\t{}", success_count, error_count, success_offsets);
             }
         }
     }

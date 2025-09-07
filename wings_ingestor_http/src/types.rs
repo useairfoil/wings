@@ -23,6 +23,10 @@ pub struct Batch {
     /// List of JSON objects representing the data to push.
     /// Each object will be converted to an Arrow RecordBatch.
     pub data: Vec<serde_json::Value>,
+    /// The timestamp for the batch, in milliseconds since the Unix epoch.
+    ///
+    /// If None, the current time will be used.
+    pub timestamp: Option<u64>,
 }
 
 /// Response payload for the /v1/push endpoint.
@@ -47,6 +51,23 @@ pub enum BatchResponse {
 }
 
 impl BatchResponse {
+    pub fn as_success(&self) -> Option<(u64, u64)> {
+        match self {
+            BatchResponse::Success {
+                start_offset,
+                end_offset,
+            } => Some((*start_offset, *end_offset)),
+            _ => None,
+        }
+    }
+
+    pub fn as_error(&self) -> Option<&str> {
+        match self {
+            BatchResponse::Error { message } => Some(message),
+            _ => None,
+        }
+    }
+
     pub fn is_success(&self) -> bool {
         matches!(self, BatchResponse::Success { .. })
     }
