@@ -278,7 +278,7 @@ impl OffsetRegistry for InMemoryOffsetRegistry {
             next_page_token = key.partition_value.as_ref().map(|pv| pv.to_string());
             states.push(PartitionValueState {
                 partition_value: key.partition_value.clone(),
-                next_offset: state.next_offset.offset,
+                next_offset: state.next_offset,
             });
         }
 

@@ -1,9 +1,11 @@
-use std::{any::Any, fmt, sync::Arc};
+use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, RecordBatch, StringViewBuilder, UInt64Builder},
-        datatypes::{DataType, Field, Schema, SchemaRef},
+        array::{
+            ArrayRef, RecordBatch, StringViewBuilder, TimestampMillisecondBuilder, UInt64Builder,
+        },
+        datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit},
     },
     error::{DataFusionError, Result},
     execution::{SendableRecordBatchStream, TaskContext},
@@ -58,6 +60,11 @@ impl TopicPartitionValueDiscoveryExec {
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
             Field::new("partition_value", DataType::Utf8View, true),
             Field::new("next_offset", DataType::UInt64, false),
+            Field::new(
+                "latest_timestamp",
+                DataType::Timestamp(TimeUnit::Millisecond, None),
+                false,
+            ),
         ];
 
         Arc::new(Schema::new(fields))
@@ -177,6 +184,7 @@ fn from_partition_values(
     let mut topic_arr = StringViewBuilder::with_capacity(states.len());
     let mut partition_value_arr = StringViewBuilder::with_capacity(states.len());
     let mut next_offset_arr = UInt64Builder::with_capacity(states.len());
+    let mut latest_timestamp_arr = TimestampMillisecondBuilder::with_capacity(states.len());
 
     for state in states {
         topic_arr.append_value(topic_name.id.clone());
@@ -189,7 +197,18 @@ fn from_partition_values(
         } else {
             partition_value_arr.append_null();
         }
-        next_offset_arr.append_value(state.next_offset);
+        next_offset_arr.append_value(state.next_offset.offset);
+        let latest_timestamp = state
+            .next_offset
+            .timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|err| {
+                DataFusionError::Execution(format!(
+                    "failed to get duration since UNIX_EPOCH: {}",
+                    err
+                ))
+            })?;
+        latest_timestamp_arr.append_value(latest_timestamp.as_millis() as _);
     }
 
     let columns: Vec<ArrayRef> = vec![
@@ -198,6 +217,7 @@ fn from_partition_values(
         Arc::new(topic_arr.finish()),
         Arc::new(partition_value_arr.finish()),
         Arc::new(next_offset_arr.finish()),
+        Arc::new(latest_timestamp_arr.finish()),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)

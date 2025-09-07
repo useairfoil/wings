@@ -4,6 +4,8 @@ use std::time::SystemTime;
 
 use crate::{admin::TopicName, partition::PartitionValue};
 
+use super::timestamp::LogOffset;
+
 /// Represents a single write operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitBatchRequest {
@@ -81,7 +83,7 @@ pub struct FolioLocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionValueState {
     pub partition_value: Option<PartitionValue>,
-    pub next_offset: u64,
+    pub next_offset: LogOffset,
 }
 
 pub struct ListTopicPartitionStatesRequest {

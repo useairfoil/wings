@@ -11,6 +11,7 @@ use crate::partition::PartitionValue;
 use crate::protocol::wings::v1::{self as pb};
 
 use super::error::{InvalidArgumentSnafu, InvalidResourceNameSnafu, OffsetRegistryError};
+use super::timestamp::LogOffset;
 
 impl From<Option<OffsetLocation>> for pb::OffsetLocationResponse {
     fn from(location: Option<OffsetLocation>) -> Self {
@@ -83,9 +84,10 @@ impl TryFrom<pb::FolioLocation> for FolioLocation {
 
 impl From<PartitionValueState> for pb::PartitionValueState {
     fn from(state: PartitionValueState) -> Self {
+        let next_offset = state.next_offset.into();
         pb::PartitionValueState {
             value: state.partition_value.as_ref().map(Into::into),
-            next_offset: state.next_offset,
+            offset: Some(next_offset),
         }
     }
 }
@@ -95,10 +97,11 @@ impl TryFrom<pb::PartitionValueState> for PartitionValueState {
 
     fn try_from(state: pb::PartitionValueState) -> Result<Self, Self::Error> {
         let value = state.value.map(TryFrom::try_from).transpose()?;
+        let next_offset = state.offset.unwrap_or_default().try_into()?;
 
         Ok(Self {
             partition_value: value,
-            next_offset: state.next_offset,
+            next_offset,
         })
     }
 }
@@ -191,6 +194,33 @@ impl TryFrom<pb::CommitPageResponse> for CommitPageResponse {
             partition_value,
             batches,
         })
+    }
+}
+
+impl TryFrom<pb::LogOffset> for LogOffset {
+    type Error = OffsetRegistryError;
+
+    fn try_from(offset: pb::LogOffset) -> Result<Self, Self::Error> {
+        let timestamp = offset
+            .timestamp
+            .unwrap_or_default()
+            .try_into()
+            .map_err(Arc::new)
+            .context(InvalidTimestampSnafu {})?;
+
+        Ok(Self {
+            offset: offset.offset,
+            timestamp,
+        })
+    }
+}
+
+impl From<LogOffset> for pb::LogOffset {
+    fn from(offset: LogOffset) -> Self {
+        Self {
+            offset: offset.offset,
+            timestamp: Some(offset.timestamp.into()),
+        }
     }
 }
 

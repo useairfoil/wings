@@ -69,7 +69,12 @@ message FolioLocation {
 
 message PartitionValueState {
     optional PartitionValue value = 1;
-    uint64 next_offset = 2;
+    LogOffset offset = 2;
+}
+
+message LogOffset {
+    uint64 offset = 1;
+    google.protobuf.Timestamp timestamp = 2;
 }
 
 message PartitionValue {
