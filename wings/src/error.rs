@@ -37,6 +37,8 @@ pub enum CliError {
     InvalidPartitionValue,
     #[snafu(display("Failed to parse partition value"))]
     PartitionValueParse { source: PartitionValueParseError },
+    #[snafu(display("Invalid timestamp format"))]
+    InvalidTimestampFormat { source: chrono::ParseError },
     #[snafu(display("Invalid remote URL"))]
     InvalidRemoteUrl { source: InvalidUri },
     #[snafu(display("Invalid server URL"))]

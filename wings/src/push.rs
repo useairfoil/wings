@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use clap::Parser;
 use serde_json::Value;
 use snafu::ResultExt;
@@ -12,8 +14,8 @@ use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 use crate::{
     error::{
-        AdminSnafu, CliError, InvalidResourceNameSnafu, IoSnafu, JsonParseSnafu,
-        PartitionValueParseSnafu, PushClientSnafu, Result,
+        AdminSnafu, CliError, InvalidResourceNameSnafu, InvalidTimestampFormatSnafu, IoSnafu,
+        JsonParseSnafu, PartitionValueParseSnafu, PushClientSnafu, Result,
     },
     remote::RemoteArgs,
 };
@@ -30,6 +32,10 @@ pub struct PushArgs {
     /// - partition_value: optional, value for the partition key
     /// - payload: required, JSON payload or @file_path for file containing JSON messages
     batches: Vec<String>,
+
+    /// Assign this timestamp to the batches.
+    #[arg(long)]
+    timestamp: Option<String>,
 
     /// HTTP ingestor address.
     ///
@@ -52,8 +58,16 @@ impl PushArgs {
 
         let client = HttpPushClient::new(&self.http_address, namespace_name.clone());
 
+        let timestamp = self
+            .timestamp
+            .as_ref()
+            .map(|ts| chrono::DateTime::parse_from_rfc3339(ts))
+            .transpose()
+            .context(InvalidTimestampFormatSnafu {})?
+            .map(SystemTime::from);
+
         let request = self
-            .parse_batches_to_request(namespace_name, &admin, &client)
+            .parse_batches_to_request(namespace_name, timestamp, &admin, &client)
             .await?;
 
         let response = request.send().await.context(PushClientSnafu {})?;
@@ -78,6 +92,7 @@ impl PushArgs {
     async fn parse_batches_to_request(
         &self,
         namespace_name: NamespaceName,
+        timestamp: Option<SystemTime>,
         admin: &RemoteAdminService<Channel>,
         client: &HttpPushClient,
     ) -> Result<PushRequestBuilder> {
@@ -137,9 +152,9 @@ impl PushArgs {
 
             let topic_request = request.topic(topic_id.clone());
             request = if let Some(partition_value) = partition_value {
-                topic_request.partitioned(partition_value, messages, None)
+                topic_request.partitioned(partition_value, messages, timestamp)
             } else {
-                topic_request.unpartitioned(messages, None)
+                topic_request.unpartitioned(messages, timestamp)
             };
 
             i = payload_index + 1;
