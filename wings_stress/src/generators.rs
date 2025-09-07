@@ -77,12 +77,12 @@ impl OrderRecordBatchGenerator {
             Field::new("o_orderkey", DataType::Int64, false),
             Field::new("o_custkey", DataType::Int64, false),
             Field::new("o_orderstatus", DataType::Utf8View, false),
-            // Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
-            // Field::new("o_orderdate", DataType::Date32, false),
-            // Field::new("o_orderpriority", DataType::Utf8View, false),
-            // Field::new("o_clerk", DataType::Utf8View, false),
-            // Field::new("o_shippriority", DataType::Int32, false),
-            // Field::new("o_comment", DataType::Utf8View, false),
+            Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
+            Field::new("o_orderdate", DataType::Date32, false),
+            Field::new("o_orderpriority", DataType::Utf8View, false),
+            Field::new("o_clerk", DataType::Utf8View, false),
+            Field::new("o_shippriority", DataType::Int32, false),
+            Field::new("o_comment", DataType::Utf8View, false),
         ])
     }
 
@@ -111,6 +111,12 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                 json!({
                     "o_orderkey": row.o_orderkey,
                     "o_orderstatus": row.o_orderstatus.to_string(),
+                    "o_totalprice": row.o_totalprice.to_string(),
+                    "o_orderdate": row.o_orderdate.to_string(),
+                    "o_orderpriority": row.o_orderpriority.to_string(),
+                    "o_clerk": row.o_clerk.to_string(),
+                    "o_shippriority": row.o_shippriority,
+                    "o_comment": row.o_comment.to_string()
                 })
             })
             .collect();
