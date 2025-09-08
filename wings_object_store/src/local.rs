@@ -15,7 +15,7 @@ use std::sync::Arc;
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
 
-use wings_control_plane::admin::SecretName;
+use wings_control_plane::resources::SecretName;
 
 use crate::ObjectStoreFactory;
 

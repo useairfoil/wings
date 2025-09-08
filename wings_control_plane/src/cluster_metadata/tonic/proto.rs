@@ -12,11 +12,30 @@ use datafusion::common::arrow::{
 };
 use snafu::ResultExt;
 
-use crate::admin::error::{AdminError, AdminResult, InvalidResourceNameSnafu};
-use crate::admin::types::*;
-use crate::protocol::wings::v1 as pb;
+use crate::{
+    cluster_metadata::{
+        ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest,
+        ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
+        error::InvalidResourceNameSnafu,
+    },
+    resources::{
+        Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic,
+        TopicName, TopicOptions,
+    },
+};
 
-// Tenant conversions
+use super::pb;
+
+/*
+ *  ███████████ ██████████ ██████   █████   █████████   ██████   █████ ███████████
+ * ░█░░░███░░░█░░███░░░░░█░░██████ ░░███   ███░░░░░███ ░░██████ ░░███ ░█░░░███░░░█
+ * ░   ░███  ░  ░███  █ ░  ░███░███ ░███  ░███    ░███  ░███░███ ░███ ░   ░███  ░
+ *     ░███     ░██████    ░███░░███░███  ░███████████  ░███░░███░███     ░███
+ *     ░███     ░███░░█    ░███ ░░██████  ░███░░░░░███  ░███ ░░██████     ░███
+ *     ░███     ░███ ░   █ ░███  ░░█████  ░███    ░███  ░███  ░░█████     ░███
+ *     █████    ██████████ █████  ░░█████ █████   █████ █████  ░░█████    █████
+ *    ░░░░░    ░░░░░░░░░░ ░░░░░    ░░░░░ ░░░░░   ░░░░░ ░░░░░    ░░░░░    ░░░░░
+ */
 
 impl From<Tenant> for pb::Tenant {
     fn from(tenant: Tenant) -> Self {
@@ -27,7 +46,7 @@ impl From<Tenant> for pb::Tenant {
 }
 
 impl TryFrom<pb::Tenant> for Tenant {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(tenant: pb::Tenant) -> AdminResult<Self> {
         let name = TenantName::parse(&tenant.name)
@@ -37,7 +56,66 @@ impl TryFrom<pb::Tenant> for Tenant {
     }
 }
 
-// Namespace conversions
+impl From<ListTenantsRequest> for pb::ListTenantsRequest {
+    fn from(request: ListTenantsRequest) -> Self {
+        Self {
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
+        }
+    }
+}
+
+impl From<pb::ListTenantsRequest> for ListTenantsRequest {
+    fn from(request: pb::ListTenantsRequest) -> Self {
+        Self {
+            page_size: request.page_size,
+            page_token: request.page_token.clone(),
+        }
+    }
+}
+
+impl From<ListTenantsResponse> for pb::ListTenantsResponse {
+    fn from(response: ListTenantsResponse) -> Self {
+        let tenants = response.tenants.into_iter().map(pb::Tenant::from).collect();
+
+        Self {
+            tenants,
+            next_page_token: response.next_page_token.unwrap_or_default(),
+        }
+    }
+}
+
+impl TryFrom<pb::ListTenantsResponse> for ListTenantsResponse {
+    type Error = ClusterMetadataError;
+
+    fn try_from(response: pb::ListTenantsResponse) -> AdminResult<Self> {
+        let tenants = response
+            .tenants
+            .into_iter()
+            .map(Tenant::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
+            tenants,
+            next_page_token: if response.next_page_token.is_empty() {
+                None
+            } else {
+                Some(response.next_page_token)
+            },
+        })
+    }
+}
+
+/*
+ *   ██████   █████   █████████   ██████   ██████ ██████████  █████████  ███████████    █████████     █████████  ██████████
+ *  ░░██████ ░░███   ███░░░░░███ ░░██████ ██████ ░░███░░░░░█ ███░░░░░███░░███░░░░░███  ███░░░░░███   ███░░░░░███░░███░░░░░█
+ *   ░███░███ ░███  ░███    ░███  ░███░█████░███  ░███  █ ░ ░███    ░░░  ░███    ░███ ░███    ░███  ███     ░░░  ░███  █ ░
+ *   ░███░░███░███  ░███████████  ░███░░███ ░███  ░██████   ░░█████████  ░██████████  ░███████████ ░███          ░██████
+ *   ░███ ░░██████  ░███░░░░░███  ░███ ░░░  ░███  ░███░░█    ░░░░░░░░███ ░███░░░░░░   ░███░░░░░███ ░███          ░███░░█
+ *   ░███  ░░█████  ░███    ░███  ░███      ░███  ░███ ░   █ ███    ░███ ░███         ░███    ░███ ░░███     ███ ░███ ░   █
+ *   █████  ░░█████ █████   █████ █████     █████ ██████████░░█████████  █████        █████   █████ ░░█████████  ██████████
+ *  ░░░░░    ░░░░░ ░░░░░   ░░░░░ ░░░░░     ░░░░░ ░░░░░░░░░░  ░░░░░░░░░  ░░░░░        ░░░░░   ░░░░░   ░░░░░░░░░  ░░░░░░░░░░
+ */
 
 impl From<Namespace> for pb::Namespace {
     fn from(namespace: Namespace) -> Self {
@@ -54,7 +132,7 @@ impl From<Namespace> for pb::Namespace {
 }
 
 impl TryFrom<pb::Namespace> for Namespace {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
         let name = NamespaceName::parse(&namespace.name).context(InvalidResourceNameSnafu {
@@ -82,7 +160,7 @@ impl TryFrom<pb::Namespace> for Namespace {
 }
 
 impl TryFrom<pb::Namespace> for NamespaceOptions {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
@@ -121,114 +199,6 @@ impl From<NamespaceOptions> for pb::Namespace {
     }
 }
 
-// Topic conversions
-
-impl From<Topic> for pb::Topic {
-    fn from(topic: Topic) -> Self {
-        let fields = serialize_fields(&topic.fields);
-        let partition_key = topic.partition_key.map(|idx| idx as u32);
-
-        Self {
-            name: topic.name.name(),
-            fields,
-            partition_key,
-        }
-    }
-}
-
-impl TryFrom<pb::Topic> for Topic {
-    type Error = AdminError;
-
-    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let name = TopicName::parse(&topic.name)
-            .context(InvalidResourceNameSnafu { resource: "topic" })?;
-        let fields = deserialize_fields(&topic.fields)?;
-        let partition_key = topic.partition_key.map(|idx| idx as usize);
-
-        Ok(Self {
-            name,
-            fields,
-            partition_key,
-        })
-    }
-}
-
-impl TryFrom<pb::Topic> for TopicOptions {
-    type Error = AdminError;
-
-    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let fields = deserialize_fields(&topic.fields)?;
-        let partition_key = topic.partition_key.map(|idx| idx as usize);
-
-        Ok(Self {
-            fields,
-            partition_key,
-        })
-    }
-}
-
-impl From<TopicOptions> for pb::Topic {
-    fn from(options: TopicOptions) -> Self {
-        pb::Topic {
-            name: String::new(),
-            fields: serialize_fields(&options.fields),
-            partition_key: options.partition_key.map(|idx| idx as u32),
-        }
-    }
-}
-
-// Request/Response conversions
-
-impl From<ListTenantsRequest> for pb::ListTenantsRequest {
-    fn from(request: ListTenantsRequest) -> Self {
-        Self {
-            page_size: request.page_size,
-            page_token: request.page_token.clone(),
-        }
-    }
-}
-
-impl From<pb::ListTenantsRequest> for ListTenantsRequest {
-    fn from(request: pb::ListTenantsRequest) -> Self {
-        Self {
-            page_size: request.page_size,
-            page_token: request.page_token.clone(),
-        }
-    }
-}
-
-impl From<ListTenantsResponse> for pb::ListTenantsResponse {
-    fn from(response: ListTenantsResponse) -> Self {
-        let tenants = response.tenants.into_iter().map(pb::Tenant::from).collect();
-
-        Self {
-            tenants,
-            next_page_token: response.next_page_token.unwrap_or_default(),
-        }
-    }
-}
-
-impl TryFrom<pb::ListTenantsResponse> for ListTenantsResponse {
-    type Error = AdminError;
-
-    fn try_from(response: pb::ListTenantsResponse) -> AdminResult<Self> {
-        let tenants = response
-            .tenants
-            .into_iter()
-            .map(Tenant::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
-            tenants,
-            next_page_token: if response.next_page_token.is_empty() {
-                None
-            } else {
-                Some(response.next_page_token)
-            },
-        })
-    }
-}
-
 impl From<ListNamespacesRequest> for pb::ListNamespacesRequest {
     fn from(request: ListNamespacesRequest) -> Self {
         Self {
@@ -240,7 +210,7 @@ impl From<ListNamespacesRequest> for pb::ListNamespacesRequest {
 }
 
 impl TryFrom<pb::ListNamespacesRequest> for ListNamespacesRequest {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(request: pb::ListNamespacesRequest) -> AdminResult<Self> {
         let parent = TenantName::parse(&request.parent)
@@ -270,7 +240,7 @@ impl From<ListNamespacesResponse> for pb::ListNamespacesResponse {
 }
 
 impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(response: pb::ListNamespacesResponse) -> AdminResult<Self> {
         let namespaces = response
@@ -290,6 +260,71 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
     }
 }
 
+/*
+ *  ███████████    ███████    ███████████  █████   █████████
+ * ░█░░░███░░░█  ███░░░░░███ ░░███░░░░░███░░███   ███░░░░░███
+ * ░   ░███  ░  ███     ░░███ ░███    ░███ ░███  ███     ░░░
+ *     ░███    ░███      ░███ ░██████████  ░███ ░███
+ *     ░███    ░███      ░███ ░███░░░░░░   ░███ ░███
+ *     ░███    ░░███     ███  ░███         ░███ ░░███     ███
+ *     █████    ░░░███████░   █████        █████ ░░█████████
+ *    ░░░░░       ░░░░░░░    ░░░░░        ░░░░░   ░░░░░░░░░
+ */
+
+impl From<Topic> for pb::Topic {
+    fn from(topic: Topic) -> Self {
+        let fields = serialize_fields(&topic.fields);
+        let partition_key = topic.partition_key.map(|idx| idx as u32);
+
+        Self {
+            name: topic.name.name(),
+            fields,
+            partition_key,
+        }
+    }
+}
+
+impl TryFrom<pb::Topic> for Topic {
+    type Error = ClusterMetadataError;
+
+    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
+        let name = TopicName::parse(&topic.name)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+        let fields = deserialize_fields(&topic.fields)?;
+        let partition_key = topic.partition_key.map(|idx| idx as usize);
+
+        Ok(Self {
+            name,
+            fields,
+            partition_key,
+        })
+    }
+}
+
+impl TryFrom<pb::Topic> for TopicOptions {
+    type Error = ClusterMetadataError;
+
+    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
+        let fields = deserialize_fields(&topic.fields)?;
+        let partition_key = topic.partition_key.map(|idx| idx as usize);
+
+        Ok(Self {
+            fields,
+            partition_key,
+        })
+    }
+}
+
+impl From<TopicOptions> for pb::Topic {
+    fn from(options: TopicOptions) -> Self {
+        pb::Topic {
+            name: String::new(),
+            fields: serialize_fields(&options.fields),
+            partition_key: options.partition_key.map(|idx| idx as u32),
+        }
+    }
+}
+
 impl From<ListTopicsRequest> for pb::ListTopicsRequest {
     fn from(request: ListTopicsRequest) -> Self {
         Self {
@@ -301,7 +336,7 @@ impl From<ListTopicsRequest> for pb::ListTopicsRequest {
 }
 
 impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(request: pb::ListTopicsRequest) -> AdminResult<Self> {
         let parent = NamespaceName::parse(&request.parent).context(InvalidResourceNameSnafu {
@@ -332,7 +367,7 @@ impl From<ListTopicsResponse> for pb::ListTopicsResponse {
 }
 
 impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
-    type Error = AdminError;
+    type Error = ClusterMetadataError;
 
     fn try_from(response: pb::ListTopicsResponse) -> AdminResult<Self> {
         let topics = response
@@ -352,8 +387,6 @@ impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
     }
 }
 
-// Helper functions for Arrow schema serialization
-
 fn serialize_fields(fields: &arrow::datatypes::Fields) -> Vec<u8> {
     let schema = Schema::new(fields.clone());
     let fb = IpcSchemaEncoder::new().schema_to_fb(&schema);
@@ -361,10 +394,11 @@ fn serialize_fields(fields: &arrow::datatypes::Fields) -> Vec<u8> {
 }
 
 fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
-    let ipc_schema = root_as_schema(data).map_err(|inner| AdminError::InvalidArgument {
-        resource: "topic",
-        message: format!("invalid topic schema: {}", inner),
-    })?;
+    let ipc_schema =
+        root_as_schema(data).map_err(|inner| ClusterMetadataError::InvalidArgument {
+            resource: "topic",
+            message: format!("invalid topic schema: {}", inner),
+        })?;
     let schema = fb_to_schema(ipc_schema);
     Ok(schema.fields)
 }

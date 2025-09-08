@@ -14,7 +14,7 @@ pub mod local;
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use wings_control_plane::admin::SecretName;
+use wings_control_plane::resources::SecretName;
 
 pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 

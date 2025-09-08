@@ -1,7 +1,8 @@
-//! Type-safe resource identifiers for Wings metadata.
+//! Type-safe resource identifiers.
 //!
 //! This module provides a macro to generate type-safe resource types that prevent
 //! mixing up different resource identifiers and ensure proper hierarchical relationships.
+#![allow(dead_code)]
 
 use snafu::Snafu;
 
@@ -52,6 +53,25 @@ pub fn validate_resource_id(id: &str) -> ResourceResult<()> {
     Ok(())
 }
 
+pub fn resource_error_to_status(resource: &str, error: ResourceError) -> tonic::Status {
+    use tonic::Status;
+
+    match error {
+        ResourceError::InvalidFormat { expected, actual } => Status::invalid_argument(format!(
+            "invalid {resource} name format: expected '{expected}' but got '{actual}'",
+        )),
+        ResourceError::InvalidName { name } => {
+            Status::invalid_argument(format!("invalid {resource} name: {name}"))
+        }
+        ResourceError::MissingParent { name } => {
+            Status::invalid_argument(format!("missing parent {resource} in name: {name}"))
+        }
+        ResourceError::InvalidResourceId { id } => {
+            Status::invalid_argument(format!("invalid {resource} id: {id}"))
+        }
+    }
+}
+
 /// Macro to generate type-safe resource types.
 ///
 /// This macro generates structs for resource names that ensure type safety and
@@ -70,9 +90,9 @@ macro_rules! resource_type {
 
             impl [<$name Name>] {
                 #[doc = "Create a new " $name " resource identifier."]
-                pub fn new(id: impl Into<String>) -> $crate::resource::ResourceResult<Self> {
+                pub fn new(id: impl Into<String>) -> $crate::resources::name::ResourceResult<Self> {
                     let id = id.into();
-                    $crate::resource::validate_resource_id(&id)?;
+                    $crate::resources::name::validate_resource_id(&id)?;
                     Ok(Self { id })
                 }
 
@@ -83,7 +103,7 @@ macro_rules! resource_type {
                 #[doc = "Panics if the resource ID is invalid."]
                 pub fn new_unchecked(id: impl Into<String>) -> Self {
                     let id = id.into();
-                    $crate::resource::validate_resource_id(&id)
+                    $crate::resources::name::validate_resource_id(&id)
                         .expect("resource id must be valid");
                     Self { id }
                 }
@@ -94,13 +114,13 @@ macro_rules! resource_type {
                 }
 
                 #[doc = "Parse a resource name into a " $name " identifier."]
-                pub fn parse(name: &str) -> $crate::resource::ResourceResult<Self> {
+                pub fn parse(name: &str) -> $crate::resources::name::ResourceResult<Self> {
                     let expected_prefix = concat!($prefix, "/");
                     if let Some(id) = name.strip_prefix(expected_prefix) {
-                        $crate::resource::validate_resource_id(id)?;
+                        $crate::resources::name::validate_resource_id(id)?;
                         Ok(Self { id: id.to_string() })
                     } else {
-                        Err($crate::resource::ResourceError::InvalidFormat {
+                        Err($crate::resources::name::ResourceError::InvalidFormat {
                             expected: format!("{}/{{id}}", $prefix),
                             actual: name.to_string(),
                         })
@@ -120,7 +140,7 @@ macro_rules! resource_type {
             }
 
             impl std::str::FromStr for [<$name Name>] {
-                type Err = $crate::resource::ResourceError;
+                type Err = $crate::resources::name::ResourceError;
 
                 fn from_str(s: &str) -> Result<Self, Self::Err> {
                     Self::parse(s)
@@ -143,9 +163,9 @@ macro_rules! resource_type {
 
             impl [<$name Name>] {
                 #[doc = "Create a new " $name " resource identifier."]
-                pub fn new(id: impl Into<String>, parent: [<$parent Name>]) -> $crate::resource::ResourceResult<Self> {
+                pub fn new(id: impl Into<String>, parent: [<$parent Name>]) -> $crate::resources::name::ResourceResult<Self> {
                     let id = id.into();
-                    $crate::resource::validate_resource_id(&id)?;
+                    $crate::resources::name::validate_resource_id(&id)?;
                     Ok(Self { id, parent })
                 }
 
@@ -156,7 +176,7 @@ macro_rules! resource_type {
                 #[doc = "Panics if the resource ID is invalid."]
                 pub fn new_unchecked(id: impl Into<String>, parent: [<$parent Name>]) -> Self {
                     let id = id.into();
-                    $crate::resource::validate_resource_id(&id)
+                    $crate::resources::name::validate_resource_id(&id)
                         .expect("resource id must be valid");
                     Self { id, parent }
                 }
@@ -167,21 +187,21 @@ macro_rules! resource_type {
                 }
 
                 #[doc = "Parse a resource name into a " $name " identifier."]
-                pub fn parse(name: &str) -> $crate::resource::ResourceResult<Self> {
+                pub fn parse(name: &str) -> $crate::resources::name::ResourceResult<Self> {
                     let parts: Vec<&str> = name.split('/').collect();
                     if parts.len() >= 4 && parts[parts.len() - 2] == $prefix {
                         let id = parts[parts.len() - 1];
-                        $crate::resource::validate_resource_id(id)?;
+                        $crate::resources::name::validate_resource_id(id)?;
                         let parent_parts = &parts[..parts.len() - 2];
                         let parent_name = parent_parts.join("/");
                         match [<$parent Name>]::parse(&parent_name) {
                             Ok(parent) => Ok(Self { id: id.to_string(), parent }),
-                            Err(_) => Err($crate::resource::ResourceError::MissingParent {
+                            Err(_) => Err($crate::resources::name::ResourceError::MissingParent {
                                 name: name.to_string(),
                             })
                         }
                     } else {
-                        Err($crate::resource::ResourceError::InvalidFormat {
+                        Err($crate::resources::name::ResourceError::InvalidFormat {
                             expected: format!("{{parent}}/{}/{{id}}", $prefix),
                             actual: name.to_string(),
                         })
@@ -206,7 +226,7 @@ macro_rules! resource_type {
             }
 
             impl std::str::FromStr for [<$name Name>] {
-                type Err = $crate::resource::ResourceError;
+                type Err = $crate::resources::name::ResourceError;
 
                 fn from_str(s: &str) -> Result<Self, Self::Err> {
                     Self::parse(s)

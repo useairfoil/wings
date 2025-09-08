@@ -1,41 +1,44 @@
-//! gRPC server implementation for the AdminService.
-
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use snafu::ResultExt;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response, Status, async_trait};
 
-use crate::admin::{
-    Admin, AdminError, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, NamespaceName,
-    NamespaceOptions, TenantName, TopicName, TopicOptions,
+use crate::{
+    cluster_metadata::{
+        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListTenantsRequest,
+        ListTopicsRequest, error::InvalidResourceNameSnafu,
+    },
+    resources::{
+        NamespaceName, NamespaceOptions, TenantName, TopicName, TopicOptions,
+        name::resource_error_to_status,
+    },
 };
-use crate::protocol::wings::v1::{
-    self as pb,
-    admin_service_server::{AdminService as AdminServiceTrait, AdminServiceServer},
+
+use super::pb::{
+    self,
+    cluster_metadata_service_server::{
+        ClusterMetadataService as TonicService, ClusterMetadataServiceServer as TonicServer,
+    },
 };
-use crate::resource::ResourceError;
 
-use super::error::InvalidResourceNameSnafu;
-
-/// gRPC server implementation for the AdminService.
-pub struct AdminService {
-    admin: Arc<dyn Admin>,
+/// A tonic service for managing cluster metadata.
+pub struct ClusterMetadataServer {
+    inner: Arc<dyn ClusterMetadata>,
 }
 
-impl AdminService {
-    /// Create a new AdminService server with the given admin implementation.
-    pub fn new(admin: Arc<dyn Admin>) -> Self {
-        Self { admin }
+impl ClusterMetadataServer {
+    /// Create a new tonic cluster metadata server.
+    pub fn new(inner: Arc<dyn ClusterMetadata>) -> Self {
+        Self { inner }
     }
 
-    pub fn into_service(self) -> AdminServiceServer<Self> {
-        AdminServiceServer::new(self)
+    pub fn into_tonic_server(self) -> TonicServer<Self> {
+        TonicServer::new(self)
     }
 }
 
 #[async_trait]
-impl AdminServiceTrait for AdminService {
+impl TonicService for ClusterMetadataServer {
     async fn create_tenant(
         &self,
         request: Request<pb::CreateTenantRequest>,
@@ -45,13 +48,13 @@ impl AdminServiceTrait for AdminService {
         let tenant_name = TenantName::new(request.tenant_id)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let tenant = self
-            .admin
+            .inner
             .create_tenant(tenant_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(tenant.into()))
     }
@@ -65,13 +68,13 @@ impl AdminServiceTrait for AdminService {
         let tenant_name = TenantName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let tenant = self
-            .admin
+            .inner
             .get_tenant(tenant_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(tenant.into()))
     }
@@ -83,10 +86,10 @@ impl AdminServiceTrait for AdminService {
         let request = ListTenantsRequest::from(request.into_inner());
 
         let response = self
-            .admin
+            .inner
             .list_tenants(request)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(response.into()))
     }
@@ -100,12 +103,12 @@ impl AdminServiceTrait for AdminService {
         let tenant_name = TenantName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
-        self.admin
+        self.inner
             .delete_tenant(tenant_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(()))
     }
@@ -119,23 +122,23 @@ impl AdminServiceTrait for AdminService {
         let tenant_name = TenantName::parse(&request.parent)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let namespace_name = NamespaceName::new(request.namespace_id, tenant_name)
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let options = NamespaceOptions::try_from(request.namespace.unwrap_or_default())
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let namespace = self
-            .admin
+            .inner
             .create_namespace(namespace_name, options)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(namespace.into()))
     }
@@ -151,13 +154,13 @@ impl AdminServiceTrait for AdminService {
                 resource: "namespace",
             })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let namespace = self
-            .admin
+            .inner
             .get_namespace(namespace_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(namespace.into()))
     }
@@ -167,13 +170,14 @@ impl AdminServiceTrait for AdminService {
         request: Request<pb::ListNamespacesRequest>,
     ) -> Result<Response<pb::ListNamespacesResponse>, Status> {
         let request = request.into_inner();
-        let request = ListNamespacesRequest::try_from(request).map_err(admin_error_to_status)?;
+        let request =
+            ListNamespacesRequest::try_from(request).map_err(cluster_metadata_error_to_status)?;
 
         let response = self
-            .admin
+            .inner
             .list_namespaces(request)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(response.into()))
     }
@@ -189,12 +193,12 @@ impl AdminServiceTrait for AdminService {
                 resource: "namespace",
             })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
-        self.admin
+        self.inner
             .delete_namespace(namespace_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(()))
     }
@@ -210,21 +214,21 @@ impl AdminServiceTrait for AdminService {
                 resource: "namespace",
             })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let topic_name = TopicName::new(request.topic_id, namespace_name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let options = TopicOptions::try_from(request.topic.unwrap_or_default())
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let topic = self
-            .admin
+            .inner
             .create_topic(topic_name, options)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(topic.into()))
     }
@@ -238,13 +242,13 @@ impl AdminServiceTrait for AdminService {
         let topic_name = TopicName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         let topic = self
-            .admin
+            .inner
             .get_topic(topic_name)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(topic.into()))
     }
@@ -255,13 +259,14 @@ impl AdminServiceTrait for AdminService {
     ) -> Result<Response<pb::ListTopicsResponse>, Status> {
         let request = request.into_inner();
 
-        let request = ListTopicsRequest::try_from(request).map_err(admin_error_to_status)?;
+        let request =
+            ListTopicsRequest::try_from(request).map_err(cluster_metadata_error_to_status)?;
 
         let response = self
-            .admin
+            .inner
             .list_topics(request)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(response.into()))
     }
@@ -275,42 +280,33 @@ impl AdminServiceTrait for AdminService {
         let topic_name = TopicName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(Into::into)
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
-        self.admin
+        self.inner
             .delete_topic(topic_name, request.force)
             .await
-            .map_err(admin_error_to_status)?;
+            .map_err(cluster_metadata_error_to_status)?;
 
         Ok(Response::new(()))
     }
 }
 
-fn admin_error_to_status(error: AdminError) -> Status {
+fn cluster_metadata_error_to_status(error: ClusterMetadataError) -> Status {
     match error {
-        AdminError::NotFound { resource, message } => {
+        ClusterMetadataError::NotFound { resource, message } => {
             Status::not_found(format!("{resource} not found: {message}"))
         }
-        AdminError::AlreadyExists { resource, message } => {
+        ClusterMetadataError::AlreadyExists { resource, message } => {
             Status::already_exists(format!("{resource} already exists: {message}"))
         }
-        AdminError::InvalidArgument { resource, message } => {
+        ClusterMetadataError::InvalidArgument { resource, message } => {
             Status::invalid_argument(format!("invalid {resource}: {message}"))
         }
-        AdminError::InvalidResourceName { resource, source } => match source {
-            ResourceError::InvalidFormat { expected, actual } => Status::invalid_argument(format!(
-                "invalid {resource} name format: expected '{expected}' but got '{actual}'",
-            )),
-            ResourceError::InvalidName { name } => {
-                Status::invalid_argument(format!("invalid {resource} name: {name}"))
-            }
-            ResourceError::MissingParent { name } => {
-                Status::invalid_argument(format!("missing parent {resource} in name: {name}"))
-            }
-            ResourceError::InvalidResourceId { id } => {
-                Status::invalid_argument(format!("invalid {resource} id: {id}"))
-            }
-        },
-        AdminError::Internal { message } => Status::internal(format!("internal error: {message}")),
+        ClusterMetadataError::InvalidResourceName { resource, source } => {
+            resource_error_to_status(resource, source)
+        }
+        ClusterMetadataError::Internal { message } => {
+            Status::internal(format!("internal error: {message}"))
+        }
     }
 }

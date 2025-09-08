@@ -1,3 +1,5 @@
+//! This module provides helpers to consume cluster metadata as streams.
+
 use std::{
     pin::Pin,
     sync::Arc,
@@ -8,14 +10,21 @@ use futures::Stream;
 use pin_project::pin_project;
 use snafu::ResultExt;
 
-use crate::admin::{ListTopicsRequest, TopicName, error::InvalidResourceNameSnafu};
+use crate::{
+    cluster_metadata::{ListTopicsRequest, error::InvalidResourceNameSnafu},
+    resources::{NamespaceName, Topic, TopicName},
+};
 
-use super::{Admin, AdminError, NamespaceName, Topic};
+use super::{ClusterMetadata, ClusterMetadataError};
 
-pub trait TopicPageStream: Stream<Item = Result<Vec<Topic>, AdminError>> {}
+// use crate::admin::{ListTopicsRequest, TopicName, error::InvalidResourceNameSnafu};
+
+// use super::{Admin, AdminError, NamespaceName, Topic};
+
+pub trait TopicPageStream: Stream<Item = Result<Vec<Topic>, ClusterMetadataError>> {}
 pub type SendableTopicPageStream = Pin<Box<dyn TopicPageStream + Send>>;
 
-impl<T> TopicPageStream for T where T: Stream<Item = Result<Vec<Topic>, AdminError>> {}
+impl<T> TopicPageStream for T where T: Stream<Item = Result<Vec<Topic>, ClusterMetadataError>> {}
 
 #[pin_project]
 pub struct PaginatedTopicStream {
@@ -25,36 +34,42 @@ pub struct PaginatedTopicStream {
 
 impl PaginatedTopicStream {
     pub fn new(
-        admin: Arc<dyn Admin>,
+        cluster_metadata: Arc<dyn ClusterMetadata>,
         namespace: NamespaceName,
         page_size: usize,
         filter: Option<Vec<String>>,
     ) -> Self {
         if let Some(topics_filter) = filter {
-            PaginatedTopicStream::new_with_filter(admin, namespace, page_size, topics_filter)
+            PaginatedTopicStream::new_with_filter(
+                cluster_metadata,
+                namespace,
+                page_size,
+                topics_filter,
+            )
         } else {
-            PaginatedTopicStream::new_unfiltered(admin, namespace, page_size)
+            PaginatedTopicStream::new_unfiltered(cluster_metadata, namespace, page_size)
         }
     }
 
     pub fn new_unfiltered(
-        admin: Arc<dyn Admin>,
+        cluster_metadata: Arc<dyn ClusterMetadata>,
         namespace: NamespaceName,
         page_size: usize,
     ) -> Self {
-        let inner = gen_paginated_topic_stream(admin, namespace, page_size);
+        let inner = gen_paginated_topic_stream(cluster_metadata, namespace, page_size);
         Self {
             inner: Box::pin(inner),
         }
     }
 
     pub fn new_with_filter(
-        admin: Arc<dyn Admin>,
+        cluster_metadata: Arc<dyn ClusterMetadata>,
         namespace: NamespaceName,
         page_size: usize,
         filter: Vec<String>,
     ) -> Self {
-        let inner = gen_paginated_topic_stream_with_filter(admin, namespace, page_size, filter);
+        let inner =
+            gen_paginated_topic_stream_with_filter(cluster_metadata, namespace, page_size, filter);
         Self {
             inner: Box::pin(inner),
         }
@@ -62,7 +77,7 @@ impl PaginatedTopicStream {
 }
 
 impl Stream for PaginatedTopicStream {
-    type Item = Result<Vec<Topic>, AdminError>;
+    type Item = Result<Vec<Topic>, ClusterMetadataError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.project().inner.poll_next(cx)
@@ -70,14 +85,14 @@ impl Stream for PaginatedTopicStream {
 }
 
 fn gen_paginated_topic_stream(
-    admin: Arc<dyn Admin>,
+    cluster_metadata: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     page_size: usize,
 ) -> impl TopicPageStream {
     async_stream::stream! {
         let mut page_token = None;
         loop {
-            let response = admin
+            let response = cluster_metadata
                 .list_topics(ListTopicsRequest {
                     parent: namespace.clone(),
                     page_size: page_size.into(),
@@ -95,7 +110,7 @@ fn gen_paginated_topic_stream(
 }
 
 fn gen_paginated_topic_stream_with_filter(
-    admin: Arc<dyn Admin>,
+    cluster_metadata: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     _page_size: usize,
     topics_filter: Vec<String>,
@@ -105,7 +120,7 @@ fn gen_paginated_topic_stream_with_filter(
             let topic_name = TopicName::new(topic_id, namespace.clone())
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-            match admin.get_topic(topic_name).await {
+            match cluster_metadata.get_topic(topic_name).await {
                 Ok(topic) => {
                     yield Ok(vec![topic]);
                 }

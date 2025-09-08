@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package wings.v1;
+package wings.v1.cluster_metadata;
 
 import "google/protobuf/empty.proto";
 
-// AdminService is the service for managing tenants, namespaces, and topics.
-service AdminService {
+// Cluster metadata service to manage cluster resources.
+service ClusterMetadataService {
   // Create a new tenant.
   rpc CreateTenant(CreateTenantRequest) returns (Tenant) {}
   // Return the specified tenant.
