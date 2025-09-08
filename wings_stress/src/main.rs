@@ -2,7 +2,7 @@ use clap::{Args, Parser};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_metadata_core::admin::{Admin, NamespaceName, RemoteAdminService, TopicName};
+use wings_control_plane::admin::{Admin, NamespaceName, RemoteAdminService, TopicName};
 use wings_push_client::HttpPushClient;
 
 use crate::{

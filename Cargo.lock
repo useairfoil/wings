@@ -4555,9 +4555,9 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "tracing-subscriber",
+ "wings-control-plane",
  "wings-ingestor-core",
  "wings-ingestor-http",
- "wings-metadata-core",
  "wings-object-store",
  "wings-push-client",
  "wings-server-core",
@@ -4565,46 +4565,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wings-ingestor-core"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-schema",
- "async-trait",
- "bytes",
- "bytesize",
- "datafusion",
- "futures-util",
- "object_store",
- "parquet",
- "snafu",
- "tokio",
- "tokio-util",
- "ulid",
- "wings-metadata-core",
- "wings-object-store",
-]
-
-[[package]]
-name = "wings-ingestor-http"
-version = "0.1.0"
-dependencies = [
- "arrow-json",
- "axum",
- "datafusion",
- "futures",
- "serde",
- "serde_json",
- "snafu",
- "tokio",
- "tokio-util",
- "tower",
- "wings-ingestor-core",
- "wings-metadata-core",
-]
-
-[[package]]
-name = "wings-metadata-core"
+name = "wings-control-plane"
 version = "0.1.0"
 dependencies = [
  "arrow",
@@ -4636,6 +4597,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-ingestor-core"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "bytesize",
+ "datafusion",
+ "futures-util",
+ "object_store",
+ "parquet",
+ "snafu",
+ "tokio",
+ "tokio-util",
+ "ulid",
+ "wings-control-plane",
+ "wings-object-store",
+]
+
+[[package]]
+name = "wings-ingestor-http"
+version = "0.1.0"
+dependencies = [
+ "arrow-json",
+ "axum",
+ "datafusion",
+ "futures",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "wings-control-plane",
+ "wings-ingestor-core",
+]
+
+[[package]]
 name = "wings-object-store"
 version = "0.1.0"
 dependencies = [
@@ -4643,7 +4643,7 @@ dependencies = [
  "object_store",
  "tempfile",
  "tokio",
- "wings-metadata-core",
+ "wings-control-plane",
 ]
 
 [[package]]
@@ -4653,8 +4653,8 @@ dependencies = [
  "reqwest",
  "serde_json",
  "snafu",
+ "wings-control-plane",
  "wings-ingestor-http",
- "wings-metadata-core",
 ]
 
 [[package]]
@@ -4677,8 +4677,8 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "wings-control-plane",
  "wings-ingestor-core",
- "wings-metadata-core",
  "wings-object-store",
 ]
 
@@ -4697,7 +4697,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower",
- "wings-metadata-core",
+ "wings-control-plane",
  "wings-server-core",
 ]
 
@@ -4726,9 +4726,9 @@ dependencies = [
  "tpchgen",
  "tracing",
  "tracing-subscriber",
+ "wings-control-plane",
  "wings-ingestor-core",
  "wings-ingestor-http",
- "wings-metadata-core",
  "wings-object-store",
  "wings-push-client",
  "wings-server-core",

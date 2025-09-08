@@ -11,7 +11,7 @@ members = [
     "wings",
     "wings_ingestor_core",
     "wings_ingestor_http",
-    "wings_metadata_core",
+    "wings_control_plane",
     "wings_object_store",
     "wings_push_client",
     "wings_server_core",

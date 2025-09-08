@@ -16,7 +16,7 @@ use datafusion::{
 };
 use futures::StreamExt;
 use tracing::debug;
-use wings_metadata_core::admin::{Admin, NamespaceName, PaginatedTopicStream, Topic};
+use wings_control_plane::admin::{Admin, NamespaceName, PaginatedTopicStream, Topic};
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 

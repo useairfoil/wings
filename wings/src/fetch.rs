@@ -1,7 +1,7 @@
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, NamespaceName, TopicName},
     partition::PartitionValue,
 };

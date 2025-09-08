@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
-use wings_metadata_core::offset_registry::{CommittedBatch, OffsetRegistry};
+use wings_control_plane::offset_registry::{CommittedBatch, OffsetRegistry};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{

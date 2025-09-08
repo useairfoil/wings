@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use datafusion::common::arrow::array::RecordBatch;
 use tokio::sync::oneshot;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{NamespaceRef, TopicRef},
     partition::PartitionValue,
 };

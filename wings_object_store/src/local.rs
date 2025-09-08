@@ -10,7 +10,7 @@ use std::sync::Arc;
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
 
-use wings_metadata_core::admin::SecretName;
+use wings_control_plane::admin::SecretName;
 
 use crate::ObjectStoreFactory;
 
@@ -188,7 +188,7 @@ impl ObjectStoreFactory for TemporaryFileSystemFactory {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use wings_metadata_core::admin::SecretName;
+    use wings_control_plane::admin::SecretName;
 
     #[test]
     fn test_factory_creation() {

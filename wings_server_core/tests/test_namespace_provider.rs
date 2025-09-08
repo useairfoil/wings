@@ -8,7 +8,7 @@ use datafusion::{
     assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
 };
 use wings_ingestor_core::{Batch, BatchIngestorClient, error::Result};
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Namespace, Topic},
     partition::PartitionValue,
 };

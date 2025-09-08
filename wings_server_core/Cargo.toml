@@ -27,7 +27,7 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-wings-metadata-core = { path = "../wings_metadata_core" }
+wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
 
 [dev-dependencies]

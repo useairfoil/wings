@@ -5,7 +5,7 @@ use datafusion::common::arrow::datatypes::{DataType, Field, Schema};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{
         Admin, InMemoryAdminService, Namespace, NamespaceName, NamespaceOptions, SecretName,
         TenantName, Topic, TopicName, TopicOptions,

@@ -9,7 +9,7 @@ use datafusion::common::{
     create_array,
 };
 use wings_ingestor_core::{Batch, error::Result};
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, Namespace, Topic, TopicName, TopicOptions},
     partition::PartitionValue,
 };

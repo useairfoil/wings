@@ -20,7 +20,7 @@ use topic::TopicSystemTable;
 use topic_offset_location::TopicOffsetLocationSystemTable;
 use topic_partition_value::TopicPartitionValueSystemTable;
 use topic_schema::TopicSchemaTable;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, NamespaceName},
     offset_registry::OffsetRegistry,
 };

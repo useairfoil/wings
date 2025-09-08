@@ -11,7 +11,7 @@ use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Js
 use futures::StreamExt;
 use futures::stream::FuturesOrdered;
 use wings_ingestor_core::Batch;
-use wings_metadata_core::admin::{NamespaceName, TopicName};
+use wings_control_plane::admin::{NamespaceName, TopicName};
 
 use crate::HttpIngestorState;
 use crate::error::{HttpIngestorError, Result};

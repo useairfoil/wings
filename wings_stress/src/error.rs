@@ -1,6 +1,6 @@
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
-use wings_metadata_core::{admin::AdminError, resource::ResourceError};
+use wings_control_plane::{admin::AdminError, resource::ResourceError};
 use wings_push_client::HttpPushClientError;
 
 use crate::helpers::RangeParserError;

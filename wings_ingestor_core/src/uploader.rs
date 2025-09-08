@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
-use wings_metadata_core::admin::{NamespaceName, NamespaceRef};
+use wings_control_plane::admin::{NamespaceName, NamespaceRef};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{

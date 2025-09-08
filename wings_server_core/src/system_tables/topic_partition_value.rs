@@ -15,7 +15,7 @@ use crate::{
     datafusion_helpers::apply_projection,
     system_tables::{exec::TopicPartitionValueDiscoveryExec, helpers::find_topic_name_in_filters},
 };
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, NamespaceName},
     offset_registry::OffsetRegistry,
 };

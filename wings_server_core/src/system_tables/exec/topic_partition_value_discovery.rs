@@ -18,7 +18,7 @@ use datafusion::{
 };
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, NamespaceName, PaginatedTopicStream, TopicName},
     offset_registry::{OffsetRegistry, PaginatedPartitionStateStream, PartitionValueState},
 };

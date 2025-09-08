@@ -2,7 +2,7 @@ use clap::Args;
 use snafu::ResultExt;
 use tonic::transport::Channel;
 
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::RemoteAdminService, offset_registry::remote::RemoteOffsetRegistryService,
 };
 

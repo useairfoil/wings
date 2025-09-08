@@ -1,7 +1,7 @@
 //! Request and response types for the HTTP ingestor push endpoint.
 
 use serde::{Deserialize, Serialize};
-use wings_metadata_core::partition::PartitionValue;
+use wings_control_plane::partition::PartitionValue;
 
 /// Request payload for the /v1/push endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]

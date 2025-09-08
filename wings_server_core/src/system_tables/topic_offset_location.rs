@@ -10,7 +10,7 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, NamespaceName},
     offset_registry::OffsetRegistry,
 };

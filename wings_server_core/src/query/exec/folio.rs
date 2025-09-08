@@ -21,7 +21,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use futures::StreamExt;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::OFFSET_COLUMN_NAME,
     offset_registry::{CommittedBatch, FolioLocation},
     partition::PartitionValue,

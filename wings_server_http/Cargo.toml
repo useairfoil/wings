@@ -22,5 +22,5 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tower.workspace = true
-wings-metadata-core = { path = "../wings_metadata_core" }
+wings-control-plane = { path = "../wings_control_plane" }
 wings-server-core = { path = "../wings_server_core" }

@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{
         Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
         TenantName,
@@ -123,7 +123,7 @@ async fn run_grpc_server(
 ) -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
-            wings_metadata_core::protocol::admin_file_descriptor_set(),
+            wings_control_plane::protocol::admin_file_descriptor_set(),
         )
         .build_v1()
         .context(TonicReflectionSnafu {})?;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_metadata_core::offset_registry::OffsetRegistryError;
+use wings_control_plane::offset_registry::OffsetRegistryError;
 
 /// Ingestor error types.
 ///

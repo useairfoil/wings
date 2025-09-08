@@ -1,7 +1,7 @@
 use std::collections::{HashMap, hash_map::Entry};
 
 use tokio_util::time::{DelayQueue, delay_queue};
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{NamespaceName, NamespaceRef, TopicName},
     partition::PartitionValue,
 };

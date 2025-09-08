@@ -7,7 +7,7 @@ use parquet::{
     file::{metadata::KeyValue, properties::WriterProperties},
 };
 use snafu::ResultExt;
-use wings_metadata_core::{admin::TopicName, partition::PartitionValue};
+use wings_control_plane::{admin::TopicName, partition::PartitionValue};
 
 use crate::{
     batch::WriteReplySender,

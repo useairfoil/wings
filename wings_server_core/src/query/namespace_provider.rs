@@ -8,7 +8,7 @@ use datafusion::{
     prelude::{SessionConfig, SessionContext},
 };
 use tracing::debug;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{Admin, Namespace, NamespaceName, Topic, collect_namespace_topics},
     offset_registry::OffsetRegistry,
 };

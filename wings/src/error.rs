@@ -3,7 +3,7 @@ use std::net::AddrParseError;
 use axum::http::uri::InvalidUri;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::AdminError, offset_registry::OffsetRegistryError, partition::PartitionValueParseError,
     resource::ResourceError,
 };

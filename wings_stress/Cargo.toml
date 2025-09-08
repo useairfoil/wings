@@ -39,7 +39,7 @@ tracing-subscriber = { version = "0.3.19", features = [
 ] }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
-wings-metadata-core = { path = "../wings_metadata_core" }
+wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
 wings-push-client = { path = "../wings_push_client" }
 wings-server-core = { path = "../wings_server_core" }

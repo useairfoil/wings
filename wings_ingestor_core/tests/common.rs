@@ -2,14 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{
         Admin, InMemoryAdminService, Namespace, NamespaceName, NamespaceOptions, SecretName,
         TenantName,
     },
     offset_registry::InMemoryOffsetRegistry,
 };
+use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 
 pub fn create_batch_ingestor() -> (

@@ -9,7 +9,7 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_metadata_core::admin::{
+use wings_control_plane::admin::{
     Admin, NamespaceName, Topic, collect_namespace_topics, collect_namespace_topics_from_ids,
 };
 

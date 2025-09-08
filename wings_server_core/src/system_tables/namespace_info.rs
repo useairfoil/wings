@@ -9,7 +9,7 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_metadata_core::admin::{Admin, NamespaceName};
+use wings_control_plane::admin::{Admin, NamespaceName};
 
 use super::provider::SystemTable;
 

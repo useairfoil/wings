@@ -15,7 +15,7 @@ pub use types::{Batch, PushRequest, PushResponse};
 use wings_ingestor_core::BatchIngestorClient;
 
 use axum::{Router, routing::post};
-use wings_metadata_core::cache::{NamespaceCache, TopicCache};
+use wings_control_plane::cache::{NamespaceCache, TopicCache};
 
 use crate::push::push_handler;
 

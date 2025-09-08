@@ -14,5 +14,5 @@ path = "src/lib.rs"
 reqwest.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
+wings-control-plane = { path = "../wings_control_plane" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
-wings-metadata-core = { path = "../wings_metadata_core" }

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wings_metadata_core::partition::PartitionValue;
+use wings_control_plane::partition::PartitionValue;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FetchRequest {

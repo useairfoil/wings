@@ -10,7 +10,7 @@ pub mod local;
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use wings_metadata_core::admin::SecretName;
+use wings_control_plane::admin::SecretName;
 
 pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 

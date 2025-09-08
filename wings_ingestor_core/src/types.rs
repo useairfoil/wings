@@ -11,7 +11,7 @@ use std::{fmt::Debug, time::SystemTime};
 
 use datafusion::common::arrow::array::RecordBatch;
 use tokio_util::time::delay_queue;
-use wings_metadata_core::{
+use wings_control_plane::{
     admin::{NamespaceRef, TopicName, TopicRef},
     offset_registry::{
         CommitBatchRequest, CommitPageRequest, CommittedBatch, timestamp::compare_timestamps,
