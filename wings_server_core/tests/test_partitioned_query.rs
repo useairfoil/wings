@@ -5,8 +5,8 @@ use common::{
 use datafusion::{
     assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
 };
-use wings_ingestor_core::{Batch, error::Result};
 use wings_control_plane::partition::PartitionValue;
+use wings_ingestor_core::{Batch, error::Result};
 
 mod common;
 

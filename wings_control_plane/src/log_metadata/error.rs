@@ -3,16 +3,12 @@ use std::{sync::Arc, time::SystemTimeError};
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-use crate::{
-    admin::{NamespaceName, TopicName},
-    partition::PartitionValue,
-    resource::ResourceError,
-};
+use crate::resources::{NamespaceName, PartitionValue, ResourceError, TopicName};
 
-/// Errors that can occur during batch committer operations.
+/// Errors related to the log metadata operations.
 #[derive(Clone, Debug, Snafu)]
 #[snafu(visibility(pub))]
-pub enum OffsetRegistryError {
+pub enum LogMetadataError {
     #[snafu(display("duplicate partition value: {topic} {partition:?}"))]
     DuplicatePartitionValue {
         topic: TopicName,
@@ -52,10 +48,10 @@ pub enum OffsetRegistryError {
     },
 }
 
-pub type OffsetRegistryResult<T, E = OffsetRegistryError> = ::std::result::Result<T, E>;
+pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;
 
-impl From<OffsetRegistryError> for DataFusionError {
-    fn from(err: OffsetRegistryError) -> Self {
+impl From<LogMetadataError> for DataFusionError {
+    fn from(err: LogMetadataError) -> Self {
         DataFusionError::External(Box::new(err))
     }
 }

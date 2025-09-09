@@ -5,8 +5,8 @@ use std::time::SystemTime;
 use reqwest::StatusCode;
 use serde_json::Value;
 use snafu::{ResultExt, Snafu};
-use wings_ingestor_http::types::{Batch, ErrorResponse, PushRequest, PushResponse};
 use wings_control_plane::{admin::NamespaceName, partition::PartitionValue};
+use wings_ingestor_http::types::{Batch, ErrorResponse, PushRequest, PushResponse};
 
 /// A client for pushing messages to Wings over HTTP.
 #[derive(Debug, Clone)]

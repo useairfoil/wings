@@ -8,8 +8,8 @@ use datafusion::common::{
     },
     create_array, record_batch,
 };
-use wings_ingestor_core::{Batch, error::Result};
 use wings_control_plane::admin::{Admin, Namespace, Topic, TopicName, TopicOptions};
+use wings_ingestor_core::{Batch, error::Result};
 
 mod common;
 

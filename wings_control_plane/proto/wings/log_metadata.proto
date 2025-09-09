@@ -1,48 +1,22 @@
 syntax = "proto3";
 
-package wings.v1;
+package wings.v1.log_metadata;
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 service LogMetadataService {
   rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
-  rpc OffsetLocation(OffsetLocationRequest) returns (OffsetLocationResponse);
-  rpc ListTopicPartitionStates(ListTopicPartitionStatesRequest) returns (ListTopicPartitionStatesResponse);
+
+  rpc GetLogLocation(GetLogLocationRequest) returns (GetLogLocationResponse);
+
+  rpc ListPartitions(ListPartitionsRequest) returns (ListPartitionsResponse);
 }
 
 message CommitFolioRequest {
   string namespace = 1;
   string file_ref = 2;
   repeated CommitPageRequest pages = 3;
-}
-
-message CommitFolioResponse {
-  repeated CommitPageResponse pages = 1;
-}
-
-message OffsetLocationRequest {
-  string topic = 1;
-  uint64 offset = 2;
-  optional PartitionValue partition = 3;
-  google.protobuf.Timestamp deadline = 4;
-}
-
-message OffsetLocationResponse {
-  oneof location {
-    FolioLocation folio_location = 1;
-  }
-}
-
-message ListTopicPartitionStatesRequest {
-  string topic = 1;
-  optional int32 page_size = 2;
-  optional string page_token = 3;
-}
-
-message ListTopicPartitionStatesResponse {
-  repeated PartitionValueState states = 1;
-  optional string next_page_token = 2;
 }
 
 message CommitPageRequest {
@@ -54,10 +28,36 @@ message CommitPageRequest {
   repeated CommitBatchRequest batches = 6;
 }
 
+message CommitBatchRequest {
+  /// The requested timestamp (if any) of the batch.
+  optional google.protobuf.Timestamp timestamp = 1;
+  /// The number of messages in the batch.
+  uint32 num_messages = 2;
+}
+
+message CommitFolioResponse {
+  repeated CommitPageResponse pages = 1;
+}
+
 message CommitPageResponse {
   string topic = 1;
   optional PartitionValue partition = 2;
   repeated CommittedBatch batches = 3;
+}
+
+message GetLogLocationRequest {
+  string topic = 1;
+  optional PartitionValue partition = 2;
+  google.protobuf.Timestamp deadline = 3;
+  oneof location {
+      uint64 offset = 4;
+  }
+}
+
+message GetLogLocationResponse {
+  oneof location {
+    FolioLocation folio_location = 1;
+  }
 }
 
 message FolioLocation {
@@ -67,9 +67,41 @@ message FolioLocation {
   repeated CommittedBatch batches = 4;
 }
 
-message PartitionValueState {
+message ListPartitionsRequest {
+  string topic = 1;
+  optional int32 page_size = 2;
+  optional string page_token = 3;
+}
+
+message ListPartitionsResponse {
+  repeated PartitionMetadata partitions = 1;
+  optional string next_page_token = 2;
+}
+
+message PartitionMetadata {
     optional PartitionValue value = 1;
-    LogOffset offset = 2;
+    LogOffset end_offset = 2;
+}
+
+message CommittedBatch {
+  message Accepted {
+    /// The offset assigned to the first message in the batch.
+    uint64 start_offset = 1;
+    /// The offset assigned to the last message in the batch.
+    uint64 end_offset = 2;
+    /// The timestamp assigned to the batch.
+    google.protobuf.Timestamp timestamp = 3;
+  }
+
+  message Rejected {
+    // How many messages were rejected.
+    uint32 num_messages = 1;
+  }
+
+  oneof result {
+    Accepted accepted = 1;
+    Rejected rejected = 2;
+  }
 }
 
 message LogOffset {
@@ -94,33 +126,5 @@ message PartitionValue {
     string string_value = 10;
     bytes bytes_value = 11;
     bool bool_value = 12;
-  }
-}
-
-message CommitBatchRequest {
-  /// The requested timestamp (if any) of the batch.
-  optional google.protobuf.Timestamp timestamp = 1;
-  /// The number of messages in the batch.
-  uint32 num_messages = 2;
-}
-
-message CommittedBatch {
-  message Accepted {
-    /// The offset assigned to the first message in the batch.
-    uint64 start_offset = 1;
-    /// The offset assigned to the last message in the batch.
-    uint64 end_offset = 2;
-    /// The timestamp assigned to the batch.
-    google.protobuf.Timestamp timestamp = 3;
-  }
-
-  message Rejected {
-    // How many messages were rejected.
-    uint32 num_messages = 1;
-  }
-
-  oneof result {
-    Accepted accepted = 1;
-    Rejected rejected = 2;
   }
 }

@@ -4,7 +4,6 @@ use std::{sync::Arc, time::Duration};
 use datafusion::common::arrow::datatypes::{DataType, Field, Schema};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_control_plane::{
     admin::{
         Admin, InMemoryAdminService, Namespace, NamespaceName, NamespaceOptions, SecretName,
@@ -12,6 +11,7 @@ use wings_control_plane::{
     },
     offset_registry::InMemoryOffsetRegistry,
 };
+use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_server_core::query::NamespaceProviderFactory;
 

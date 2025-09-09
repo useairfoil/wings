@@ -5,8 +5,6 @@ use clap::Args;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
-use wings_ingestor_http::HttpIngestor;
 use wings_control_plane::{
     admin::{
         Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
@@ -15,6 +13,8 @@ use wings_control_plane::{
     cache::{NamespaceCache, TopicCache},
     offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
 };
+use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
+use wings_ingestor_http::HttpIngestor;
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_server_http::HttpServer;
 

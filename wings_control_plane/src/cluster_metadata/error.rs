@@ -1,3 +1,4 @@
+use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
 use crate::resources::ResourceError;
@@ -50,5 +51,11 @@ impl ClusterMetadataError {
 
     pub fn is_internal(&self) -> bool {
         matches!(self, ClusterMetadataError::Internal { .. })
+    }
+}
+
+impl From<ClusterMetadataError> for DataFusionError {
+    fn from(err: ClusterMetadataError) -> Self {
+        DataFusionError::External(Box::new(err))
     }
 }

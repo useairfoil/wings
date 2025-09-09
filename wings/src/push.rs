@@ -5,11 +5,11 @@ use serde_json::Value;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_ingestor_http::types::BatchResponse;
 use wings_control_plane::{
     admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
     partition::PartitionValue,
 };
+use wings_ingestor_http::types::BatchResponse;
 use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 use crate::{
