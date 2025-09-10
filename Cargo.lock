@@ -4561,7 +4561,6 @@ dependencies = [
  "wings-object-store",
  "wings-push-client",
  "wings-server-core",
- "wings-server-http",
 ]
 
 [[package]]
@@ -4683,25 +4682,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wings-server-http"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-json",
- "arrow-schema",
- "axum",
- "futures",
- "serde",
- "serde_json",
- "snafu",
- "tokio",
- "tokio-util",
- "tower",
- "wings-control-plane",
- "wings-server-core",
-]
-
-[[package]]
 name = "wings-stress"
 version = "0.1.0-alpha.0"
 dependencies = [
@@ -4732,7 +4712,6 @@ dependencies = [
  "wings-object-store",
  "wings-push-client",
  "wings-server-core",
- "wings-server-http",
 ]
 
 [[package]]

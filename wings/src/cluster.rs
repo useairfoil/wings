@@ -3,18 +3,23 @@ use std::time::Duration;
 use datafusion::common::arrow::datatypes::{DataType, Field};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::admin::{
-    Admin, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, Namespace, NamespaceName,
-    NamespaceOptions, SecretName, Tenant, TenantName, Topic, TopicName, TopicOptions,
+use wings_control_plane::{
+    cluster_metadata::{
+        ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
+    },
+    resources::{
+        Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic,
+        TopicName, TopicOptions,
+    },
 };
 
 use crate::{
-    error::{AdminSnafu, CliError, InvalidResourceNameSnafu, Result},
+    error::{CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, Result},
     remote::RemoteArgs,
 };
 
 #[derive(clap::Subcommand)]
-pub enum AdminCommands {
+pub enum ClusterMetadataCommands {
     /// Create a new tenant
     CreateTenant {
         /// Tenant name
@@ -78,32 +83,33 @@ pub enum AdminCommands {
     },
 }
 
-impl AdminCommands {
+impl ClusterMetadataCommands {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
         match self {
-            AdminCommands::CreateTenant { name, remote } => {
-                let client = remote.admin_client().await?;
+            ClusterMetadataCommands::CreateTenant { name, remote } => {
+                let client = remote.cluster_metadata_client().await?;
                 let tenant_name = TenantName::new(name)
                     .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
-                let tenant = client
-                    .create_tenant(tenant_name)
-                    .await
-                    .context(AdminSnafu {
-                        operation: "create_tenant",
-                    })?;
+                let tenant =
+                    client
+                        .create_tenant(tenant_name)
+                        .await
+                        .context(ClusterMetadataSnafu {
+                            operation: "create_tenant",
+                        })?;
 
                 print_tenant(&tenant);
 
                 Ok(())
             }
-            AdminCommands::ListTenants { remote } => {
-                let client = remote.admin_client().await?;
+            ClusterMetadataCommands::ListTenants { remote } => {
+                let client = remote.cluster_metadata_client().await?;
 
                 let response = client
                     .list_tenants(ListTenantsRequest::default())
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "list_tenants",
                     })?;
 
@@ -113,13 +119,13 @@ impl AdminCommands {
 
                 Ok(())
             }
-            AdminCommands::CreateNamespace {
+            ClusterMetadataCommands::CreateNamespace {
                 namespace,
                 flush_millis,
                 flush_mib,
                 remote,
             } => {
-                let client = remote.admin_client().await?;
+                let client = remote.cluster_metadata_client().await?;
 
                 let namespace_name =
                     NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
@@ -141,7 +147,7 @@ impl AdminCommands {
                 let namespace = client
                     .create_namespace(namespace_name, options)
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "create_namespace",
                     })?;
 
@@ -149,8 +155,8 @@ impl AdminCommands {
 
                 Ok(())
             }
-            AdminCommands::ListNamespaces { tenant, remote } => {
-                let client = remote.admin_client().await?;
+            ClusterMetadataCommands::ListNamespaces { tenant, remote } => {
+                let client = remote.cluster_metadata_client().await?;
 
                 let tenant_name = TenantName::parse(&tenant)
                     .context(InvalidResourceNameSnafu { resource: "tenant" })?;
@@ -162,7 +168,7 @@ impl AdminCommands {
                         page_token: None,
                     })
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "list_namespaces",
                     })?;
 
@@ -172,13 +178,13 @@ impl AdminCommands {
 
                 Ok(())
             }
-            AdminCommands::CreateTopic {
+            ClusterMetadataCommands::CreateTopic {
                 name,
                 fields,
                 partition,
                 remote,
             } => {
-                let client = remote.admin_client().await?;
+                let client = remote.cluster_metadata_client().await?;
 
                 // Parse topic name
                 let topic_name = TopicName::parse(&name)
@@ -210,7 +216,7 @@ impl AdminCommands {
                 let topic = client
                     .create_topic(topic_name, topic_options)
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "create_topic",
                     })?;
 
@@ -218,8 +224,8 @@ impl AdminCommands {
 
                 Ok(())
             }
-            AdminCommands::ListTopics { namespace, remote } => {
-                let client = remote.admin_client().await?;
+            ClusterMetadataCommands::ListTopics { namespace, remote } => {
+                let client = remote.cluster_metadata_client().await?;
 
                 let namespace_name =
                     NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
@@ -229,7 +235,7 @@ impl AdminCommands {
                 let response = client
                     .list_topics(ListTopicsRequest::new(namespace_name))
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "list_topics",
                     })?;
 
@@ -239,12 +245,12 @@ impl AdminCommands {
 
                 Ok(())
             }
-            AdminCommands::DeleteTopic {
+            ClusterMetadataCommands::DeleteTopic {
                 name,
                 force,
                 remote,
             } => {
-                let client = remote.admin_client().await?;
+                let client = remote.cluster_metadata_client().await?;
 
                 let topic_name = TopicName::parse(&name)
                     .context(InvalidResourceNameSnafu { resource: "topic" })?;
@@ -252,7 +258,7 @@ impl AdminCommands {
                 client
                     .delete_topic(topic_name, force)
                     .await
-                    .context(AdminSnafu {
+                    .context(ClusterMetadataSnafu {
                         operation: "delete_topic",
                     })?;
 

@@ -6,16 +6,16 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_control_plane::{
-    admin::{Admin, NamespaceName, RemoteAdminService, TopicName},
-    partition::PartitionValue,
+    cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    resources::{NamespaceName, PartitionValue, TopicName},
 };
 use wings_ingestor_http::types::BatchResponse;
 use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 use crate::{
     error::{
-        AdminSnafu, CliError, InvalidResourceNameSnafu, InvalidTimestampFormatSnafu, IoSnafu,
-        JsonParseSnafu, PartitionValueParseSnafu, PushClientSnafu, Result,
+        CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, InvalidTimestampFormatSnafu,
+        IoSnafu, JsonParseSnafu, PartitionValueParseSnafu, PushClientSnafu, Result,
     },
     remote::RemoteArgs,
 };
@@ -49,7 +49,7 @@ pub struct PushArgs {
 
 impl PushArgs {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
-        let admin = self.remote.admin_client().await?;
+        let admin = self.remote.cluster_metadata_client().await?;
 
         let namespace_name =
             NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
@@ -93,7 +93,7 @@ impl PushArgs {
         &self,
         namespace_name: NamespaceName,
         timestamp: Option<SystemTime>,
-        admin: &RemoteAdminService<Channel>,
+        cluster_meta: &ClusterMetadataClient<Channel>,
         client: &HttpPushClient,
     ) -> Result<PushRequestBuilder> {
         let mut i = 0;
@@ -113,17 +113,19 @@ impl PushArgs {
             let topic_name = TopicName::new(topic_id, namespace_name.clone())
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-            let topic = admin.get_topic(topic_name).await.context(AdminSnafu {
-                operation: "get_topic",
-            })?;
+            let topic = cluster_meta
+                .get_topic(topic_name)
+                .await
+                .context(ClusterMetadataSnafu {
+                    operation: "get_topic",
+                })?;
 
-            let partition_column = topic.partition_column();
+            let partition_field = topic.partition_field();
 
             let next_arg = &self.batches[i + 1];
 
             // Check what's the next argument based on whether the topic has a partition column
-            let (partition_value, payload_index) = if let Some(partition_column) = partition_column
-            {
+            let (partition_value, payload_index) = if let Some(partition_column) = partition_field {
                 if remaining >= 3 {
                     // Next arg is partition value, followed by payload
                     let partition_value =

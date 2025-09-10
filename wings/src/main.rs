@@ -3,14 +3,12 @@ use observability::init_observability;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    admin::AdminCommands, dev::DevArgs, error::Result, fetch::FetchArgs, push::PushArgs,
-    sql::SqlArgs,
+    cluster::ClusterMetadataCommands, dev::DevArgs, error::Result, push::PushArgs, sql::SqlArgs,
 };
 
-mod admin;
+mod cluster;
 mod dev;
 mod error;
-mod fetch;
 mod observability;
 mod push;
 mod remote;
@@ -32,10 +30,10 @@ enum Commands {
         #[clap(flatten)]
         inner: DevArgs,
     },
-    /// Interact with the admin API
-    Admin {
+    /// Interact with the cluster metadata API
+    Cluster {
         #[command(subcommand)]
-        inner: AdminCommands,
+        inner: ClusterMetadataCommands,
     },
     /// Push messages to Wings topics
     Push {
@@ -46,11 +44,6 @@ enum Commands {
     Sql {
         #[clap(flatten)]
         inner: SqlArgs,
-    },
-    /// Fetch messages from Wings topics
-    Fetch {
-        #[clap(flatten)]
-        inner: FetchArgs,
     },
 }
 
@@ -71,9 +64,8 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Dev { inner } => inner.run(ct).await,
-        Commands::Admin { inner } => inner.run(ct).await,
+        Commands::Cluster { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
         Commands::Sql { inner } => inner.run(ct).await,
-        Commands::Fetch { inner } => inner.run(ct).await,
     }
 }

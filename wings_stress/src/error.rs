@@ -1,6 +1,6 @@
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
-use wings_control_plane::{admin::AdminError, resource::ResourceError};
+use wings_control_plane::{cluster_metadata::ClusterMetadataError, resources::ResourceError};
 use wings_push_client::HttpPushClientError;
 
 use crate::helpers::RangeParserError;
@@ -20,9 +20,9 @@ pub enum CliError {
     #[snafu(display("Tonic server error"))]
     TonicServer { source: tonic::transport::Error },
     #[snafu(display("Failed admin operation {operation}"))]
-    Admin {
+    ClusterMetadata {
         operation: &'static str,
-        source: AdminError,
+        source: ClusterMetadataError,
     },
     #[snafu(display("Failed HTTP push operation"))]
     HttpPushError { source: HttpPushClientError },

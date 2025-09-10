@@ -3,7 +3,7 @@ use std::sync::Arc;
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::admin::NamespaceName;
+use wings_control_plane::resources::NamespaceName;
 use wings_object_store::LocalFileSystemFactory;
 use wings_server_core::query::NamespaceProviderFactory;
 
@@ -32,8 +32,8 @@ pub struct SqlArgs {
 
 impl SqlArgs {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
-        let admin = self.remote.admin_client().await?;
-        let offset_registry = self.remote.offset_registry_client().await?;
+        let cluster_meta = self.remote.cluster_metadata_client().await?;
+        let log_meta = self.remote.log_metadata_client().await?;
 
         let namespace_name =
             NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
@@ -44,8 +44,8 @@ impl SqlArgs {
             LocalFileSystemFactory::new(self.base_path).context(ObjectStoreSnafu {})?;
 
         let factory = NamespaceProviderFactory::new(
-            Arc::new(admin),
-            Arc::new(offset_registry),
+            Arc::new(cluster_meta),
+            Arc::new(log_meta),
             Arc::new(object_store_factory),
         );
 

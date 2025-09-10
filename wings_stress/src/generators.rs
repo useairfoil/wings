@@ -5,7 +5,7 @@ use clap::ValueEnum;
 use datafusion::common::arrow::datatypes::{DataType, Field, Fields};
 use serde_json::{Value, json};
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
-use wings_control_plane::{admin::TopicOptions, partition::PartitionValue};
+use wings_control_plane::resources::{PartitionValue, TopicOptions};
 use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]

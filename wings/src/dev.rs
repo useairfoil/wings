@@ -6,17 +6,17 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use wings_control_plane::{
-    admin::{
-        Admin, AdminService, InMemoryAdminService, NamespaceName, NamespaceOptions, SecretName,
-        TenantName,
+    cluster_metadata::{
+        ClusterMetadata, InMemoryClusterMetadata,
+        cache::{NamespaceCache, TopicCache},
+        tonic::ClusterMetadataServer,
     },
-    cache::{NamespaceCache, TopicCache},
-    offset_registry::{InMemoryOffsetRegistry, server::OffsetRegistryService},
+    log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
+    resources::{NamespaceName, NamespaceOptions, SecretName, TenantName},
 };
-use wings_ingestor_core::{BatchIngestor, ingestor::BatchIngestorClient, run_background_ingestor};
+use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
 use wings_object_store::TemporaryFileSystemFactory;
-use wings_server_http::HttpServer;
 
 use crate::error::{
     InvalidServerUrlSnafu, IoSnafu, ObjectStoreSnafu, Result, TonicReflectionSnafu,
@@ -35,7 +35,7 @@ pub struct DevArgs {
 
 impl DevArgs {
     pub async fn run(self, ct: CancellationToken) -> Result<()> {
-        let (admin, default_namespace) = new_dev_admin_service().await;
+        let (admin, default_namespace) = new_dev_cluster_metadata_service().await;
 
         let metadata_address = self
             .metadata_address
@@ -56,7 +56,7 @@ impl DevArgs {
         let object_store_factory =
             TemporaryFileSystemFactory::new().context(ObjectStoreSnafu {})?;
 
-        let offset_registry = Arc::new(InMemoryOffsetRegistry::new());
+        let log_metadata = Arc::new(InMemoryLogMetadata::default());
         let object_store_factory = Arc::new(object_store_factory);
 
         info!(
@@ -64,11 +64,11 @@ impl DevArgs {
             object_store_factory.root_path().display()
         );
 
-        let ingestor = BatchIngestor::new(object_store_factory.clone(), offset_registry.clone());
+        let ingestor = BatchIngestor::new(object_store_factory.clone(), log_metadata.clone());
 
         let grpc_server_fut = run_grpc_server(
             admin.clone(),
-            offset_registry,
+            log_metadata,
             ingestor.client(),
             metadata_address,
             ct.clone(),
@@ -94,11 +94,11 @@ impl DevArgs {
     }
 }
 
-async fn new_dev_admin_service() -> (Arc<InMemoryAdminService>, NamespaceName) {
-    let admin = Arc::new(InMemoryAdminService::default());
+async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, NamespaceName) {
+    let cluster_meta = Arc::new(InMemoryClusterMetadata::default());
 
     let default_tenant = TenantName::new_unchecked("default");
-    admin
+    cluster_meta
         .create_tenant(default_tenant.clone())
         .await
         .expect("failed to create default tenant");
@@ -106,30 +106,33 @@ async fn new_dev_admin_service() -> (Arc<InMemoryAdminService>, NamespaceName) {
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
     let default_namespace_options =
         NamespaceOptions::new(SecretName::new_unchecked("default-bucket"));
-    admin
+    cluster_meta
         .create_namespace(default_namespace.clone(), default_namespace_options)
         .await
         .expect("failed to create default namespace");
 
-    (admin, default_namespace)
+    (cluster_meta, default_namespace)
 }
 
 async fn run_grpc_server(
-    admin: Arc<InMemoryAdminService>,
-    offset_registry: Arc<InMemoryOffsetRegistry>,
+    cluster_meta: Arc<InMemoryClusterMetadata>,
+    log_meta: Arc<InMemoryLogMetadata>,
     _batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
-            wings_control_plane::protocol::admin_file_descriptor_set(),
+            wings_control_plane::cluster_metadata::tonic::file_descriptor_set(),
+        )
+        .register_encoded_file_descriptor_set(
+            wings_control_plane::log_metadata::tonic::file_descriptor_set(),
         )
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let admin_service = AdminService::new(admin).into_service();
-    let offset_registry_service = OffsetRegistryService::new(offset_registry).into_service();
+    let admin_service = ClusterMetadataServer::new(cluster_meta).into_tonic_server();
+    let offset_registry_service = LogMetadataServer::new(log_meta).into_tonic_server();
 
     let server = tonic::transport::Server::builder()
         .add_service(reflection_service)
@@ -143,20 +146,17 @@ async fn run_grpc_server(
 }
 
 async fn run_http_server(
-    admin: Arc<dyn Admin>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
-    let topic_cache = TopicCache::new(admin.clone());
-    let namespace_cache = NamespaceCache::new(admin.clone());
+    let topic_cache = TopicCache::new(cluster_meta.clone());
+    let namespace_cache = NamespaceCache::new(cluster_meta.clone());
 
     let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
-    let server = HttpServer::new();
 
-    let app = Router::new()
-        .merge(ingestor.into_router())
-        .merge(server.into_router());
+    let app = Router::new().merge(ingestor.into_router());
 
     let listener = tokio::net::TcpListener::bind(&address)
         .await

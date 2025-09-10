@@ -15,7 +15,6 @@ members = [
     "wings_object_store",
     "wings_push_client",
     "wings_server_core",
-    "wings_server_http",
     "wings_stress",
 ]
 

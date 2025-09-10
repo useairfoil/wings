@@ -1,9 +1,8 @@
 use clap::Args;
 use snafu::ResultExt;
 use tonic::transport::Channel;
-
 use wings_control_plane::{
-    admin::RemoteAdminService, offset_registry::remote::RemoteOffsetRegistryService,
+    cluster_metadata::tonic::ClusterMetadataClient, log_metadata::tonic::LogMetadataClient,
 };
 
 use crate::error::{ConnectionSnafu, InvalidRemoteUrlSnafu, Result};
@@ -18,14 +17,14 @@ pub struct RemoteArgs {
 
 impl RemoteArgs {
     /// Create a new gRPC client for the admin service.
-    pub async fn admin_client(&self) -> Result<RemoteAdminService<Channel>> {
+    pub async fn cluster_metadata_client(&self) -> Result<ClusterMetadataClient<Channel>> {
         let channel = self.channel().await?;
-        Ok(RemoteAdminService::new(channel))
+        Ok(ClusterMetadataClient::new(channel))
     }
 
-    pub async fn offset_registry_client(&self) -> Result<RemoteOffsetRegistryService<Channel>> {
+    pub async fn log_metadata_client(&self) -> Result<LogMetadataClient<Channel>> {
         let channel = self.channel().await?;
-        Ok(RemoteOffsetRegistryService::new(channel))
+        Ok(LogMetadataClient::new(channel))
     }
 
     async fn channel(&self) -> Result<Channel> {

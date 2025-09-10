@@ -4,8 +4,9 @@ use axum::http::uri::InvalidUri;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 use wings_control_plane::{
-    admin::AdminError, offset_registry::OffsetRegistryError, partition::PartitionValueParseError,
-    resource::ResourceError,
+    cluster_metadata::ClusterMetadataError,
+    log_metadata::LogMetadataError,
+    resources::{PartitionValueParseError, ResourceError},
 };
 
 /// CLI error types.
@@ -17,15 +18,15 @@ pub enum CliError {
         resource: &'static str,
         source: ResourceError,
     },
-    #[snafu(display("Failed admin operation {operation}"))]
-    Admin {
+    #[snafu(display("Failed cluster metadata operation {operation}"))]
+    ClusterMetadata {
         operation: &'static str,
-        source: AdminError,
+        source: ClusterMetadataError,
     },
-    #[snafu(display("Failed offset registry operation {operation}"))]
-    OffsetRegistry {
+    #[snafu(display("Failed log metadata operation {operation}"))]
+    LogMetadata {
         operation: &'static str,
-        source: OffsetRegistryError,
+        source: LogMetadataError,
     },
     #[snafu(display("Invalid {name} argument: {message}"))]
     InvalidArgument { name: &'static str, message: String },

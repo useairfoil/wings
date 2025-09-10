@@ -41,5 +41,4 @@ wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
 wings-push-client = { path = "../wings_push_client" }
 wings-server-core = { path = "../wings_server_core" }
-wings-server-http = { path = "../wings_server_http" }
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }

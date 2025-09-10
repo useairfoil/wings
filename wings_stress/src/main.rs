@@ -2,13 +2,16 @@ use clap::{Args, Parser};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_control_plane::admin::{Admin, NamespaceName, RemoteAdminService, TopicName};
+use wings_control_plane::{
+    cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    resources::{NamespaceName, TopicName},
+};
 use wings_push_client::HttpPushClient;
 
 use crate::{
     error::{
-        AdminSnafu, ConnectionSnafu, HttpPushSnafu, InvalidNamespaceNameSnafu, InvalidRangeSnafu,
-        InvalidRemoteUrlSnafu, Result,
+        ClusterMetadataSnafu, ConnectionSnafu, HttpPushSnafu, InvalidNamespaceNameSnafu,
+        InvalidRangeSnafu, InvalidRemoteUrlSnafu, Result,
     },
     generators::{RequestGenerator, TopicType},
     helpers::parse_range,
@@ -128,9 +131,9 @@ async fn main() -> Result<()> {
 
 impl RemoteArgs {
     /// Create a new gRPC client for the admin service.
-    pub async fn admin_client(&self) -> Result<RemoteAdminService<Channel>> {
+    pub async fn admin_client(&self) -> Result<ClusterMetadataClient<Channel>> {
         let channel = self.channel().await?;
-        Ok(RemoteAdminService::new(channel))
+        Ok(ClusterMetadataClient::new(channel))
     }
 
     async fn channel(&self) -> Result<Channel> {
@@ -145,7 +148,7 @@ impl RemoteArgs {
 }
 
 async fn ensure_topic_exists(
-    admin: &RemoteAdminService<Channel>,
+    admin: &ClusterMetadataClient<Channel>,
     namespace: &NamespaceName,
     topic: &TopicType,
 ) -> Result<()> {
@@ -154,7 +157,7 @@ async fn ensure_topic_exists(
         Ok(_) => return Ok(()),
         Err(err) if err.is_not_found() => {}
         Err(err) => {
-            return Err(err).context(AdminSnafu {
+            return Err(err).context(ClusterMetadataSnafu {
                 operation: "get_topic",
             });
         }
@@ -163,7 +166,7 @@ async fn ensure_topic_exists(
     admin
         .create_topic(topic_name, topic.topic_options())
         .await
-        .context(AdminSnafu {
+        .context(ClusterMetadataSnafu {
             operation: "create_topic",
         })?;
 
