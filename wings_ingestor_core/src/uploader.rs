@@ -2,22 +2,35 @@ use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
-use wings_control_plane::admin::{NamespaceName, NamespaceRef};
+use wings_control_plane::{
+    log_metadata::{CommitBatchRequest, CommitPageRequest},
+    resources::{NamespaceName, NamespaceRef},
+};
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
-    error::{IngestorError, Result},
-    types::{
-        NamespaceFolio, ReplyWithError, SerializedPartitionFolioMetadata,
-        UploadedNamespaceFolioMetadata,
-    },
+    WriteBatchError,
+    batcher::NamespaceFolio,
+    error::Result,
+    write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
+
+#[derive(Debug)]
+pub struct UploadedNamespaceFolioMetadata {
+    /// The namespace.
+    pub namespace: NamespaceRef,
+    /// The filename with the namespace folio.
+    pub file_ref: String,
+    /// The pages of the folio.
+    pub pages: Vec<CommitPageRequest<WithReplyChannel<CommitBatchRequest>>>,
+}
 
 /// Trait for generating unique IDs for folios.
 pub trait FolioIdGenerator: Send + Sync + 'static {
     fn generate_id(&self) -> String;
 }
 
+/// An object to upload folios to the object store.
 #[derive(Clone)]
 pub struct FolioUploader {
     pub id_generator: Arc<dyn FolioIdGenerator>,
@@ -51,29 +64,29 @@ impl FolioUploader {
     pub async fn upload_folio(
         &self,
         folio: NamespaceFolio,
-    ) -> std::result::Result<UploadedNamespaceFolioMetadata, Vec<ReplyWithError>> {
+    ) -> Result<UploadedNamespaceFolioMetadata, ReplyWithWriteBatchError> {
         // TODO: we probably want to add some metadata at the end of the file to make them
         // inspectable.
-        let estimated_file_size = folio.partitions.iter().fold(0, |acc, p| acc + p.data.len());
+        let estimated_file_size = folio.pages.iter().fold(0, |acc, p| acc + p.data.len());
 
         let mut content = BytesMut::with_capacity(estimated_file_size);
-        let mut partition_metadata = Vec::with_capacity(folio.partitions.len());
+        let mut page_metadata = Vec::with_capacity(folio.pages.len());
 
-        for partition in folio.partitions {
+        for page in folio.pages {
             let offset_bytes = content.len() as _;
-            let size_bytes = partition.data.len() as _;
-            content.extend_from_slice(&partition.data);
-            let num_messages = partition
+            let batch_size_bytes = page.data.len() as _;
+            content.extend_from_slice(&page.data);
+            let num_messages = page
                 .batches
                 .iter()
-                .fold(0, |acc, b| acc + b.num_messages);
-            partition_metadata.push(SerializedPartitionFolioMetadata {
-                topic_name: partition.topic_name,
-                partition_value: partition.partition_value,
+                .fold(0, |acc, b| acc + b.data.num_messages);
+            page_metadata.push(CommitPageRequest {
+                topic_name: page.topic_name,
+                partition_value: page.partition_value,
                 num_messages,
                 offset_bytes,
-                size_bytes,
-                batches: partition.batches,
+                batch_size_bytes,
+                batches: page.batches,
             });
         }
 
@@ -86,20 +99,15 @@ impl FolioUploader {
             Ok(_) => Ok(UploadedNamespaceFolioMetadata {
                 namespace: folio.namespace,
                 file_ref,
-                partitions: partition_metadata,
+                pages: page_metadata,
             }),
             Err(err) => {
-                let replies = partition_metadata
+                let replies = page_metadata
                     .into_iter()
-                    .flat_map(|p| {
-                        p.batches.into_iter().map(|b| ReplyWithError {
-                            reply: b.reply,
-                            error: err.clone(),
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                    .flat_map(|page| page.batches.into_iter().map(|batch| batch.reply))
+                    .collect();
 
-                Err(replies)
+                ReplyWithWriteBatchError::new_fanout(err, replies).into()
             }
         }
     }
@@ -109,15 +117,15 @@ impl FolioUploader {
         namespace: NamespaceRef,
         file_ref: String,
         data: Bytes,
-    ) -> Result<()> {
+    ) -> Result<(), WriteBatchError> {
         let secret_name = &namespace.default_object_store_config;
 
         let object_store = self
             .object_store_factory
             .create_object_store(secret_name.clone())
             .await
-            .map_err(|err| IngestorError::ObjectStore {
-                message: "failed to create object store client",
+            .map_err(|err| WriteBatchError::ObjectStore {
+                message: "failed to create object store client".to_string(),
                 source: Arc::new(err),
             })?;
 
@@ -131,8 +139,8 @@ impl FolioUploader {
                 },
             )
             .await
-            .map_err(|err| IngestorError::ObjectStore {
-                message: "failed to upload folio",
+            .map_err(|err| WriteBatchError::ObjectStore {
+                message: "failed to upload folio".to_string(),
                 source: Arc::new(err),
             })?;
 

@@ -8,8 +8,11 @@ use datafusion::common::{
     },
     create_array, record_batch,
 };
-use wings_control_plane::admin::{Admin, Namespace, Topic, TopicName, TopicOptions};
-use wings_ingestor_core::{Batch, error::Result};
+use wings_control_plane::{
+    cluster_metadata::ClusterMetadata,
+    resources::{Namespace, Topic, TopicName, TopicOptions},
+};
+use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
@@ -33,12 +36,14 @@ fn simple_ingestion_records() -> RecordBatch {
     .expect("failed to create batch")
 }
 
-async fn initialize_test_topic(admin: &Arc<dyn Admin>) -> (Arc<Namespace>, Arc<Topic>) {
-    let namespace = initialize_test_namespace(admin).await;
+async fn initialize_test_topic(
+    cluster_meta: &Arc<dyn ClusterMetadata>,
+) -> (Arc<Namespace>, Arc<Topic>) {
+    let namespace = initialize_test_namespace(cluster_meta).await;
 
     let topic_name = TopicName::new_unchecked("simple_ingestion", namespace.name.clone());
     let schema = simple_ingestion_schema();
-    let topic = admin
+    let topic = cluster_meta
         .create_topic(topic_name, TopicOptions::new(schema.fields))
         .await
         .expect("create_topic");
@@ -54,7 +59,7 @@ async fn test_simple_ingestion() -> Result<()> {
 
     tokio::time::pause();
 
-    let write_fut = client.write(Batch {
+    let write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -68,7 +73,7 @@ async fn test_simple_ingestion() -> Result<()> {
     assert_eq!(0, write_info.start_offset);
     assert_eq!(2, write_info.end_offset);
 
-    let first_write_fut = client.write(Batch {
+    let first_write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -76,7 +81,7 @@ async fn test_simple_ingestion() -> Result<()> {
         timestamp: None,
     });
 
-    let second_write_fut = client.write(Batch {
+    let second_write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -113,7 +118,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
 
     tokio::time::pause();
 
-    let first_write_fut = client.write(Batch {
+    let first_write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -129,7 +134,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
     )
     .expect("create record batch");
 
-    let err_write_fut = client.write(Batch {
+    let err_write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -137,7 +142,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
         timestamp: None,
     });
 
-    let second_write_fut = client.write(Batch {
+    let second_write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -148,10 +153,7 @@ async fn test_ingestion_if_schema_does_not_match() -> Result<()> {
     tokio::time::advance(Duration::from_secs(2)).await;
 
     let err_result = err_write_fut.await.unwrap_err();
-    assert_eq!(
-        "schema error: batch schema does not match writer's schema",
-        err_result.message()
-    );
+    assert!(matches!(err_result, WriteBatchError::Validation { .. }));
 
     let first_write_info = first_write_fut.await.expect("first write failed");
     assert_eq!(

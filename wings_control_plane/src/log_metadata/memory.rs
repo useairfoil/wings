@@ -30,7 +30,7 @@ use super::{
     timestamp::compare_batch_request_timestamps,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InMemoryLogMetadata {
     /// Maps topic names to their log state
     topics: Arc<DashMap<TopicName, TopicLogState>>,

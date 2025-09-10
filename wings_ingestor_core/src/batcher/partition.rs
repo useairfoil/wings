@@ -1,19 +1,21 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use datafusion::common::arrow::datatypes::SchemaRef;
-use datafusion::common::arrow::record_batch::RecordBatch;
 use parquet::{
     arrow::ArrowWriter,
     file::{metadata::KeyValue, properties::WriterProperties},
 };
-use snafu::ResultExt;
-use wings_control_plane::{admin::TopicName, partition::PartitionValue};
+use wings_control_plane::{
+    log_metadata::CommitBatchRequest,
+    resources::{PartitionValue, TopicName},
+};
 
 use crate::{
-    batch::WriteReplySender,
-    error::{IngestorError, ParquetSnafu, Result},
-    types::{BatchContext, PartitionFolio, ReplyWithError},
+    WriteBatchError, WriteBatchRequest,
+    write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
+
+use super::FolioPage;
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
@@ -21,7 +23,7 @@ const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 pub struct PartitionFolioWriter {
     writer: ArrowWriter<Vec<u8>>,
     schema: SchemaRef,
-    batches: Vec<BatchContext>,
+    batches: Vec<WithReplyChannel<CommitBatchRequest>>,
 }
 
 impl PartitionFolioWriter {
@@ -30,7 +32,7 @@ impl PartitionFolioWriter {
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
         schema: SchemaRef,
-    ) -> Result<Self> {
+    ) -> Result<Self, WriteBatchError> {
         // Add topic name and partition key to the metadata to help with debugging and troubleshooting.
         let partition_value = partition_value.map(|v| v.to_string());
         let kv_metadata = vec![
@@ -44,8 +46,9 @@ impl PartitionFolioWriter {
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
         let writer = ArrowWriter::try_new(buffer, schema.clone(), write_properties.into())
-            .context(ParquetSnafu {
-                message: "failed to initialize writer",
+            .map_err(|err| WriteBatchError::Parquet {
+                message: "failed to create parquet writer".to_string(),
+                source: Arc::new(err),
             })?;
 
         Ok(Self {
@@ -61,32 +64,33 @@ impl PartitionFolioWriter {
     /// On error, returns the reply channel and the error.
     pub fn write_batch(
         &mut self,
-        batch: &RecordBatch,
-        timestamp: Option<SystemTime>,
-        reply: WriteReplySender,
-    ) -> std::result::Result<usize, ReplyWithError> {
+        request: WithReplyChannel<WriteBatchRequest>,
+    ) -> std::result::Result<usize, ReplyWithWriteBatchError> {
+        let batch = request.data;
         // The writer will error if the schema does not match (which is good!), but it will also become poisoned.
-        if self.schema != batch.schema() {
-            let error = IngestorError::Schema {
+        if self.schema != batch.records.schema() {
+            let error = WriteBatchError::Validation {
                 message: "batch schema does not match writer's schema".to_string(),
             };
-            return Err(ReplyWithError { reply, error });
+            return ReplyWithWriteBatchError::new_single(error, request.reply).into();
         }
 
         let initial_size = self.buffer_size();
 
-        if let Err(err) = self.writer.write(batch) {
-            let error = IngestorError::Parquet {
-                message: "failed to write batch",
+        if let Err(err) = self.writer.write(&batch.records) {
+            let error = WriteBatchError::Parquet {
+                message: "failed to write batch".to_string(),
                 source: Arc::new(err),
             };
-            return Err(ReplyWithError { reply, error });
+            return ReplyWithWriteBatchError::new_single(error, request.reply).into();
         };
 
-        self.batches.push(BatchContext {
-            reply,
-            num_messages: batch.num_rows() as _,
-            timestamp,
+        self.batches.push(WithReplyChannel {
+            reply: request.reply,
+            data: CommitBatchRequest {
+                num_messages: batch.records.num_rows() as _,
+                timestamp: batch.timestamp,
+            },
         });
 
         let bytes_written = self.buffer_size() - initial_size;
@@ -106,29 +110,22 @@ impl PartitionFolioWriter {
         self,
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
-    ) -> std::result::Result<PartitionFolio, Vec<ReplyWithError>> {
+    ) -> Result<FolioPage, ReplyWithWriteBatchError> {
         match self.writer.into_inner() {
-            Ok(data) => Ok(PartitionFolio {
+            Ok(data) => Ok(FolioPage {
                 topic_name,
                 partition_value,
                 data,
                 batches: self.batches,
             }),
             Err(err) => {
-                let error = IngestorError::Parquet {
-                    message: "failed to finalize batch",
+                let error = WriteBatchError::Parquet {
+                    message: "failed to finalize batch".to_string(),
                     source: Arc::new(err),
                 };
 
-                let replies = self
-                    .batches
-                    .into_iter()
-                    .map(|m| ReplyWithError {
-                        reply: m.reply,
-                        error: error.clone(),
-                    })
-                    .collect();
-                Err(replies)
+                let replies = self.batches.into_iter().map(|batch| batch.reply).collect();
+                ReplyWithWriteBatchError::new_fanout(error, replies).into()
             }
         }
     }

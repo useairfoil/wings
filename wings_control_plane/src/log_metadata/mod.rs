@@ -1,5 +1,5 @@
 mod error;
-pub mod memory;
+mod memory;
 pub mod stream;
 pub mod timestamp;
 pub mod tonic;
@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use crate::resources::{NamespaceName, PartitionValue, TopicName};
 
 pub use self::error::{LogMetadataError, Result};
+pub use self::memory::InMemoryLogMetadata;
 
 #[async_trait]
 pub trait LogMetadata: Send + Sync {
@@ -69,13 +70,13 @@ pub struct AcceptedBatchInfo {
 
 /// Request to commit a page of batches.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitPageRequest {
+pub struct CommitPageRequest<B = CommitBatchRequest> {
     /// The topic id of the batch to commit.
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The individual batches to commit.
-    pub batches: Vec<CommitBatchRequest>,
+    pub batches: Vec<B>,
     /// The number of messages in the batch.
     pub num_messages: u32,
     /// The start offset of the batch in the folio file.
@@ -86,13 +87,13 @@ pub struct CommitPageRequest {
 
 /// A page that has been successfully committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitPageResponse {
+pub struct CommitPageResponse<B = CommittedBatch> {
     /// The topic id of the batch that was committed.
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The result of committing the batches.
-    pub batches: Vec<CommittedBatch>,
+    pub batches: Vec<B>,
 }
 
 /// Represents a single write operation.

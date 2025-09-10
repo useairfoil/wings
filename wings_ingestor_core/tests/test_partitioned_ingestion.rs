@@ -9,10 +9,10 @@ use datafusion::common::{
     create_array,
 };
 use wings_control_plane::{
-    admin::{Admin, Namespace, Topic, TopicName, TopicOptions},
-    partition::PartitionValue,
+    cluster_metadata::ClusterMetadata,
+    resources::{Namespace, PartitionValue, Topic, TopicName, TopicOptions},
 };
-use wings_ingestor_core::{Batch, error::Result};
+use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
@@ -43,12 +43,14 @@ fn partitioned_ingestion_records() -> RecordBatch {
 }
 
 /// Initialize a test topic with partition key by region_code
-async fn initialize_test_topic(admin: &Arc<dyn Admin>) -> (Arc<Namespace>, Arc<Topic>) {
-    let namespace = initialize_test_namespace(admin).await;
+async fn initialize_test_topic(
+    cluster_meta: &Arc<dyn ClusterMetadata>,
+) -> (Arc<Namespace>, Arc<Topic>) {
+    let namespace = initialize_test_namespace(cluster_meta).await;
 
     let topic_name = TopicName::new_unchecked("simple_ingestion", namespace.name.clone());
     let schema = partitioned_ingestion_schema();
-    let topic = admin
+    let topic = cluster_meta
         .create_topic(
             topic_name,
             TopicOptions::new_with_partition_key(schema.fields, Some(0)),
@@ -67,7 +69,7 @@ async fn test_ingest_different_partitions() -> Result<()> {
 
     tokio::time::pause();
 
-    let write_region_100_fut = client.write(Batch {
+    let write_region_100_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: Some(PartitionValue::Int32(100)),
@@ -75,7 +77,7 @@ async fn test_ingest_different_partitions() -> Result<()> {
         timestamp: None,
     });
 
-    let write_region_200_fut = client.write(Batch {
+    let write_region_200_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: Some(PartitionValue::Int32(200)),
@@ -83,11 +85,11 @@ async fn test_ingest_different_partitions() -> Result<()> {
         timestamp: None,
     });
 
-    let write_region_100 = write_region_100_fut.await?;
+    let write_region_100 = write_region_100_fut.await.unwrap();
     assert_eq!(0, write_region_100.start_offset);
     assert_eq!(2, write_region_100.end_offset);
 
-    let write_region_200 = write_region_200_fut.await?;
+    let write_region_200 = write_region_200_fut.await.unwrap();
     assert_eq!(0, write_region_200.start_offset);
     assert_eq!(2, write_region_200.end_offset);
 
@@ -105,7 +107,7 @@ async fn test_ingest_fails_with_invalid_partition_type() -> Result<()> {
 
     tokio::time::pause();
 
-    let write_fut = client.write(Batch {
+    let write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: Some(PartitionValue::UInt64(100)),
@@ -114,10 +116,7 @@ async fn test_ingest_fails_with_invalid_partition_type() -> Result<()> {
     });
 
     let write_err = write_fut.await.unwrap_err();
-    assert_eq!(
-        "validation error: topic tenants/test/namespaces/test_ns/topics/simple_ingestion partition column data type Int32 does not match batch partition data type UInt64",
-        write_err.message()
-    );
+    assert!(matches!(write_err, WriteBatchError::Validation { .. }));
 
     drop(ct_guard);
     ing_fut.await.expect("ingestion terminated");
@@ -133,7 +132,7 @@ async fn test_ingest_fails_with_missing_partition() -> Result<()> {
 
     tokio::time::pause();
 
-    let write_fut = client.write(Batch {
+    let write_fut = client.write(WriteBatchRequest {
         namespace: namespace.clone(),
         topic: topic.clone(),
         partition: None,
@@ -142,10 +141,7 @@ async fn test_ingest_fails_with_missing_partition() -> Result<()> {
     });
 
     let write_err = write_fut.await.unwrap_err();
-    assert_eq!(
-        "validation error: topic tenants/test/namespaces/test_ns/topics/simple_ingestion specifies a partition key but batch does not contain partition data",
-        write_err.message()
-    );
+    assert!(matches!(write_err, WriteBatchError::Validation { .. }));
 
     drop(ct_guard);
     ing_fut.await.expect("ingestion terminated");

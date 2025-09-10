@@ -1,14 +1,17 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt::Debug,
+};
 
 use tokio_util::time::{DelayQueue, delay_queue};
 use wings_control_plane::{
-    admin::{NamespaceName, NamespaceRef, TopicName},
-    partition::PartitionValue,
+    log_metadata::CommitBatchRequest,
+    resources::{NamespaceName, NamespaceRef, PartitionValue, TopicName},
 };
 
 use crate::{
-    batch::{Batch, WriteReplySender},
-    types::{NamespaceFolio, ReplyWithError},
+    WriteBatchRequest,
+    write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
 
 use self::partition::PartitionFolioWriter;
@@ -18,6 +21,29 @@ mod partition;
 #[derive(Default)]
 pub struct NamespaceFolioWriter {
     namespaces: HashMap<NamespaceName, NamespaceFolioState>,
+}
+
+/// A folio's page with data for a single partition.
+pub struct FolioPage {
+    /// The topic name for the partition.
+    pub topic_name: TopicName,
+    /// The partition value for the partition.
+    pub partition_value: Option<PartitionValue>,
+    /// The serialized data.
+    pub data: Vec<u8>,
+    /// The batches that contributed to the folio.
+    pub batches: Vec<WithReplyChannel<CommitBatchRequest>>,
+}
+
+/// A folio of data for a namespace.
+#[derive(Debug)]
+pub struct NamespaceFolio {
+    /// The namespace.
+    pub namespace: NamespaceRef,
+    /// The timer key used to periodically flush the folio.
+    pub timer_key: delay_queue::Key,
+    /// The partitions' data.
+    pub pages: Vec<FolioPage>,
 }
 
 struct NamespaceFolioState {
@@ -37,10 +63,10 @@ impl NamespaceFolioWriter {
     /// Writes a batch to the namespace folio, returning the flushed folio if it's full.
     pub fn write_batch(
         &mut self,
-        batch: Batch,
-        reply: WriteReplySender,
+        request: WithReplyChannel<WriteBatchRequest>,
         delay_queue: &mut DelayQueue<NamespaceName>,
-    ) -> std::result::Result<Option<(NamespaceFolio, Vec<ReplyWithError>)>, ReplyWithError> {
+    ) -> Result<Option<(NamespaceFolio, ReplyWithWriteBatchError)>, ReplyWithWriteBatchError> {
+        let batch = &request.data;
         let namespace = batch.namespace.name.clone();
 
         let folio_state = self
@@ -49,7 +75,7 @@ impl NamespaceFolioWriter {
             .or_insert_with(|| {
                 let flush_interval = batch.namespace.flush_interval;
                 let timer_key = delay_queue.insert(namespace.clone(), flush_interval);
-                NamespaceFolioState::new(batch.namespace, timer_key)
+                NamespaceFolioState::new(batch.namespace.clone(), timer_key)
             });
 
         let folio_writer = match folio_state
@@ -60,16 +86,18 @@ impl NamespaceFolioWriter {
             Entry::Vacant(inner) => {
                 match PartitionFolioWriter::new(
                     batch.topic.name.clone(),
-                    batch.partition,
-                    batch.topic.schema_without_partition_column(),
+                    batch.partition.clone(),
+                    batch.topic.schema_without_partition_field(),
                 ) {
                     Ok(writer) => inner.insert(writer),
-                    Err(error) => return Err(ReplyWithError { reply, error }),
+                    Err(error) => {
+                        return ReplyWithWriteBatchError::new_single(error, request.reply).into();
+                    }
                 }
             }
         };
 
-        let written = folio_writer.write_batch(&batch.records, batch.timestamp, reply)?;
+        let written = folio_writer.write_batch(request)?;
         folio_state.current_size += written as u64;
 
         if folio_state.current_size >= folio_state.flush_size {
@@ -87,7 +115,7 @@ impl NamespaceFolioWriter {
     pub fn expire_namespace(
         &mut self,
         namespace: NamespaceName,
-    ) -> Option<(NamespaceFolio, Vec<ReplyWithError>)> {
+    ) -> Option<(NamespaceFolio, ReplyWithWriteBatchError)> {
         let state = self.namespaces.remove(&namespace)?;
 
         state.finish().into()
@@ -108,23 +136,34 @@ impl NamespaceFolioState {
     }
 
     /// Flushes the namespace folio, ready for the next step.
-    pub fn finish(self) -> (NamespaceFolio, Vec<ReplyWithError>) {
-        let mut partitions = Vec::with_capacity(self.partitions.len());
-        let mut errors = Vec::new();
+    pub fn finish(self) -> (NamespaceFolio, ReplyWithWriteBatchError) {
+        let mut pages = Vec::with_capacity(self.partitions.len());
+        let mut errors = ReplyWithWriteBatchError::new_empty();
 
         for (key, partition_writer) in self.partitions.into_iter() {
             let (topic_name, partition) = key;
             match partition_writer.finish(topic_name, partition) {
-                Ok(folio) => partitions.push(folio),
-                Err(err) => errors.extend(err.into_iter()),
+                Ok(folio) => pages.push(folio),
+                Err(err) => errors.merge(err),
             }
         }
 
         let folio = NamespaceFolio {
             namespace: self.namespace,
             timer_key: self.timer_key,
-            partitions,
+            pages,
         };
+
         (folio, errors)
+    }
+}
+
+impl Debug for FolioPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data_size = bytesize::ByteSize(self.data.len() as u64);
+        f.debug_struct("PartitionBatch")
+            .field("data", &format!("<{}>", data_size))
+            .field("batches", &format!("<{} entries>", self.batches.len()))
+            .finish()
     }
 }

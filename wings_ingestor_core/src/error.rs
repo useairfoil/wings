@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_control_plane::offset_registry::OffsetRegistryError;
+use wings_control_plane::log_metadata::LogMetadataError;
 
 /// Ingestor error types.
 ///
@@ -28,13 +28,13 @@ pub enum IngestorError {
         #[snafu(source(from(ParquetError, Arc::new)))]
         source: Arc<ParquetError>,
     },
-    /// Offset registry error.
+    /// Log metadata error.
     ///
-    /// This errors are used when something goes wrong with the offset registry.
-    #[snafu(display("offset registry error: {message}"))]
-    OffsetRegistry {
+    /// This errors are used when something goes wrong with the log metadata.
+    #[snafu(display("log metadata error: {message}"))]
+    LogMetadata {
         message: &'static str,
-        source: OffsetRegistryError,
+        source: LogMetadataError,
     },
     /// Object store error.
     #[snafu(display("object store error: {message}"))]
@@ -54,10 +54,3 @@ pub enum IngestorError {
 }
 
 pub type Result<T, E = IngestorError> = std::result::Result<T, E>;
-
-impl IngestorError {
-    /// Returns the user-visible error message.
-    pub fn message(&self) -> String {
-        self.to_string()
-    }
-}
