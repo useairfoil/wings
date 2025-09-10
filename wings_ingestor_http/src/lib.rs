@@ -1,21 +1,17 @@
 //! HTTP ingestor server.
 //!
 //! This crate provides a server to ingest messages over HTTP.
-//!
-//! The server is built using axum and provides
-//! a `/v1/push` endpoint for message ingestion.
 
 pub mod error;
 pub mod push;
 pub mod types;
 
-// Re-export the main types for easier importing
 pub use error::{HttpIngestorError, Result};
 pub use types::{Batch, PushRequest, PushResponse};
-use wings_ingestor_core::BatchIngestorClient;
 
 use axum::{Router, routing::post};
-use wings_control_plane::cache::{NamespaceCache, TopicCache};
+use wings_control_plane::cluster_metadata::cache::{NamespaceCache, TopicCache};
+use wings_ingestor_core::BatchIngestorClient;
 
 use crate::push::push_handler;
 
@@ -32,7 +28,7 @@ pub struct HttpIngestorState {
 }
 
 impl HttpIngestor {
-    /// Create a new HTTP ingestor with the specified listen address and topic cache.
+    /// Create a new HTTP ingestor with the specified listen address and caches.
     pub fn new(
         topic_cache: TopicCache,
         namespace_cache: NamespaceCache,

@@ -1,5 +1,6 @@
 //! Cluster metadata.
 
+pub mod cache;
 mod error;
 mod memory;
 pub mod stream;

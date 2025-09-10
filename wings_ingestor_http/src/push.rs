@@ -10,27 +10,14 @@ use axum::response::{IntoResponse, Response};
 use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
 use futures::StreamExt;
 use futures::stream::FuturesOrdered;
-use wings_control_plane::admin::{NamespaceName, TopicName};
-use wings_ingestor_core::Batch;
+use wings_control_plane::resources::{NamespaceName, TopicName};
+use wings_ingestor_core::WriteBatchRequest;
 
 use crate::HttpIngestorState;
 use crate::error::{HttpIngestorError, Result};
 use crate::types::{BatchResponse, ErrorResponse, PushRequest, PushResponse};
 
 /// Handler for the /v1/push endpoint.
-///
-/// This endpoint accepts POST requests with message data to be ingested into Wings.
-/// It parses the namespace name, resolves topics from the cache, and converts JSON
-/// data to Arrow RecordBatches using the topic schemas.
-///
-/// # Arguments
-///
-/// * `topic_cache` - The topic cache for resolving topic schemas
-/// * `request` - The push request containing namespace and batches of data
-///
-/// # Returns
-///
-/// Returns a JSON response with an empty PushResponse on success, or an error status code.
 pub async fn push_handler(
     State(state): State<HttpIngestorState>,
     JsonExtractor(request): JsonExtractor<PushRequest>,
@@ -93,7 +80,7 @@ async fn process_push_request(
             });
         }
 
-        let schema = topic_ref.schema_without_partition_column();
+        let schema = topic_ref.schema_without_partition_field();
         let record_batch = parse_json_to_arrow(schema, &batch.data).map_err(|err| {
             HttpIngestorError::BadRequest {
                 message: format!("failed to parse JSON data for topic {topic_name}: {err}"),
@@ -104,7 +91,7 @@ async fn process_push_request(
             .timestamp
             .map(|ts| SystemTime::UNIX_EPOCH + Duration::from_millis(ts));
 
-        let batch = Batch {
+        let batch = WriteBatchRequest {
             namespace: namespace_ref.clone(),
             topic: topic_ref,
             partition: batch.partition,
@@ -118,9 +105,9 @@ async fn process_push_request(
     let mut batches = Vec::with_capacity(writes.len());
     while let Some(write_result) = writes.next().await {
         match write_result {
-            Ok(write_info) => batches.push(BatchResponse::Success {
-                start_offset: write_info.start_offset,
-                end_offset: write_info.end_offset,
+            Ok(accepted) => batches.push(BatchResponse::Success {
+                start_offset: accepted.start_offset,
+                end_offset: accepted.end_offset,
             }),
             Err(err) => batches.push(BatchResponse::Error {
                 message: err.to_string(),
@@ -136,14 +123,11 @@ pub fn parse_json_to_arrow(
     schema: SchemaRef,
     json_data: &[serde_json::Value],
 ) -> std::result::Result<RecordBatch, ArrowError> {
-    // Convert JSON values to JSON strings for arrow-json
     let json_strings: Vec<String> = json_data.iter().map(|v| v.to_string()).collect();
 
-    // Create a cursor from the JSON strings
     let json_bytes = json_strings.join("\n").into_bytes();
     let cursor = std::io::Cursor::new(json_bytes);
 
-    // Use arrow-json to parse the JSON into a RecordBatch
     let reader = ReaderBuilder::new(schema.clone()).build(cursor)?;
 
     let mut batches = Vec::default();
