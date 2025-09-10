@@ -16,12 +16,15 @@ use datafusion::{
 };
 use futures::StreamExt;
 use tracing::debug;
-use wings_control_plane::admin::{Admin, NamespaceName, PaginatedTopicStream, Topic};
+use wings_control_plane::{
+    cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
+    resources::{NamespaceName, Topic},
+};
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
 pub struct TopicDiscoveryExec {
-    admin: Arc<dyn Admin>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     topics: Option<Vec<String>>,
     properties: PlanProperties,
@@ -29,7 +32,7 @@ pub struct TopicDiscoveryExec {
 
 impl TopicDiscoveryExec {
     pub fn new(
-        admin: Arc<dyn Admin>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
         namespace: NamespaceName,
         topics: Option<Vec<String>>,
     ) -> Self {
@@ -37,7 +40,7 @@ impl TopicDiscoveryExec {
         let properties = Self::compute_properties(&schema);
 
         Self {
-            admin,
+            cluster_meta,
             namespace,
             topics,
             properties,
@@ -105,7 +108,7 @@ impl ExecutionPlan for TopicDiscoveryExec {
         let schema = self.schema();
 
         let topics = PaginatedTopicStream::new(
-            self.admin.clone(),
+            self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
             self.topics.clone(),

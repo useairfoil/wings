@@ -211,6 +211,12 @@ impl Default for LogOffset {
 }
 
 impl LogLocation {
+    pub fn start_offset(&self) -> Option<LogOffset> {
+        match self {
+            LogLocation::Folio(folio) => folio.start_offset(),
+        }
+    }
+
     pub fn end_offset(&self) -> Option<LogOffset> {
         match self {
             LogLocation::Folio(folio) => folio.end_offset(),
@@ -224,6 +230,16 @@ impl FolioLocation {
             CommittedBatch::Rejected(_) => None,
             CommittedBatch::Accepted(info) => Some(LogOffset {
                 offset: info.end_offset,
+                timestamp: info.timestamp,
+            }),
+        })
+    }
+
+    pub fn start_offset(&self) -> Option<LogOffset> {
+        self.batches.iter().find_map(|batch| match batch {
+            CommittedBatch::Rejected(_) => None,
+            CommittedBatch::Accepted(info) => Some(LogOffset {
+                offset: info.start_offset,
                 timestamp: info.timestamp,
             }),
         })

@@ -11,8 +11,7 @@ use datafusion::{
     prelude::Expr,
 };
 use wings_control_plane::{
-    admin::{Admin, NamespaceName},
-    offset_registry::OffsetRegistry,
+    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
 };
 
 use crate::datafusion_helpers::apply_projection;
@@ -20,21 +19,21 @@ use crate::datafusion_helpers::apply_projection;
 use super::{exec::TopicOffsetLocationDiscoveryExec, helpers::find_topic_name_in_filters};
 
 pub struct TopicOffsetLocationSystemTable {
-    admin: Arc<dyn Admin>,
-    offset_registry: Arc<dyn OffsetRegistry>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
+    log_meta: Arc<dyn LogMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl TopicOffsetLocationSystemTable {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
     ) -> Self {
         Self {
-            admin,
-            offset_registry,
+            cluster_meta,
+            log_meta,
             namespace,
             schema: TopicOffsetLocationDiscoveryExec::schema(),
         }
@@ -72,8 +71,8 @@ impl TableProvider for TopicOffsetLocationSystemTable {
         let topics_filter = find_topic_name_in_filters(filters);
 
         let topic_offset_exec = TopicOffsetLocationDiscoveryExec::new(
-            self.admin.clone(),
-            self.offset_registry.clone(),
+            self.cluster_meta.clone(),
+            self.log_meta.clone(),
             self.namespace.clone(),
             topics_filter,
         );

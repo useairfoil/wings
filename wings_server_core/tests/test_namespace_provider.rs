@@ -7,11 +7,8 @@ use common::{
 use datafusion::{
     assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
 };
-use wings_control_plane::{
-    admin::{Namespace, Topic},
-    partition::PartitionValue,
-};
-use wings_ingestor_core::{Batch, BatchIngestorClient, error::Result};
+use wings_control_plane::resources::{Namespace, PartitionValue, Topic};
+use wings_ingestor_core::{BatchIngestorClient, Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
@@ -136,7 +133,8 @@ async fn test_topic_offset_location() -> Result<()> {
         simple_topic,
         partitioned_topic,
     )
-    .await?;
+    .await
+    .unwrap();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())
@@ -189,7 +187,8 @@ async fn test_topic_partition_value() -> Result<()> {
         simple_topic,
         partitioned_topic,
     )
-    .await?;
+    .await
+    .unwrap();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())
@@ -228,7 +227,7 @@ async fn ingest_some_data(
     namespace: Arc<Namespace>,
     simple_topic: Arc<Topic>,
     partitioned_topic: Arc<Topic>,
-) -> Result<()> {
+) -> Result<(), WriteBatchError> {
     let records = RecordBatch::try_new(
         schema_without_partition().into(),
         vec![
@@ -248,7 +247,7 @@ async fn ingest_some_data(
 
     // Write together so they're in the same folio.
     {
-        let first_write = client.write(Batch {
+        let first_write = client.write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -256,7 +255,7 @@ async fn ingest_some_data(
             timestamp: None,
         });
 
-        let second_write = client.write(Batch {
+        let second_write = client.write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -264,7 +263,7 @@ async fn ingest_some_data(
             timestamp: None,
         });
 
-        let third_write = client.write(Batch {
+        let third_write = client.write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),
@@ -272,7 +271,7 @@ async fn ingest_some_data(
             timestamp: None,
         });
 
-        let fourth_write = client.write(Batch {
+        let fourth_write = client.write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(200)),
@@ -289,7 +288,7 @@ async fn ingest_some_data(
     }
 
     client
-        .write(Batch {
+        .write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -299,7 +298,7 @@ async fn ingest_some_data(
         .await?;
 
     client
-        .write(Batch {
+        .write(WriteBatchRequest {
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),

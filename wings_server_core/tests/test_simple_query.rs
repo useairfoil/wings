@@ -5,7 +5,7 @@ use common::{
 use datafusion::{
     assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
 };
-use wings_ingestor_core::{Batch, error::Result};
+use wings_ingestor_core::{Result, WriteBatchRequest};
 
 mod common;
 
@@ -70,7 +70,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .expect("create record batch");
 
         ingestion
-            .write(Batch {
+            .write(WriteBatchRequest {
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: None,
@@ -93,7 +93,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .expect("create record batch");
 
         ingestion
-            .write(Batch {
+            .write(WriteBatchRequest {
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: None,

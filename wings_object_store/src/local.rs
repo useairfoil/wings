@@ -112,7 +112,7 @@ impl ObjectStoreFactory for TemporaryFileSystemFactory {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use wings_control_plane::admin::SecretName;
+    use wings_control_plane::resources::SecretName;
 
     #[test]
     fn test_factory_creation() {

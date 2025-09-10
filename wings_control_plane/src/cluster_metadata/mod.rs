@@ -2,6 +2,7 @@
 
 pub mod cache;
 mod error;
+mod helpers;
 mod memory;
 pub mod stream;
 pub mod tonic;
@@ -13,6 +14,7 @@ use crate::resources::{
 };
 
 pub use self::error::{ClusterMetadataError, Result};
+pub use self::helpers::{CollectNamespaceTopicsOptions, collect_namespace_topics};
 pub use self::memory::InMemoryClusterMetadata;
 
 /// The cluster metadata trait provides methods for managing tenants, namespaces, and topics.

@@ -19,16 +19,17 @@ use datafusion::{
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
 use wings_control_plane::{
-    admin::{Admin, NamespaceName, PaginatedTopicStream, TopicName},
-    offset_registry::{OffsetRegistry, PaginatedPartitionStateStream, PartitionValueState},
+    cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
+    log_metadata::{LogMetadata, PartitionMetadata, stream::PaginatedPartitionMetadataStream},
+    resources::{NamespaceName, TopicName},
 };
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
 /// Execution plan for discovering partition values for topics.
 pub struct TopicPartitionValueDiscoveryExec {
-    admin: Arc<dyn Admin>,
-    offset_registry: Arc<dyn OffsetRegistry>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
+    log_meta: Arc<dyn LogMetadata>,
     namespace: NamespaceName,
     topics: Option<Vec<String>>,
     properties: PlanProperties,
@@ -36,8 +37,8 @@ pub struct TopicPartitionValueDiscoveryExec {
 
 impl TopicPartitionValueDiscoveryExec {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
         topics: Option<Vec<String>>,
     ) -> Self {
@@ -45,8 +46,8 @@ impl TopicPartitionValueDiscoveryExec {
         let properties = Self::compute_properties(&schema);
 
         Self {
-            admin,
-            offset_registry,
+            cluster_meta,
+            log_meta,
             namespace,
             topics,
             properties,
@@ -121,7 +122,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
         );
 
         let topics = PaginatedTopicStream::new(
-            self.admin.clone(),
+            self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
             self.topics.clone(),
@@ -129,7 +130,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
 
         // Here we take the stream of topics and for each topic, we create a stream of partition values.
         // Notice that the topics are paginated, so we need to further flatten the iterator of streams.
-        let offset_registry = self.offset_registry.clone();
+        let offset_registry = self.log_meta.clone();
         let values = topics.flat_map_unordered(None, move |topic_result| {
             let topics = match topic_result {
                 Ok(topics) => topics,
@@ -143,7 +144,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
                 let offset_registry = offset_registry.clone();
                 move |topic| {
                     let topic_name = topic.name;
-                    PaginatedPartitionStateStream::new(
+                    PaginatedPartitionMetadataStream::new(
                         offset_registry.clone(),
                         topic_name.clone(),
                         batch_size,
@@ -173,7 +174,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
 fn from_partition_values(
     schema: SchemaRef,
     topic_name: TopicName,
-    states: Vec<PartitionValueState>,
+    states: Vec<PartitionMetadata>,
 ) -> Result<RecordBatch, DataFusionError> {
     if states.is_empty() {
         return Ok(RecordBatch::new_empty(schema));
@@ -197,9 +198,10 @@ fn from_partition_values(
         } else {
             partition_value_arr.append_null();
         }
-        next_offset_arr.append_value(state.next_offset.offset);
+        next_offset_arr.append_value(state.end_offset.offset);
+        // TODO: refactor so it's easier to add timestamps arrays
         let latest_timestamp = state
-            .next_offset
+            .end_offset
             .timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_err(|err| {

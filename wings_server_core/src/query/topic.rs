@@ -13,9 +13,8 @@ use datafusion::{
 use futures::TryStreamExt;
 use tracing::debug;
 use wings_control_plane::{
-    admin::{Namespace, Topic},
-    offset_registry::{OffsetLocation, OffsetRegistry, PaginatedOffsetLocationStream},
-    partition::PartitionValue,
+    log_metadata::{LogLocation, LogMetadata, stream::PaginatedLogLocationStream},
+    resources::{Namespace, PartitionValue, Topic},
 };
 
 use crate::query::{
@@ -24,30 +23,30 @@ use crate::query::{
 };
 
 pub struct TopicTableProvider {
-    offset_registry: Arc<dyn OffsetRegistry>,
+    log_meta: Arc<dyn LogMetadata>,
     namespace: Namespace,
     topic: Topic,
 }
 
 impl TopicTableProvider {
-    pub fn new(
-        offset_registry: Arc<dyn OffsetRegistry>,
-        namespace: Namespace,
-        topic: Topic,
-    ) -> Self {
+    pub fn new(log_meta: Arc<dyn LogMetadata>, namespace: Namespace, topic: Topic) -> Self {
         Self {
-            offset_registry,
+            log_meta,
             namespace,
             topic,
         }
     }
 
     pub fn new_provider(
-        offset_registry: Arc<dyn OffsetRegistry>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: Namespace,
         topic: Topic,
     ) -> Arc<dyn TableProvider> {
-        Arc::new(Self::new(offset_registry, namespace, topic))
+        Arc::new(Self::new(log_meta, namespace, topic))
+    }
+
+    pub fn output_schema(topic_schema: SchemaRef) -> SchemaRef {
+        todo!();
     }
 }
 
@@ -62,7 +61,7 @@ impl TableProvider for TopicTableProvider {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.topic.schema_with_offset_column()
+        Self::output_schema(self.topic.schema())
     }
 
     fn supports_filters_pushdown(
@@ -84,7 +83,7 @@ impl TableProvider for TopicTableProvider {
         let offset_range = validate_offset_filters(filters)?;
 
         let (partition_value, partition_column) =
-            if let Some(partition_column) = self.topic.partition_column() {
+            if let Some(partition_column) = self.topic.partition_field() {
                 let partition_value: PartitionValue =
                     find_partition_column_value(partition_column.name(), filters)?
                         .try_into()
@@ -107,8 +106,8 @@ impl TableProvider for TopicTableProvider {
                 (None, None)
             };
 
-        let offset_location_stream = PaginatedOffsetLocationStream::new_in_range(
-            self.offset_registry.clone(),
+        let offset_location_stream = PaginatedLogLocationStream::new_in_offset_range(
+            self.log_meta.clone(),
             self.topic.name.clone(),
             partition_value,
             offset_range,
@@ -121,12 +120,12 @@ impl TableProvider for TopicTableProvider {
             .default_object_store_config
             .to_object_store_url()?;
 
-        let schema = self.topic.schema_with_offset_column();
-        let file_schema = self.topic.schema_without_partition_column();
+        let schema = self.schema();
+        let file_schema = self.topic.schema_without_partition_field();
         let locations_exec = locations
             .into_iter()
             .map(|(_, partition_value, location)| match location {
-                OffsetLocation::Folio(folio) => FolioExec::try_new_exec(
+                LogLocation::Folio(folio) => FolioExec::try_new_exec(
                     schema.clone(),
                     file_schema.clone(),
                     partition_value,

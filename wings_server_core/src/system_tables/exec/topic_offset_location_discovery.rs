@@ -17,20 +17,20 @@ use datafusion::{
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
 use wings_control_plane::{
-    admin::{Admin, NamespaceName, PaginatedTopicStream, TopicName},
-    offset_registry::{
-        OffsetLocation, OffsetRegistry, PaginatedOffsetLocationStream,
-        PaginatedPartitionStateStream,
+    cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
+    log_metadata::{
+        LogLocation, LogMetadata,
+        stream::{PaginatedLogLocationStream, PaginatedPartitionMetadataStream},
     },
-    partition::PartitionValue,
+    resources::{NamespaceName, PartitionValue, TopicName},
 };
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
 /// Execution plan for discovering the location of topic offsets.
 pub struct TopicOffsetLocationDiscoveryExec {
-    admin: Arc<dyn Admin>,
-    offset_registry: Arc<dyn OffsetRegistry>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
+    log_meta: Arc<dyn LogMetadata>,
     namespace: NamespaceName,
     topics: Option<Vec<String>>,
     properties: PlanProperties,
@@ -38,8 +38,8 @@ pub struct TopicOffsetLocationDiscoveryExec {
 
 impl TopicOffsetLocationDiscoveryExec {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
         topics: Option<Vec<String>>,
     ) -> Self {
@@ -47,8 +47,8 @@ impl TopicOffsetLocationDiscoveryExec {
         let properties = Self::compute_properties(&schema);
 
         Self {
-            admin,
-            offset_registry,
+            cluster_meta,
+            log_meta,
             namespace,
             topics,
             properties,
@@ -61,6 +61,7 @@ impl TopicOffsetLocationDiscoveryExec {
             Field::new("namespace", DataType::Utf8View, false),
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
             Field::new("partition_value", DataType::Utf8View, true),
+            // TODO: add start and end timestamp
             Field::new("start_offset", DataType::UInt64, false),
             Field::new("end_offset", DataType::UInt64, false),
             Field::new("location_type", DataType::Utf8View, false),
@@ -124,13 +125,13 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
         );
 
         let topics = PaginatedTopicStream::new(
-            self.admin.clone(),
+            self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
             self.topics.clone(),
         );
 
-        let offset_registry = self.offset_registry.clone();
+        let offset_registry = self.log_meta.clone();
         let topic_partition_states = topics.flat_map_unordered(None, {
             let offset_registry = offset_registry.clone();
             move |topic_result| {
@@ -146,7 +147,7 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
                     let offset_registry = offset_registry.clone();
                     move |topic| {
                         let topic_name = topic.name;
-                        PaginatedPartitionStateStream::new(
+                        PaginatedPartitionMetadataStream::new(
                             offset_registry.clone(),
                             topic_name.clone(),
                             batch_size,
@@ -173,7 +174,7 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
                 let stream_iter = states.into_iter().map({
                     let offset_registry = offset_registry.clone();
                     move |state| {
-                        PaginatedOffsetLocationStream::new(
+                        PaginatedLogLocationStream::new(
                             offset_registry.clone(),
                             topic_name.clone(),
                             state.partition_value,
@@ -202,7 +203,7 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
 
 fn from_offset_location(
     schema: SchemaRef,
-    offsets: &[(TopicName, Option<PartitionValue>, OffsetLocation)],
+    offsets: &[(TopicName, Option<PartitionValue>, LogLocation)],
 ) -> Result<RecordBatch, DataFusionError> {
     if offsets.is_empty() {
         return Ok(RecordBatch::new_empty(schema));
@@ -233,14 +234,14 @@ fn from_offset_location(
 
         match offset_location.start_offset() {
             None => start_offset_arr.append_null(),
-            Some(offset) => start_offset_arr.append_value(offset),
+            Some(offset) => start_offset_arr.append_value(offset.offset),
         }
         match offset_location.end_offset() {
             None => end_offset_arr.append_null(),
-            Some(offset) => end_offset_arr.append_value(offset),
+            Some(offset) => end_offset_arr.append_value(offset.offset),
         }
         match offset_location {
-            OffsetLocation::Folio(folio) => {
+            LogLocation::Folio(folio) => {
                 location_type_arr.append_value("folio".to_string());
                 folio_file_ref_arr.append_value(folio.file_ref.to_string());
                 folio_offset_bytes_arr.append_value(folio.offset_bytes);

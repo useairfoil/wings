@@ -21,11 +21,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use futures::StreamExt;
-use wings_control_plane::{
-    admin::OFFSET_COLUMN_NAME,
-    offset_registry::{CommittedBatch, FolioLocation},
-    partition::PartitionValue,
-};
+use wings_control_plane::{log_metadata::FolioLocation, resources::PartitionValue};
 
 pub struct FolioExec {
     partition_value_column: Option<(FieldRef, PartitionValue)>,
@@ -125,6 +121,7 @@ impl ExecutionPlan for FolioExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
+        /*
         let stream = self.inner.execute(partition, context)?;
         let stream_with_partition_and_offset = RecordBatchStreamAdapter::new(
             self.schema.clone(),
@@ -178,6 +175,8 @@ impl ExecutionPlan for FolioExec {
         );
 
         Ok(Box::pin(stream_with_partition_and_offset))
+        */
+        todo!();
     }
 }
 

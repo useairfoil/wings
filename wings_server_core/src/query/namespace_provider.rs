@@ -9,8 +9,9 @@ use datafusion::{
 };
 use tracing::debug;
 use wings_control_plane::{
-    admin::{Admin, Namespace, NamespaceName, Topic, collect_namespace_topics},
-    offset_registry::OffsetRegistry,
+    cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
+    log_metadata::LogMetadata,
+    resources::{Namespace, NamespaceName, Topic},
 };
 use wings_object_store::ObjectStoreFactory;
 
@@ -22,14 +23,14 @@ pub const SYSTEM_SCHEMA: &str = "system";
 
 #[derive(Clone)]
 pub struct NamespaceProviderFactory {
-    admin: Arc<dyn Admin>,
-    offset_registry: Arc<dyn OffsetRegistry>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
+    log_meta: Arc<dyn LogMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
 }
 
 #[derive(Clone)]
 pub struct NamespaceProvider {
-    offset_registry: Arc<dyn OffsetRegistry>,
+    log_meta: Arc<dyn LogMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
     namespace: Namespace,
     topics: Vec<Topic>,
@@ -38,13 +39,13 @@ pub struct NamespaceProvider {
 
 impl NamespaceProviderFactory {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
     ) -> Self {
         Self {
-            admin,
-            offset_registry,
+            cluster_meta,
+            log_meta,
             object_store_factory,
         }
     }
@@ -54,8 +55,8 @@ impl NamespaceProviderFactory {
         namespace_name: NamespaceName,
     ) -> Result<NamespaceProvider, DataFusionError> {
         NamespaceProvider::new(
-            self.admin.clone(),
-            self.offset_registry.clone(),
+            self.cluster_meta.clone(),
+            self.log_meta.clone(),
             self.object_store_factory.clone(),
             namespace_name,
         )
@@ -65,18 +66,24 @@ impl NamespaceProviderFactory {
 
 impl NamespaceProvider {
     pub async fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         namespace_name: NamespaceName,
     ) -> Result<Self, DataFusionError> {
-        let namespace = admin.get_namespace(namespace_name.clone()).await?;
-        let topics = collect_namespace_topics(&admin, &namespace_name).await?;
+        let namespace = cluster_meta.get_namespace(namespace_name.clone()).await?;
+        // TODO: for now we collect all topics here. This becomes slow for large namespaces.
+        let topics = collect_namespace_topics(
+            &cluster_meta,
+            &namespace_name,
+            CollectNamespaceTopicsOptions::default(),
+        )
+        .await?;
         let system_schema_provider =
-            SystemSchemaProvider::new(admin.clone(), offset_registry.clone(), namespace_name);
+            SystemSchemaProvider::new(cluster_meta.clone(), log_meta.clone(), namespace_name);
 
         Ok(Self {
-            offset_registry,
+            log_meta,
             object_store_factory,
             namespace,
             topics,
@@ -154,7 +161,7 @@ impl SchemaProvider for NamespaceProvider {
             .find(|topic| topic.name.id == name)
             .map(|topic| {
                 TopicTableProvider::new_provider(
-                    self.offset_registry.clone(),
+                    self.log_meta.clone(),
                     self.namespace.clone(),
                     topic.clone(),
                 )

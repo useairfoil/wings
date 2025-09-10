@@ -9,20 +9,20 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_control_plane::admin::{Admin, NamespaceName};
+use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::NamespaceName};
 
 use super::provider::SystemTable;
 
 pub struct NamespaceInfoTable {
-    admin: Arc<dyn Admin>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl NamespaceInfoTable {
-    pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
+    pub fn new(cluster_meta: Arc<dyn ClusterMetadata>, namespace: NamespaceName) -> Self {
         Self {
-            admin,
+            cluster_meta,
             namespace,
             schema: namespace_info_schema(),
         }
@@ -40,7 +40,10 @@ impl SystemTable for NamespaceInfoTable {
         _filters: Vec<Expr>,
         _limit: Option<usize>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let namespace = self.admin.get_namespace(self.namespace.clone()).await?;
+        let namespace = self
+            .cluster_meta
+            .get_namespace(self.namespace.clone())
+            .await?;
 
         let tenant_arr = StringArray::from(vec![self.namespace.parent().id().to_string()]);
         let namespace_arr = StringArray::from(vec![self.namespace.id().to_string()]);

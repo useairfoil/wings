@@ -5,11 +5,12 @@ use datafusion::common::arrow::datatypes::{DataType, Field, Schema};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
-    admin::{
-        Admin, InMemoryAdminService, Namespace, NamespaceName, NamespaceOptions, SecretName,
-        TenantName, Topic, TopicName, TopicOptions,
+    cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
+    log_metadata::InMemoryLogMetadata,
+    resources::{
+        Namespace, NamespaceName, NamespaceOptions, SecretName, TenantName, Topic, TopicName,
+        TopicOptions,
     },
-    offset_registry::InMemoryOffsetRegistry,
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
@@ -19,20 +20,20 @@ pub fn create_ingestor_and_provider() -> (
     JoinHandle<()>,
     BatchIngestorClient,
     NamespaceProviderFactory,
-    Arc<dyn Admin>,
+    Arc<dyn ClusterMetadata>,
     CancellationToken,
 ) {
-    let admin: Arc<_> = InMemoryAdminService::new().into();
+    let cluster_meta: Arc<_> = InMemoryClusterMetadata::new().into();
     let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new()
         .expect("object store factory")
         .into();
-    let offset_registry: Arc<_> = InMemoryOffsetRegistry::new().into();
+    let log_meta: Arc<_> = InMemoryLogMetadata::default().into();
     let factory = NamespaceProviderFactory::new(
-        admin.clone(),
-        offset_registry.clone(),
+        cluster_meta.clone(),
+        log_meta.clone(),
         object_store_factory.clone(),
     );
-    let ingestor = BatchIngestor::new(object_store_factory, offset_registry);
+    let ingestor = BatchIngestor::new(object_store_factory, log_meta);
 
     let client = ingestor.client();
     let ct = CancellationToken::new();
@@ -43,17 +44,17 @@ pub fn create_ingestor_and_provider() -> (
         }
     });
 
-    (task, client, factory, admin, ct)
+    (task, client, factory, cluster_meta, ct)
 }
 
-pub async fn initialize_test_namespace(admin: &Arc<dyn Admin>) -> Arc<Namespace> {
+pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) -> Arc<Namespace> {
     let tenant_name = TenantName::new_unchecked("test");
-    let _tenant = admin
+    let _tenant = cluster_meta
         .create_tenant(tenant_name.clone())
         .await
         .expect("create_tenant");
     let namespace_name = NamespaceName::new_unchecked("test_ns", tenant_name);
-    let namespace = admin
+    let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),
             NamespaceOptions::new(SecretName::new_unchecked("my-secret"))
@@ -66,12 +67,12 @@ pub async fn initialize_test_namespace(admin: &Arc<dyn Admin>) -> Arc<Namespace>
 }
 
 pub async fn initialize_test_partitioned_topic(
-    admin: &Arc<dyn Admin>,
+    cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
 ) -> Arc<Topic> {
     let topic_name = TopicName::new_unchecked("my_partitioned_topic", namespace.clone());
     let schema = schema_with_partition();
-    let topic = admin
+    let topic = cluster_meta
         .create_topic(
             topic_name,
             TopicOptions::new_with_partition_key(schema.fields, Some(0)),
@@ -83,12 +84,12 @@ pub async fn initialize_test_partitioned_topic(
 }
 
 pub async fn initialize_test_topic(
-    admin: &Arc<dyn Admin>,
+    cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
 ) -> Arc<Topic> {
     let topic_name = TopicName::new_unchecked("my_topic", namespace.clone());
     let schema = schema_without_partition();
-    let topic = admin
+    let topic = cluster_meta
         .create_topic(topic_name, TopicOptions::new(schema.fields))
         .await
         .expect("create_topic");

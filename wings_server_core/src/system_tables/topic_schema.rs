@@ -9,8 +9,9 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_control_plane::admin::{
-    Admin, NamespaceName, Topic, collect_namespace_topics, collect_namespace_topics_from_ids,
+use wings_control_plane::{
+    cluster_metadata::ClusterMetadata,
+    resources::{NamespaceName, Topic},
 };
 
 use super::{
@@ -19,15 +20,15 @@ use super::{
 };
 
 pub struct TopicSchemaTable {
-    admin: Arc<dyn Admin>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl TopicSchemaTable {
-    pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
+    pub fn new(cluster_meta: Arc<dyn ClusterMetadata>, namespace: NamespaceName) -> Self {
         Self {
-            admin,
+            cluster_meta,
             namespace,
             schema: topic_schema_schema(),
         }
@@ -42,16 +43,20 @@ impl SystemTable for TopicSchemaTable {
 
     async fn scan(
         &self,
-        filters: Vec<Expr>,
+        _filters: Vec<Expr>,
         _limit: Option<usize>,
     ) -> Result<RecordBatch, DataFusionError> {
+        /*
         let topics = if let Some(topic_names) = find_topic_name_in_filters(&filters) {
-            collect_namespace_topics_from_ids(&self.admin, &self.namespace, &topic_names).await?
+            collect_namespace_topics_from_ids(&self.cluster_meta, &self.namespace, &topic_names)
+                .await?
         } else {
-            collect_namespace_topics(&self.admin, &self.namespace).await?
+            collect_namespace_topics(&self.cluster_meta, &self.namespace).await?
         };
 
         from_topics(self.schema.clone(), &topics)
+        */
+        todo!();
     }
 }
 

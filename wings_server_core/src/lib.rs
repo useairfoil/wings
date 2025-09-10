@@ -1,7 +1,4 @@
-//! Core server functionality for Wings message queue.
-//!
-//! This crate provides the core functionality for fetching messages from Wings,
-//! including the `Fetcher` struct and related types.
+//! Access data stored in Wings
 
 pub mod datafusion_helpers;
 pub mod error;

@@ -5,8 +5,8 @@ use common::{
 use datafusion::{
     assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
 };
-use wings_control_plane::partition::PartitionValue;
-use wings_ingestor_core::{Batch, error::Result};
+use wings_control_plane::resources::PartitionValue;
+use wings_ingestor_core::{Result, WriteBatchRequest};
 
 mod common;
 
@@ -71,7 +71,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(Batch {
+            .write(WriteBatchRequest {
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),
@@ -94,7 +94,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(Batch {
+            .write(WriteBatchRequest {
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(200)),
@@ -124,7 +124,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(Batch {
+            .write(WriteBatchRequest {
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),

@@ -10,33 +10,32 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
+use wings_control_plane::{
+    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
+};
 
 use crate::{
     datafusion_helpers::apply_projection,
     system_tables::{exec::TopicPartitionValueDiscoveryExec, helpers::find_topic_name_in_filters},
 };
-use wings_control_plane::{
-    admin::{Admin, NamespaceName},
-    offset_registry::OffsetRegistry,
-};
 
 /// System table for discovering partition values for topics.
 pub struct TopicPartitionValueSystemTable {
-    admin: Arc<dyn Admin>,
-    offset_registry: Arc<dyn OffsetRegistry>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
+    log_meta: Arc<dyn LogMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl TopicPartitionValueSystemTable {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
     ) -> Self {
         Self {
-            admin,
-            offset_registry,
+            cluster_meta,
+            log_meta,
             namespace,
             schema: TopicPartitionValueDiscoveryExec::schema(),
         }
@@ -74,8 +73,8 @@ impl TableProvider for TopicPartitionValueSystemTable {
         let topics_filter = find_topic_name_in_filters(filters);
 
         let topic_partition_exec = TopicPartitionValueDiscoveryExec::new(
-            self.admin.clone(),
-            self.offset_registry.clone(),
+            self.cluster_meta.clone(),
+            self.log_meta.clone(),
             self.namespace.clone(),
             topics_filter,
         );

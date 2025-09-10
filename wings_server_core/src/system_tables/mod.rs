@@ -14,15 +14,14 @@ use datafusion::{
     catalog::{SchemaProvider, TableProvider},
     error::DataFusionError,
 };
-use namespace_info::NamespaceInfoTable;
-use provider::SystemTableProvider;
-use topic::TopicSystemTable;
-use topic_offset_location::TopicOffsetLocationSystemTable;
-use topic_partition_value::TopicPartitionValueSystemTable;
-use topic_schema::TopicSchemaTable;
 use wings_control_plane::{
-    admin::{Admin, NamespaceName},
-    offset_registry::OffsetRegistry,
+    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
+};
+
+use self::{
+    namespace_info::NamespaceInfoTable, provider::SystemTableProvider, topic::TopicSystemTable,
+    topic_offset_location::TopicOffsetLocationSystemTable,
+    topic_partition_value::TopicPartitionValueSystemTable, topic_schema::TopicSchemaTable,
 };
 
 pub const NAMESPACE_INFO_TABLE_NAME: &str = "namespace_info";
@@ -57,37 +56,40 @@ impl SchemaProvider for SystemSchemaProvider {
 
 impl SystemSchemaProvider {
     pub fn new(
-        admin: Arc<dyn Admin>,
-        offset_registry: Arc<dyn OffsetRegistry>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
     ) -> Self {
         let mut tables = HashMap::<&'static str, Arc<dyn TableProvider>>::new();
 
         let namespace_info = Arc::new(SystemTableProvider::new(NamespaceInfoTable::new(
-            admin.clone(),
+            cluster_meta.clone(),
             namespace.clone(),
         )));
         tables.insert(NAMESPACE_INFO_TABLE_NAME, namespace_info);
 
-        let topic = Arc::new(TopicSystemTable::new(admin.clone(), namespace.clone()));
+        let topic = Arc::new(TopicSystemTable::new(
+            cluster_meta.clone(),
+            namespace.clone(),
+        ));
         tables.insert(TOPIC_TABLE_NAME, topic);
 
         let topic_schema = Arc::new(SystemTableProvider::new(TopicSchemaTable::new(
-            admin.clone(),
+            cluster_meta.clone(),
             namespace.clone(),
         )));
         tables.insert(TOPIC_SCHEMA_TABLE_NAME, topic_schema);
 
         let topic_partition_value = Arc::new(TopicPartitionValueSystemTable::new(
-            admin.clone(),
-            offset_registry.clone(),
+            cluster_meta.clone(),
+            log_meta.clone(),
             namespace.clone(),
         ));
         tables.insert(TOPIC_PARTITION_VALUE_TABLE_NAME, topic_partition_value);
 
         let topic_offset_location = Arc::new(TopicOffsetLocationSystemTable::new(
-            admin.clone(),
-            offset_registry.clone(),
+            cluster_meta.clone(),
+            log_meta.clone(),
             namespace.clone(),
         ));
         tables.insert(TOPIC_OFFSET_LOCATION_TABLE_NAME, topic_offset_location);

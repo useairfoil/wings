@@ -10,22 +10,22 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_control_plane::admin::{Admin, NamespaceName};
+use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::NamespaceName};
 
 use crate::datafusion_helpers::apply_projection;
 
 use super::{exec::TopicDiscoveryExec, helpers::find_topic_name_in_filters};
 
 pub struct TopicSystemTable {
-    admin: Arc<dyn Admin>,
+    cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
 impl TopicSystemTable {
-    pub fn new(admin: Arc<dyn Admin>, namespace: NamespaceName) -> Self {
+    pub fn new(cluster_meta: Arc<dyn ClusterMetadata>, namespace: NamespaceName) -> Self {
         Self {
-            admin,
+            cluster_meta,
             namespace,
             schema: TopicDiscoveryExec::schema(),
         }
@@ -62,8 +62,11 @@ impl TableProvider for TopicSystemTable {
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
         let topic_filters = find_topic_name_in_filters(filters);
 
-        let topic_exec =
-            TopicDiscoveryExec::new(self.admin.clone(), self.namespace.clone(), topic_filters);
+        let topic_exec = TopicDiscoveryExec::new(
+            self.cluster_meta.clone(),
+            self.namespace.clone(),
+            topic_filters,
+        );
         let topic_exec = Arc::new(topic_exec);
 
         apply_projection(topic_exec, projection)
