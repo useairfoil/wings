@@ -15,13 +15,15 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
  - [ ] Compaction to Parquet files
  - [ ] Control plane persistence based on PostgreSQL
  - [ ] Schema management and evolution
- - [ ] Iceberg catalog management
+ - [ ] Iceberg catalog support
 
 **Version 1.0**
 
  - [ ] Data retention policies
+ - [ ] Transactions with clearly defined semantics
  - [ ] ["Distributed mmap"](https://www.warpstream.com/blog/minimizing-s3-api-costs-with-distributed-mmap) based on [LiquidCache](https://github.com/XiangpengHao/liquid-cache)
  - [ ] Cloud-native control plane persistence (DynamoDB, Azure CosmosDB, Google Cloud Spanner)
+ - [ ] Deterministic simulation testing
  - [ ] Read-only streams based on externally managed Iceberg catalogs
  - [ ] Extensible authentication and authorization
 
