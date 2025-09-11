@@ -14,9 +14,11 @@ use wings_control_plane::{
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
     resources::{NamespaceName, NamespaceOptions, SecretName, TenantName},
 };
+use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
-use wings_object_store::TemporaryFileSystemFactory;
+use wings_object_store::{ObjectStoreFactory, TemporaryFileSystemFactory};
+use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::error::{
     InvalidServerUrlSnafu, IoSnafu, ObjectStoreSnafu, Result, TonicReflectionSnafu,
@@ -35,7 +37,7 @@ pub struct DevArgs {
 
 impl DevArgs {
     pub async fn run(self, ct: CancellationToken) -> Result<()> {
-        let (admin, default_namespace) = new_dev_cluster_metadata_service().await;
+        let (cluster_metadata, default_namespace) = new_dev_cluster_metadata_service().await;
 
         let metadata_address = self
             .metadata_address
@@ -55,9 +57,9 @@ impl DevArgs {
         let _ct_guard = ct.child_token().drop_guard();
         let object_store_factory =
             TemporaryFileSystemFactory::new().context(ObjectStoreSnafu {})?;
+        let object_store_factory = Arc::new(object_store_factory);
 
         let log_metadata = Arc::new(InMemoryLogMetadata::default());
-        let object_store_factory = Arc::new(object_store_factory);
 
         info!(
             "Object store root path: {}",
@@ -67,14 +69,20 @@ impl DevArgs {
         let ingestor = BatchIngestor::new(object_store_factory.clone(), log_metadata.clone());
 
         let grpc_server_fut = run_grpc_server(
-            admin.clone(),
+            cluster_metadata.clone(),
             log_metadata,
+            object_store_factory,
             ingestor.client(),
             metadata_address,
             ct.clone(),
         );
 
-        let http_ingestor_fut = run_http_server(admin, ingestor.client(), http_address, ct.clone());
+        let http_ingestor_fut = run_http_server(
+            cluster_metadata,
+            ingestor.client(),
+            http_address,
+            ct.clone(),
+        );
 
         let ingestor_fut = run_background_ingestor(ingestor, ct);
 
@@ -117,6 +125,7 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
 async fn run_grpc_server(
     cluster_meta: Arc<InMemoryClusterMetadata>,
     log_meta: Arc<InMemoryLogMetadata>,
+    object_store_factory: Arc<dyn ObjectStoreFactory>,
     _batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
@@ -131,13 +140,18 @@ async fn run_grpc_server(
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
+    let namespace_provider_factory =
+        NamespaceProviderFactory::new(cluster_meta.clone(), log_meta.clone(), object_store_factory);
+
     let admin_service = ClusterMetadataServer::new(cluster_meta).into_tonic_server();
     let offset_registry_service = LogMetadataServer::new(log_meta).into_tonic_server();
+    let sql_service = WingsFlightSqlServer::new(namespace_provider_factory).into_tonic_server();
 
     let server = tonic::transport::Server::builder()
         .add_service(reflection_service)
         .add_service(admin_service)
         .add_service(offset_registry_service)
+        .add_service(sql_service)
         .serve_with_shutdown(address, async move {
             ct.cancelled().await;
         });

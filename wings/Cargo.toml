@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 arrow.workspace = true
+arrow-flight.workspace = true
 arrow-json.workspace = true
 arrow-schema.workspace = true
 axum.workspace = true
@@ -19,6 +20,7 @@ bytesize.workspace = true
 clap.workspace = true
 chrono = "0.4.41"
 datafusion.workspace = true
+futures.workspace = true
 nu-ansi-term = "0.50.1"
 object_store.workspace = true
 reqwest.workspace = true
@@ -35,6 +37,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "json",
 ] }
+wings-flight = { path = "../wings_flight" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-control-plane = { path = "../wings_control_plane" }

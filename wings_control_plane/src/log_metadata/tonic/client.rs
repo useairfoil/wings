@@ -22,7 +22,7 @@ pub struct LogMetadataClient<T> {
 
 impl<T> LogMetadataClient<T>
 where
-    T: tonic::client::GrpcService<tonic::body::Body> + Clone,
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + Clone,
     T::Error: Into<StdError>,
     T::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<StdError> + Send,
@@ -41,8 +41,8 @@ where
 #[async_trait]
 impl<T> LogMetadata for LogMetadataClient<T>
 where
-    T: tonic::client::GrpcService<tonic::body::Body> + Send + Sync + Clone,
-    <T as tonic::client::GrpcService<tonic::body::Body>>::Future: Send,
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + Send + Sync + Clone,
+    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::Future: Send,
     T::Error: Into<StdError>,
     T::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<StdError> + Send,

@@ -1,14 +1,11 @@
-use std::sync::Arc;
-
+use arrow::util::pretty::pretty_format_batches;
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::resources::NamespaceName;
-use wings_object_store::LocalFileSystemFactory;
-use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
-    error::{DataFusionSnafu, InvalidResourceNameSnafu, ObjectStoreSnafu, Result},
+    error::{ArrowSnafu, Result},
+    flight::execute_flight_info,
     remote::RemoteArgs,
 };
 
@@ -22,46 +19,23 @@ pub struct SqlArgs {
     #[clap(default_value = "tenants/default/namespaces/default")]
     namespace: String,
 
-    /// The base path where the data is stored
-    #[arg(long)]
-    base_path: String,
-
     #[clap(flatten)]
     remote: RemoteArgs,
 }
 
 impl SqlArgs {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
-        let cluster_meta = self.remote.cluster_metadata_client().await?;
-        let log_meta = self.remote.log_metadata_client().await?;
+        let mut client = self.remote.flight_sql_client(&self.namespace).await?;
+        client.set_header("x-wings-namespace", self.namespace);
 
-        let namespace_name =
-            NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
-                resource: "namespace",
-            })?;
-
-        let object_store_factory =
-            LocalFileSystemFactory::new(self.base_path).context(ObjectStoreSnafu {})?;
-
-        let factory = NamespaceProviderFactory::new(
-            Arc::new(cluster_meta),
-            Arc::new(log_meta),
-            Arc::new(object_store_factory),
-        );
-
-        let namespace = factory
-            .create_provider(namespace_name)
+        let flight_info = client
+            .execute(self.query, None)
             .await
-            .context(DataFusionSnafu {})?;
+            .context(ArrowSnafu {})?;
 
-        let ctx = namespace
-            .new_session_context()
-            .await
-            .context(DataFusionSnafu {})?;
+        let batches = execute_flight_info(&mut client, flight_info).await?;
 
-        let result = ctx.sql(&self.query).await.context(DataFusionSnafu {})?;
-
-        result.show().await.context(DataFusionSnafu {})?;
+        pretty_format_batches(&batches).context(ArrowSnafu {})?;
 
         Ok(())
     }

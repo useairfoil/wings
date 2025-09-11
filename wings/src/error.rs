@@ -60,6 +60,12 @@ pub enum CliError {
     JsonParse { source: serde_json::Error },
     #[snafu(display("DataFusion error"))]
     DataFusion { source: DataFusionError },
+    #[snafu(display("Arrow error"))]
+    Arrow { source: arrow::error::ArrowError },
+    #[snafu(display("Flight error"))]
+    Flight {
+        source: arrow_flight::error::FlightError,
+    },
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;

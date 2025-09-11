@@ -1,9 +1,10 @@
+use arrow_flight::{
+    flight_service_client::FlightServiceClient, sql::client::FlightSqlServiceClient,
+};
 use clap::Args;
 use snafu::ResultExt;
 use tonic::transport::Channel;
-use wings_control_plane::{
-    cluster_metadata::tonic::ClusterMetadataClient, log_metadata::tonic::LogMetadataClient,
-};
+use wings_control_plane::cluster_metadata::tonic::ClusterMetadataClient;
 
 use crate::error::{ConnectionSnafu, InvalidRemoteUrlSnafu, Result};
 
@@ -22,9 +23,19 @@ impl RemoteArgs {
         Ok(ClusterMetadataClient::new(channel))
     }
 
-    pub async fn log_metadata_client(&self) -> Result<LogMetadataClient<Channel>> {
+    pub async fn flight_client(&self) -> Result<FlightServiceClient<Channel>> {
         let channel = self.channel().await?;
-        Ok(LogMetadataClient::new(channel))
+        Ok(FlightServiceClient::new(channel))
+    }
+
+    pub async fn flight_sql_client(
+        &self,
+        namespace: &str,
+    ) -> Result<FlightSqlServiceClient<Channel>> {
+        let inner = self.flight_client().await?;
+        let mut client = FlightSqlServiceClient::new_from_inner(inner);
+        client.set_header("x-wings-namespace", namespace);
+        Ok(client)
     }
 
     async fn channel(&self) -> Result<Channel> {

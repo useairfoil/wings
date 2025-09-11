@@ -10,8 +10,8 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
 
  - [x] Write and read data
  - [x] Built-in timestamp support
- - [ ] Apache Flight SQL for reading data
- - [ ] Apache Flight (+ SQL) for ingesting data
+ - [ ] Arrow Flight (+ SQL) for reading data
+ - [ ] Arrow Flight (+ SQL) for ingesting data
  - [ ] Compaction to Parquet files
  - [ ] Control plane persistence based on PostgreSQL
  - [ ] Schema management and evolution

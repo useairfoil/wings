@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use flight::FlightCommands;
 use observability::init_observability;
 use tokio_util::sync::CancellationToken;
 
@@ -9,6 +10,7 @@ use crate::{
 mod cluster;
 mod dev;
 mod error;
+mod flight;
 mod observability;
 mod push;
 mod remote;
@@ -34,6 +36,11 @@ enum Commands {
     Cluster {
         #[command(subcommand)]
         inner: ClusterMetadataCommands,
+    },
+    /// Interact with the Apache Flight SQL API
+    Flight {
+        #[command(subcommand)]
+        inner: FlightCommands,
     },
     /// Push messages to Wings topics
     Push {
@@ -65,6 +72,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Dev { inner } => inner.run(ct).await,
         Commands::Cluster { inner } => inner.run(ct).await,
+        Commands::Flight { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
         Commands::Sql { inner } => inner.run(ct).await,
     }
