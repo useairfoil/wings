@@ -1,20 +1,27 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use arrow_flight::{
     FlightDescriptor, FlightEndpoint, FlightInfo, Ticket,
     encode::FlightDataEncoderBuilder,
+    error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
     sql::{
-        CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, ProstMessageExt, SqlInfo,
-        server::FlightSqlService,
+        CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, CommandStatementQuery,
+        ProstMessageExt, SqlInfo, TicketStatementQuery, server::FlightSqlService,
     },
 };
-use datafusion::{error::DataFusionError, prelude::SessionContext};
-use futures::TryStreamExt;
+use datafusion::{
+    error::DataFusionError,
+    logical_expr::LogicalPlan,
+    prelude::{SQLOptions, SessionContext},
+};
+use futures::{StreamExt, TryStreamExt};
 use prost::Message;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use wings_control_plane::resources::NamespaceName;
 use wings_server_core::query::NamespaceProviderFactory;
+
+use crate::{error::FlightServerError, ticket::StatementQueryTicket};
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
@@ -63,11 +70,11 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         let flight_info = FlightInfo::new()
             .try_with_schema(&query.into_builder().schema())
-            .map_err(|e| Status::internal(format!("Unable to encode schema {e}")))?
+            .map_err(FlightServerError::from)?
             .with_endpoint(endpoint)
             .with_descriptor(flight_descriptor);
 
-        Ok(tonic::Response::new(flight_info))
+        Ok(Response::new(flight_info))
     }
 
     async fn do_get_catalogs(
@@ -79,7 +86,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         let ctx = self
             .new_session_context(namespace_name)
             .await
-            .map_err(|_| Status::internal("failed to create session context"))?;
+            .map_err(FlightServerError::from)?;
 
         let mut builder = query.into_builder();
         for name in ctx.catalog_names() {
@@ -91,9 +98,10 @@ impl FlightSqlService for WingsFlightSqlServer {
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
             .build(futures::stream::once(async { batch }))
-            .map_err(Status::from);
+            .map_err(Status::from)
+            .boxed();
 
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(stream))
     }
 
     async fn get_flight_info_schemas(
@@ -109,11 +117,11 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         let flight_info = FlightInfo::new()
             .try_with_schema(&query.into_builder().schema())
-            .map_err(|e| Status::internal(format!("Unable to encode schema {e}")))?
+            .map_err(FlightServerError::from)?
             .with_endpoint(endpoint)
             .with_descriptor(flight_descriptor);
 
-        Ok(tonic::Response::new(flight_info))
+        Ok(Response::new(flight_info))
     }
 
     async fn do_get_schemas(
@@ -125,10 +133,16 @@ impl FlightSqlService for WingsFlightSqlServer {
         let ctx = self
             .new_session_context(namespace_name)
             .await
-            .map_err(|_| Status::internal("failed to create session context"))?;
+            .map_err(FlightServerError::from)?;
+
+        let Some(catalog) = ctx.catalog(query.catalog()) else {
+            return Err(Status::not_found(format!(
+                "catalog {} not found",
+                query.catalog()
+            )));
+        };
 
         let catalog_name = query.catalog().to_string();
-        let catalog = ctx.catalog(query.catalog()).unwrap();
         let mut builder = query.into_builder();
 
         for schema_name in catalog.schema_names() {
@@ -140,9 +154,10 @@ impl FlightSqlService for WingsFlightSqlServer {
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
             .build(futures::stream::once(async { batch }))
-            .map_err(Status::from);
+            .map_err(Status::from)
+            .boxed();
 
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(stream))
     }
 
     async fn get_flight_info_tables(
@@ -158,11 +173,11 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         let flight_info = FlightInfo::new()
             .try_with_schema(&query.into_builder().schema())
-            .map_err(|e| Status::internal(format!("Unable to encode schema {e}")))?
+            .map_err(FlightServerError::from)?
             .with_endpoint(endpoint)
             .with_descriptor(flight_descriptor);
 
-        Ok(tonic::Response::new(flight_info))
+        Ok(Response::new(flight_info))
     }
 
     async fn do_get_tables(
@@ -174,19 +189,35 @@ impl FlightSqlService for WingsFlightSqlServer {
         let ctx = self
             .new_session_context(namespace_name)
             .await
-            .map_err(|_| Status::internal("failed to create session context"))?;
+            .map_err(FlightServerError::from)?;
 
         let table_types: HashSet<String> =
             HashSet::from_iter(query.table_types.iter().map(|s| s.to_uppercase()));
 
+        let Some(catalog) = ctx.catalog(query.catalog()) else {
+            return Err(Status::not_found(format!(
+                "catalog {} not found",
+                query.catalog()
+            )));
+        };
+
         let catalog_name = query.catalog().to_string();
-        let catalog = ctx.catalog(query.catalog()).unwrap();
         let mut builder = query.into_builder();
 
         for schema_name in catalog.schema_names() {
-            let schema_provider = catalog.schema(&schema_name).unwrap();
+            let Some(schema_provider) = catalog.schema(&schema_name) else {
+                continue;
+            };
+
             for table_name in schema_provider.table_names() {
-                let table = schema_provider.table(&table_name).await.unwrap().unwrap();
+                let Some(table) = schema_provider
+                    .table(&table_name)
+                    .await
+                    .map_err(FlightServerError::from)?
+                else {
+                    continue;
+                };
+
                 let table_type = table.table_type().to_string().to_uppercase();
                 if table_types.is_empty() || table_types.contains(&table_type) {
                     builder
@@ -197,7 +228,7 @@ impl FlightSqlService for WingsFlightSqlServer {
                             &table_type,
                             &table.schema(),
                         )
-                        .unwrap();
+                        .map_err(FlightServerError::from)?;
                 }
             }
         }
@@ -207,9 +238,77 @@ impl FlightSqlService for WingsFlightSqlServer {
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
             .build(futures::stream::once(async { batch }))
-            .map_err(Status::from);
+            .map_err(Status::from)
+            .boxed();
 
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(stream))
+    }
+
+    async fn get_flight_info_statement(
+        &self,
+        query: CommandStatementQuery,
+        request: Request<FlightDescriptor>,
+    ) -> Result<Response<FlightInfo>, Status> {
+        let namespace_name = get_namespace_from_headers(request.metadata())?;
+        let ctx = self
+            .new_session_context(namespace_name)
+            .await
+            .map_err(FlightServerError::from)?;
+
+        let plan = ctx
+            .state()
+            .create_logical_plan(&query.query)
+            .await
+            .map_err(FlightServerError::from)?;
+
+        validate_logical_plan(&plan)?;
+
+        let ticket = StatementQueryTicket::new(query.query).into_ticket();
+
+        let flight_descriptor = request.into_inner();
+        let endpoint = FlightEndpoint::new().with_ticket(ticket);
+
+        let flight_info = FlightInfo::new()
+            .try_with_schema(plan.schema().as_arrow())
+            .map_err(FlightServerError::from)?
+            .with_endpoint(endpoint)
+            .with_descriptor(flight_descriptor);
+
+        Ok(Response::new(flight_info))
+    }
+
+    async fn do_get_statement(
+        &self,
+        ticket: TicketStatementQuery,
+        request: Request<Ticket>,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let ticket = StatementQueryTicket::try_decode(ticket.statement_handle)?;
+
+        let namespace_name = get_namespace_from_headers(request.metadata())?;
+        let ctx = self
+            .new_session_context(namespace_name)
+            .await
+            .map_err(FlightServerError::from)?;
+
+        let out = ctx
+            .sql(&ticket.query)
+            .await
+            .map_err(FlightServerError::from)?;
+
+        let schema: Arc<_> = out.schema().as_arrow().clone().into();
+
+        let stream = out
+            .execute_stream()
+            .await
+            .map_err(FlightServerError::from)?;
+
+        let stream = FlightDataEncoderBuilder::new()
+            .with_schema(schema)
+            .build(stream.map_err(|err| FlightError::from_external_error(Box::new(err))))
+            .map_err(Status::from)
+            .boxed();
+
+        Ok(Response::new(stream))
     }
 }
 
@@ -232,4 +331,12 @@ fn get_namespace_from_headers(headers: &MetadataMap) -> Result<NamespaceName, St
     })?;
 
     Ok(namespace)
+}
+
+fn validate_logical_plan(plan: &LogicalPlan) -> Result<(), FlightServerError> {
+    let verifier = SQLOptions::default()
+        .with_allow_ddl(false)
+        .with_allow_dml(false)
+        .with_allow_statements(false);
+    verifier.verify_plan(&plan).map_err(FlightServerError::from)
 }

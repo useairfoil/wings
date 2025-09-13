@@ -35,7 +35,8 @@ impl SqlArgs {
 
         let batches = execute_flight_info(&mut client, flight_info).await?;
 
-        pretty_format_batches(&batches).context(ArrowSnafu {})?;
+        let out = pretty_format_batches(&batches).context(ArrowSnafu {})?;
+        println!("{}", out);
 
         Ok(())
     }

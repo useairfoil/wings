@@ -21,11 +21,12 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
 
  - [ ] Data retention policies
  - [ ] Transactions with clearly defined semantics
+ - [ ] Extensible authentication and authorization
+ - [ ] Extensible secret management (for object store credentials)
  - [ ] ["Distributed mmap"](https://www.warpstream.com/blog/minimizing-s3-api-costs-with-distributed-mmap) based on [LiquidCache](https://github.com/XiangpengHao/liquid-cache)
  - [ ] Cloud-native control plane persistence (DynamoDB, Azure CosmosDB, Google Cloud Spanner)
  - [ ] Deterministic simulation testing
  - [ ] Read-only streams based on externally managed Iceberg catalogs
- - [ ] Extensible authentication and authorization
 
 ## License
 
