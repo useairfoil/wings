@@ -21,6 +21,7 @@ use super::pb::{
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
+#[derive(Debug, Clone)]
 pub struct ClusterMetadataClient<T> {
     client: TonicClient<T>,
 }

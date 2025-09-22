@@ -4671,13 +4671,33 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "tracing-subscriber",
+ "wings-client",
  "wings-control-plane",
  "wings-flight",
  "wings-ingestor-core",
  "wings-ingestor-http",
  "wings-object-store",
- "wings-push-client",
  "wings-server-core",
+]
+
+[[package]]
+name = "wings-client"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-flight",
+ "bytes",
+ "dashmap",
+ "futures",
+ "prost",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "wings-control-plane",
+ "wings-flight",
+ "wings-ingestor-core",
 ]
 
 [[package]]
@@ -4730,6 +4750,7 @@ dependencies = [
  "prost-types",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tonic",
  "tracing",
@@ -4788,17 +4809,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wings-push-client"
-version = "0.1.0"
-dependencies = [
- "reqwest",
- "serde_json",
- "snafu",
- "wings-control-plane",
- "wings-ingestor-http",
-]
-
-[[package]]
 name = "wings-server-core"
 version = "0.1.0"
 dependencies = [
@@ -4848,11 +4858,11 @@ dependencies = [
  "tpchgen",
  "tracing",
  "tracing-subscriber",
+ "wings-client",
  "wings-control-plane",
  "wings-ingestor-core",
  "wings-ingestor-http",
  "wings-object-store",
- "wings-push-client",
  "wings-server-core",
 ]
 

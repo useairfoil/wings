@@ -1,13 +1,15 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow_flight::{
-    FlightDescriptor, FlightEndpoint, FlightInfo, Ticket,
+    FlightDescriptor, FlightEndpoint, FlightInfo, PutResult, Ticket,
+    decode::{DecodedFlightData, DecodedPayload, FlightDataDecoder},
     encode::FlightDataEncoderBuilder,
     error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
     sql::{
-        CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, CommandStatementQuery,
-        ProstMessageExt, SqlInfo, TicketStatementQuery, server::FlightSqlService,
+        Any, CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, CommandStatementIngest,
+        CommandStatementQuery, ProstMessageExt, SqlInfo, TicketStatementQuery,
+        server::{FlightSqlService, PeekableFlightDataStream},
     },
 };
 use datafusion::{
@@ -15,13 +17,16 @@ use datafusion::{
     logical_expr::LogicalPlan,
     prelude::{SQLOptions, SessionContext},
 };
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use prost::Message;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
-use wings_control_plane::resources::NamespaceName;
+use tracing::{debug, instrument};
+use wings_control_plane::resources::{NamespaceName, TopicName};
 use wings_server_core::query::NamespaceProviderFactory;
 
-use crate::{error::FlightServerError, ticket::StatementQueryTicket};
+use crate::{IngestionRequestMetadata, error::FlightServerError, ticket::StatementQueryTicket};
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
@@ -57,6 +62,7 @@ impl FlightSqlService for WingsFlightSqlServer {
 
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {}
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn get_flight_info_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -77,6 +83,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(flight_info))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn do_get_catalogs(
         &self,
         query: CommandGetCatalogs,
@@ -104,6 +111,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(stream))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn get_flight_info_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -124,6 +132,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(flight_info))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn do_get_schemas(
         &self,
         query: CommandGetDbSchemas,
@@ -160,6 +169,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(stream))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn get_flight_info_tables(
         &self,
         query: CommandGetTables,
@@ -180,6 +190,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(flight_info))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn do_get_tables(
         &self,
         query: CommandGetTables,
@@ -244,6 +255,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(stream))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn get_flight_info_statement(
         &self,
         query: CommandStatementQuery,
@@ -277,11 +289,13 @@ impl FlightSqlService for WingsFlightSqlServer {
         Ok(Response::new(flight_info))
     }
 
+    #[instrument(level = "DEBUG", skip_all)]
     async fn do_get_statement(
         &self,
         ticket: TicketStatementQuery,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        debug!("do_get_statement");
         let ticket = StatementQueryTicket::try_decode(ticket.statement_handle)?;
 
         let namespace_name = get_namespace_from_headers(request.metadata())?;
@@ -309,6 +323,82 @@ impl FlightSqlService for WingsFlightSqlServer {
             .boxed();
 
         Ok(Response::new(stream))
+    }
+
+    #[instrument(level = "DEBUG", skip_all)]
+    async fn do_put_fallback(
+        &self,
+        request: Request<PeekableFlightDataStream>,
+        command: Any,
+    ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
+        debug!(command = ?command, "do_put_fallback");
+        let mut request_stream = FlightDataDecoder::new(request.into_inner().map_err(From::from));
+        let Some(first_message) = request_stream.try_next().await? else {
+            return Err(Status::invalid_argument("missing first message"));
+        };
+
+        let Some(flight_descriptor) = first_message.inner.flight_descriptor else {
+            return Err(Status::invalid_argument("missing flight descriptor"));
+        };
+
+        let topic_name: TopicName = flight_descriptor
+            .path
+            .first()
+            .ok_or_else(|| Status::invalid_argument("missing path"))?
+            .parse()
+            .unwrap();
+
+        let DecodedPayload::Schema(_schema) = first_message.payload else {
+            return Err(Status::invalid_argument("expected schema"));
+        };
+
+        println!("topic_name: {}", topic_name);
+
+        // TODO: delete all of this and implement
+        let (tx, rx) = mpsc::channel(100);
+
+        // TODO:
+        //  - validate namespace
+        //  - validate topic matches namespace
+        //  - parse partition value, timestamp
+        //  - parse record batches
+        tokio::spawn(async move {
+            let Ok(_) = tx
+                .send(Ok(PutResult {
+                    app_metadata: Default::default(),
+                }))
+                .await
+            else {
+                return;
+            };
+
+            while let Some(flight_data) = request_stream.try_next().await.unwrap() {
+                let metadata =
+                    IngestionRequestMetadata::try_decode(flight_data.app_metadata()).unwrap();
+
+                let DecodedPayload::RecordBatch(batch) = flight_data.payload else {
+                    println!("Received unexpected payload type");
+                    continue;
+                };
+
+                println!(
+                    "Received {} rows with metadata: {:?}",
+                    batch.num_rows(),
+                    metadata
+                );
+                let Ok(_) = tx
+                    .send(Ok(PutResult {
+                        app_metadata: Default::default(),
+                    }))
+                    .await
+                else {
+                    break;
+                };
+            }
+        });
+
+        // let output = futures::stream::once(async { Err(Status::unimplemented("message")) });
+        Ok(Response::new(ReceiverStream::new(rx).boxed()))
     }
 }
 

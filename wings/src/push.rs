@@ -1,21 +1,24 @@
-use std::time::SystemTime;
+use std::{collections::HashMap, time::SystemTime};
 
+use arrow::compute::concat_batches;
+use arrow_json::ReaderBuilder;
+use arrow_schema::SchemaRef;
 use clap::Parser;
-use serde_json::Value;
+use datafusion::common::arrow::record_batch::RecordBatch;
+use futures::{StreamExt, stream::FuturesOrdered};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
+use wings_client::{WriteError, WriteRequest};
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
     resources::{NamespaceName, PartitionValue, TopicName},
 };
-use wings_ingestor_http::types::BatchResponse;
-use wings_push_client::{HttpPushClient, http::PushRequestBuilder};
 
 use crate::{
     error::{
-        CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, InvalidTimestampFormatSnafu,
-        IoSnafu, JsonParseSnafu, PartitionValueParseSnafu, PushClientSnafu, Result,
+        ArrowSnafu, CliError, ClientSnafu, ClusterMetadataSnafu, InvalidResourceNameSnafu,
+        InvalidTimestampFormatSnafu, IoSnafu, PartitionValueParseSnafu, Result,
     },
     remote::RemoteArgs,
 };
@@ -36,27 +39,19 @@ pub struct PushArgs {
     /// Assign this timestamp to the batches.
     #[arg(long)]
     timestamp: Option<String>,
-
-    /// HTTP ingestor address.
-    ///
-    /// The address where the Wings HTTP ingestor is running. Should match
-    /// the address used in the 'wings dev' command.
-    #[arg(long, default_value = "http://127.0.0.1:7780")]
-    http_address: String,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
 
 impl PushArgs {
     pub async fn run(self, _ct: CancellationToken) -> Result<()> {
-        let admin = self.remote.cluster_metadata_client().await?;
+        let cluster_meta = self.remote.cluster_metadata_client().await?;
+        let client = self.remote.wings_client().await?;
 
         let namespace_name =
             NamespaceName::parse(&self.namespace).context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })?;
-
-        let client = HttpPushClient::new(&self.http_address, namespace_name.clone());
 
         let timestamp = self
             .timestamp
@@ -66,22 +61,39 @@ impl PushArgs {
             .context(InvalidTimestampFormatSnafu {})?
             .map(SystemTime::from);
 
-        let request = self
-            .parse_batches_to_request(namespace_name, timestamp, &admin, &client)
+        let requests_by_topic = self
+            .parse_batches_to_request(namespace_name, timestamp, &cluster_meta)
             .await?;
 
-        let response = request.send().await.context(PushClientSnafu {})?;
+        for (topic_name, requests) in requests_by_topic.into_iter() {
+            println!("Pushing data to topic {}", topic_name);
+            let topic_client = client.topic(topic_name).await.context(ClientSnafu {})?;
+            let mut futures = FuturesOrdered::new();
 
-        for batch in response.batches {
-            match batch {
-                BatchResponse::Success {
-                    start_offset,
-                    end_offset,
-                } => {
-                    println!("SUCCESS {start_offset} - {end_offset}");
-                }
-                BatchResponse::Error { message } => {
-                    println!("ERROR: {message}");
+            for request in requests {
+                let response_fut = topic_client.push(request).await.context(ClientSnafu {})?;
+                futures.push_back(response_fut.wait_for_response());
+            }
+
+            while let Some(response) = futures.next().await {
+                match response {
+                    Ok(info) => {
+                        println!("Success: {:?}", info);
+                    }
+                    Err(inner) => match inner {
+                        WriteError::StreamClosed => {
+                            println!("Stream closed");
+                        }
+                        WriteError::Timeout => {
+                            println!("Timeout");
+                        }
+                        WriteError::Tonic(status) => {
+                            println!("Tonic error: {:?}", status);
+                        }
+                        WriteError::Batch(error) => {
+                            println!("Batch error: {:?}", error);
+                        }
+                    },
                 }
             }
         }
@@ -94,11 +106,11 @@ impl PushArgs {
         namespace_name: NamespaceName,
         timestamp: Option<SystemTime>,
         cluster_meta: &ClusterMetadataClient<Channel>,
-        client: &HttpPushClient,
-    ) -> Result<PushRequestBuilder> {
+    ) -> Result<HashMap<TopicName, Vec<WriteRequest>>> {
         let mut i = 0;
 
-        let mut request = client.push();
+        let mut requests = HashMap::<TopicName, Vec<WriteRequest>>::new();
+
         while i < self.batches.len() {
             let remaining = self.batches.len() - i;
 
@@ -150,44 +162,43 @@ impl PushArgs {
             }
 
             let payload_str = &self.batches[payload_index];
-            let messages = self.parse_payload(payload_str)?;
+            let data = self.parse_payload(payload_str, topic.schema_without_partition_field())?;
 
-            let topic_request = request.topic(topic_id.clone());
-            request = if let Some(partition_value) = partition_value {
-                topic_request.partitioned(partition_value, messages, timestamp)
-            } else {
-                topic_request.unpartitioned(messages, timestamp)
-            };
+            let topic = TopicName::new(topic_id, namespace_name.clone())
+                .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+            requests.entry(topic).or_default().push(WriteRequest {
+                partition_value,
+                timestamp: timestamp.clone(),
+                data,
+            });
 
             i = payload_index + 1;
         }
 
-        Ok(request)
+        Ok(requests)
     }
 
-    fn parse_payload(&self, payload_str: &str) -> Result<Vec<Value>> {
-        if let Some(file_path) = payload_str.strip_prefix('@') {
+    fn parse_payload(&self, payload_str: &str, schema: SchemaRef) -> Result<RecordBatch> {
+        let cursor = if let Some(file_path) = payload_str.strip_prefix('@') {
             // File path mode
-            let content = std::fs::read_to_string(file_path).context(IoSnafu {})?;
-
-            let mut messages = Vec::new();
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-
-                let json: Value = serde_json::from_str(line).context(JsonParseSnafu {})?;
-
-                messages.push(json);
-            }
-
-            Ok(messages)
+            let content = std::fs::read_to_string(file_path)
+                .context(IoSnafu {})?
+                .into_bytes();
+            std::io::Cursor::new(content)
         } else {
             // Direct JSON mode
-            let json: Value = serde_json::from_str(payload_str).context(JsonParseSnafu {})?;
+            let content = payload_str.to_string().into_bytes();
+            std::io::Cursor::new(content)
+        };
 
-            Ok(vec![json])
-        }
+        let reader = ReaderBuilder::new(schema.clone())
+            .build(cursor)
+            .context(ArrowSnafu {})?;
+        let batches = reader
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .context(ArrowSnafu {})?;
+        concat_batches(&schema, batches.as_slice()).context(ArrowSnafu {})
     }
 }

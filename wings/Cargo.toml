@@ -37,11 +37,11 @@ tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "json",
 ] }
+wings-client = { path = "../wings_client" }
 wings-flight = { path = "../wings_flight" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
-wings-push-client = { path = "../wings_push_client" }
 wings-server-core = { path = "../wings_server_core" }
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }

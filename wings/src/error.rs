@@ -52,10 +52,8 @@ pub enum CliError {
     },
     #[snafu(display("Tonic server error"))]
     TonicServer { source: tonic::transport::Error },
-    #[snafu(display("Push client error"))]
-    PushClient {
-        source: wings_push_client::HttpPushClientError,
-    },
+    #[snafu(display("Client error"))]
+    Client { source: wings_client::ClientError },
     #[snafu(display("JSON parse error"))]
     JsonParse { source: serde_json::Error },
     #[snafu(display("DataFusion error"))]

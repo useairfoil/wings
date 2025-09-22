@@ -9,12 +9,12 @@ resolver = "2"
 default-members = ["wings"]
 members = [
     "wings",
+    "wings_client",
     "wings_flight",
     "wings_ingestor_core",
     "wings_ingestor_http",
     "wings_control_plane",
     "wings_object_store",
-    "wings_push_client",
     "wings_server_core",
     "wings_stress",
 ]
@@ -71,6 +71,7 @@ tonic = "0.12.3"
 tonic-build = "0.12.3"
 tonic-reflection = "0.12.3"
 tokio = { version = "1.45.1", features = ["full", "rt-multi-thread"] }
+tokio-stream = "0.1.17"
 tokio-util = { version = "0.7.15", features = ["time"] }
 tower = "0.5"
 tracing = "0.1.41"
