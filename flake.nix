@@ -75,7 +75,7 @@
             pathsToLink = [ "/bin" ];
           };
           config = {
-            Entrypoint = "/bin/wings";
+            Entrypoint = ["/bin/wings"];
             ExposedPorts = {
               "7777" = { };
               "7780" = { };
