@@ -23,6 +23,7 @@ use wings_control_plane::{
     log_metadata::AcceptedBatchInfo,
     resources::{NamespaceName, PartitionValue, Topic, TopicName},
 };
+use wings_flight::IngestionResponseMetadata;
 use wings_ingestor_core::WriteBatchError;
 
 use crate::{ClientError, WingsClient, encode::IngestionFlightDataEncoder, error::Result};
@@ -137,17 +138,32 @@ impl InnerClient {
         };
 
         println!("Waiting for response...");
-        let response =
-            tokio::time::timeout(Duration::from_secs(1), self.response_stream.try_next());
-        let put_result = match response.await {
-            Err(_) => return Err(WriteError::Timeout),
-            Ok(Ok(None)) => return Err(WriteError::StreamClosed),
-            Ok(Ok(Some(put_result))) => put_result,
-            Ok(Err(err)) => return Err(WriteError::Tonic(err)),
-        };
+        loop {
+            let response =
+                tokio::time::timeout(Duration::from_secs(1), self.response_stream.try_next());
+            let put_result = match response.await {
+                Err(_) => return Err(WriteError::Timeout),
+                Ok(Ok(None)) => return Err(WriteError::StreamClosed),
+                Ok(Ok(Some(put_result))) => put_result,
+                Ok(Err(err)) => return Err(WriteError::Tonic(err)),
+            };
 
-        println!("Received response: {:?}", put_result);
-        return Err(WriteError::Timeout);
+            println!("Received response: {:?}", put_result);
+            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata).unwrap();
+            println!("decoded: {:?}", response);
+
+            if response.request_id == 0 {
+                continue;
+            }
+
+            if response.request_id == request_id {
+                todo!();
+            } else {
+                self.completed.insert(response.request_id, ());
+            }
+
+            // return Err(WriteError::Timeout);
+        }
     }
 }
 

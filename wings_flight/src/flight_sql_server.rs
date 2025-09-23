@@ -23,10 +23,16 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
-use wings_control_plane::resources::{NamespaceName, TopicName};
+use wings_control_plane::{
+    log_metadata::{CommittedBatch, RejectedBatchInfo},
+    resources::{NamespaceName, TopicName},
+};
 use wings_server_core::query::NamespaceProviderFactory;
 
-use crate::{IngestionRequestMetadata, error::FlightServerError, ticket::StatementQueryTicket};
+use crate::{
+    IngestionRequestMetadata, IngestionResponseMetadata, error::FlightServerError,
+    ticket::StatementQueryTicket,
+};
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
@@ -386,9 +392,15 @@ impl FlightSqlService for WingsFlightSqlServer {
                     batch.num_rows(),
                     metadata
                 );
+
+                let response = CommittedBatch::Rejected(RejectedBatchInfo {
+                    num_messages: batch.num_rows() as _,
+                });
+
                 let Ok(_) = tx
                     .send(Ok(PutResult {
-                        app_metadata: Default::default(),
+                        app_metadata: IngestionResponseMetadata::new(metadata.request_id, response)
+                            .encode(),
                     }))
                     .await
                 else {

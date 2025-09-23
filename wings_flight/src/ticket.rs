@@ -6,7 +6,7 @@ use arrow_flight::{
 };
 use prost::{Message, bytes::Bytes};
 use wings_control_plane::{
-    log_metadata::tonic::pb,
+    log_metadata::{CommittedBatch, tonic::pb},
     resources::{PartitionValue, TopicName},
 };
 
@@ -29,7 +29,7 @@ pub struct IngestionRequestMetadata {
 }
 
 #[derive(Clone, prost::Message)]
-pub struct PushResponseMetadata {
+pub struct IngestionResponseMetadata {
     #[prost(uint64, tag = "1")]
     pub request_id: u64,
     #[prost(message, tag = "2")]
@@ -83,6 +83,24 @@ impl IngestionRequestMetadata {
             request_id,
             partition_value: partition_value.as_ref().map(Into::into),
             timestamp: timestamp.map(Into::into),
+        }
+    }
+
+    pub fn try_decode(ticket: Bytes) -> Result<Self, FlightServerError> {
+        let decoded = Self::decode(ticket).unwrap();
+        Ok(decoded)
+    }
+
+    pub fn encode(self) -> Bytes {
+        self.encode_to_vec().into()
+    }
+}
+
+impl IngestionResponseMetadata {
+    pub fn new(request_id: u64, result: CommittedBatch) -> Self {
+        Self {
+            request_id,
+            result: Some(result.into()),
         }
     }
 
