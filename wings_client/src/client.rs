@@ -11,6 +11,7 @@ use arrow_flight::{
     FlightData, FlightDescriptor, PutResult, flight_service_client::FlightServiceClient,
 };
 use futures::{Stream, StreamExt, TryStreamExt};
+use snafu::ResultExt;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
@@ -20,10 +21,10 @@ use tonic::{
 };
 use tracing::debug;
 use wings_control_plane::{
-    log_metadata::AcceptedBatchInfo,
+    log_metadata::{AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo},
     resources::{NamespaceName, PartitionValue, Topic, TopicName},
 };
-use wings_flight::IngestionResponseMetadata;
+use wings_flight::{IngestionResponseMetadata, TicketDecodeError};
 use wings_ingestor_core::WriteBatchError;
 
 use crate::{ClientError, WingsClient, encode::IngestionFlightDataEncoder, error::Result};
@@ -39,12 +40,13 @@ pub struct TopicClient {
     inner: Mutex<InnerClient>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum WriteError {
     StreamClosed,
     Timeout,
     Tonic(Status),
-    Batch(WriteBatchError),
+    Batch(RejectedBatchInfo),
+    TicketDecode(TicketDecodeError),
 }
 
 pub struct WriteRequest {
@@ -60,7 +62,7 @@ pub struct WriteResponse<'a> {
 
 struct InnerClient {
     response_stream: Pin<Box<dyn Stream<Item = Result<PutResult, Status>> + Send>>,
-    completed: HashMap<u64, ()>,
+    completed: HashMap<u64, CommittedBatch>,
 }
 
 impl TopicClient {
@@ -134,10 +136,12 @@ impl InnerClient {
         request_id: u64,
     ) -> Result<AcceptedBatchInfo, WriteError> {
         if let Some(response) = self.completed.remove(&request_id) {
-            todo!();
+            match response {
+                CommittedBatch::Accepted(info) => return Ok(info),
+                CommittedBatch::Rejected(reason) => return Err(WriteError::Batch(reason)),
+            }
         };
 
-        println!("Waiting for response...");
         loop {
             let response =
                 tokio::time::timeout(Duration::from_secs(1), self.response_stream.try_next());
@@ -148,21 +152,21 @@ impl InnerClient {
                 Ok(Err(err)) => return Err(WriteError::Tonic(err)),
             };
 
-            println!("Received response: {:?}", put_result);
-            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata).unwrap();
-            println!("decoded: {:?}", response);
+            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata)
+                .map_err(WriteError::TicketDecode)?;
 
             if response.request_id == 0 {
                 continue;
             }
 
             if response.request_id == request_id {
-                todo!();
+                match response.result {
+                    CommittedBatch::Accepted(info) => return Ok(info),
+                    CommittedBatch::Rejected(reason) => return Err(WriteError::Batch(reason)),
+                }
             } else {
-                self.completed.insert(response.request_id, ());
+                self.completed.insert(response.request_id, response.result);
             }
-
-            // return Err(WriteError::Timeout);
         }
     }
 }

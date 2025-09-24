@@ -81,17 +81,11 @@ impl PushArgs {
                         println!("Success: {:?}", info);
                     }
                     Err(inner) => match inner {
-                        WriteError::StreamClosed => {
-                            println!("Stream closed");
-                        }
-                        WriteError::Timeout => {
-                            println!("Timeout");
-                        }
-                        WriteError::Tonic(status) => {
-                            println!("Tonic error: {:?}", status);
-                        }
                         WriteError::Batch(error) => {
                             println!("Batch error: {:?}", error);
+                        }
+                        _ => {
+                            println!("Other error: {:?}", inner);
                         }
                     },
                 }

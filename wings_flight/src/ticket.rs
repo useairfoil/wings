@@ -4,10 +4,12 @@ use arrow_flight::{
     Ticket,
     sql::{ProstMessageExt, TicketStatementQuery},
 };
-use prost::{Message, bytes::Bytes};
+use prost::{DecodeError, Message, bytes::Bytes};
+use prost_types::TimestampError;
+use snafu::{ResultExt, Snafu};
 use wings_control_plane::{
-    log_metadata::{CommittedBatch, tonic::pb},
-    resources::{PartitionValue, TopicName},
+    log_metadata::{CommittedBatch, LogMetadataError},
+    resources::PartitionValue,
 };
 
 use crate::error::FlightServerError;
@@ -18,22 +20,53 @@ pub struct StatementQueryTicket {
     pub query: String,
 }
 
-#[derive(Clone, prost::Message)]
+#[derive(Clone, Debug)]
 pub struct IngestionRequestMetadata {
-    #[prost(uint64, tag = "1")]
     pub request_id: u64,
-    #[prost(message, tag = "2")]
-    pub partition_value: Option<pb::PartitionValue>,
-    #[prost(message, tag = "3")]
-    pub timestamp: Option<prost_types::Timestamp>,
+    pub partition_value: Option<PartitionValue>,
+    pub timestamp: Option<SystemTime>,
 }
 
-#[derive(Clone, prost::Message)]
+#[derive(Clone, Debug)]
 pub struct IngestionResponseMetadata {
-    #[prost(uint64, tag = "1")]
     pub request_id: u64,
-    #[prost(message, tag = "2")]
-    pub result: Option<pb::CommittedBatch>,
+    pub result: CommittedBatch,
+}
+
+#[derive(Debug, Snafu)]
+pub enum TicketDecodeError {
+    #[snafu(display("Failed to decode prost message"))]
+    Prost { source: DecodeError },
+    #[snafu(display("Failed to decode partition value"))]
+    PartitionValue { source: LogMetadataError },
+    #[snafu(display("Failed to decode committed batch"))]
+    CommittedBatch { source: LogMetadataError },
+    #[snafu(display("Failed to decode timestamp"))]
+    Timestamp { source: TimestampError },
+    #[snafu(display("Missing message field: {}", field))]
+    MissingField { field: String },
+}
+
+pub mod pb {
+    use wings_control_plane::log_metadata::tonic::pb;
+
+    #[derive(Clone, prost::Message)]
+    pub struct IngestionRequestMetadata {
+        #[prost(uint64, tag = "1")]
+        pub request_id: u64,
+        #[prost(message, tag = "2")]
+        pub partition_value: Option<pb::PartitionValue>,
+        #[prost(message, tag = "3")]
+        pub timestamp: Option<prost_types::Timestamp>,
+    }
+
+    #[derive(Clone, prost::Message)]
+    pub struct IngestionResponseMetadata {
+        #[prost(uint64, tag = "1")]
+        pub request_id: u64,
+        #[prost(message, tag = "2")]
+        pub result: Option<pb::CommittedBatch>,
+    }
 }
 
 impl StatementQueryTicket {
@@ -81,35 +114,64 @@ impl IngestionRequestMetadata {
     ) -> Self {
         Self {
             request_id,
-            partition_value: partition_value.as_ref().map(Into::into),
-            timestamp: timestamp.map(Into::into),
+            partition_value,
+            timestamp,
         }
     }
 
-    pub fn try_decode(ticket: Bytes) -> Result<Self, FlightServerError> {
-        let decoded = Self::decode(ticket).unwrap();
-        Ok(decoded)
+    pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {
+        let proto = pb::IngestionRequestMetadata::decode(ticket).context(ProstSnafu {})?;
+        let partition_value = proto
+            .partition_value
+            .map(PartitionValue::try_from)
+            .transpose()
+            .context(PartitionValueSnafu {})?;
+        let timestamp = proto
+            .timestamp
+            .map(SystemTime::try_from)
+            .transpose()
+            .context(TimestampSnafu {})?;
+        Ok(Self::new(proto.request_id, partition_value, timestamp))
     }
 
     pub fn encode(self) -> Bytes {
-        self.encode_to_vec().into()
+        let proto = pb::IngestionRequestMetadata {
+            request_id: self.request_id,
+            partition_value: self.partition_value.as_ref().map(Into::into),
+            timestamp: self.timestamp.map(Into::into),
+        };
+
+        proto.encode_to_vec().into()
     }
 }
 
 impl IngestionResponseMetadata {
     pub fn new(request_id: u64, result: CommittedBatch) -> Self {
-        Self {
-            request_id,
-            result: Some(result.into()),
-        }
+        Self { request_id, result }
     }
 
-    pub fn try_decode(ticket: Bytes) -> Result<Self, FlightServerError> {
-        let decoded = Self::decode(ticket).unwrap();
-        Ok(decoded)
+    pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {
+        let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
+        let result = proto
+            .result
+            .ok_or_else(|| {
+                MissingFieldSnafu {
+                    field: "result".to_string(),
+                }
+                .build()
+            })?
+            .try_into()
+            .context(CommittedBatchSnafu {})?;
+
+        Ok(Self::new(proto.request_id, result))
     }
 
     pub fn encode(self) -> Bytes {
-        self.encode_to_vec().into()
+        let proto = pb::IngestionResponseMetadata {
+            request_id: self.request_id,
+            result: Some(self.result.into()),
+        };
+
+        proto.encode_to_vec().into()
     }
 }

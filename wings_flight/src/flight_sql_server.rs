@@ -2,13 +2,13 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow_flight::{
     FlightDescriptor, FlightEndpoint, FlightInfo, PutResult, Ticket,
-    decode::{DecodedFlightData, DecodedPayload, FlightDataDecoder},
+    decode::{DecodedPayload, FlightDataDecoder},
     encode::FlightDataEncoderBuilder,
     error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
     sql::{
-        Any, CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, CommandStatementIngest,
-        CommandStatementQuery, ProstMessageExt, SqlInfo, TicketStatementQuery,
+        Any, CommandGetCatalogs, CommandGetDbSchemas, CommandGetTables, CommandStatementQuery,
+        ProstMessageExt, SqlInfo, TicketStatementQuery,
         server::{FlightSqlService, PeekableFlightDataStream},
     },
 };
@@ -17,16 +17,18 @@ use datafusion::{
     logical_expr::LogicalPlan,
     prelude::{SQLOptions, SessionContext},
 };
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use prost::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
 use wings_control_plane::{
+    cluster_metadata::cache::{NamespaceCache, TopicCache},
     log_metadata::{CommittedBatch, RejectedBatchInfo},
     resources::{NamespaceName, TopicName},
 };
+use wings_ingestor_core::{BatchIngestorClient, WriteBatchRequest};
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
@@ -37,12 +39,25 @@ use crate::{
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
 pub struct WingsFlightSqlServer {
+    topic_cache: TopicCache,
+    namespace_cache: NamespaceCache,
+    ingestor: BatchIngestorClient,
     provider_factory: NamespaceProviderFactory,
 }
 
 impl WingsFlightSqlServer {
-    pub fn new(provider_factory: NamespaceProviderFactory) -> Self {
-        Self { provider_factory }
+    pub fn new(
+        namespace_cache: NamespaceCache,
+        topic_cache: TopicCache,
+        ingestor: BatchIngestorClient,
+        provider_factory: NamespaceProviderFactory,
+    ) -> Self {
+        Self {
+            namespace_cache,
+            topic_cache,
+            ingestor,
+            provider_factory,
+        }
     }
 
     pub fn into_tonic_server(self) -> FlightServiceServer<Self> {
@@ -338,6 +353,20 @@ impl FlightSqlService for WingsFlightSqlServer {
         command: Any,
     ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
         debug!(command = ?command, "do_put_fallback");
+
+        let namespace_name = get_namespace_from_headers(request.metadata())?;
+
+        let namespace_ref = self
+            .namespace_cache
+            .get(namespace_name.clone())
+            .await
+            // TODO: map error to status.
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "failed to resolve namespace: {namespace_name} {err}"
+                ))
+            })?;
+
         let mut request_stream = FlightDataDecoder::new(request.into_inner().map_err(From::from));
         let Some(first_message) = request_stream.try_next().await? else {
             return Err(Status::invalid_argument("missing first message"));
@@ -352,7 +381,16 @@ impl FlightSqlService for WingsFlightSqlServer {
             .first()
             .ok_or_else(|| Status::invalid_argument("missing path"))?
             .parse()
-            .unwrap();
+            .unwrap(/* TODO: handle error */);
+
+        let topic_ref = self
+            .topic_cache
+            .get(topic_name.clone())
+            .await
+            // TODO: map error to status.
+            .map_err(|err| {
+                Status::not_found(format!("failed to resolve topic: {topic_name} {err}"))
+            })?;
 
         let DecodedPayload::Schema(_schema) = first_message.payload else {
             return Err(Status::invalid_argument("expected schema"));
@@ -368,48 +406,68 @@ impl FlightSqlService for WingsFlightSqlServer {
         //  - validate topic matches namespace
         //  - parse partition value, timestamp
         //  - parse record batches
-        tokio::spawn(async move {
-            let Ok(_) = tx
-                .send(Ok(PutResult {
-                    app_metadata: Default::default(),
-                }))
-                .await
-            else {
-                return;
-            };
-
-            while let Some(flight_data) = request_stream.try_next().await.unwrap() {
-                let metadata =
-                    IngestionRequestMetadata::try_decode(flight_data.app_metadata()).unwrap();
-
-                let DecodedPayload::RecordBatch(batch) = flight_data.payload else {
-                    println!("Received unexpected payload type");
-                    continue;
-                };
-
-                println!(
-                    "Received {} rows with metadata: {:?}",
-                    batch.num_rows(),
-                    metadata
-                );
-
-                let response = CommittedBatch::Rejected(RejectedBatchInfo {
-                    num_messages: batch.num_rows() as _,
-                });
-
+        tokio::spawn({
+            let namespace_ref = namespace_ref.clone();
+            let topic_ref = topic_ref.clone();
+            let ingestor = self.ingestor.clone();
+            async move {
+                // Send a message to the channel in response to the first request.
                 let Ok(_) = tx
                     .send(Ok(PutResult {
-                        app_metadata: IngestionResponseMetadata::new(metadata.request_id, response)
-                            .encode(),
+                        app_metadata: Default::default(),
                     }))
                     .await
                 else {
-                    break;
+                    return;
                 };
+
+                while let Some(flight_data) = request_stream.try_next().await.unwrap() {
+                    let metadata =
+                        IngestionRequestMetadata::try_decode(flight_data.app_metadata()).unwrap();
+
+                    let DecodedPayload::RecordBatch(batch) = flight_data.payload else {
+                        println!("Received unexpected payload type");
+                        continue;
+                    };
+
+                    println!(
+                        "Received {} rows with metadata: {:?}",
+                        batch.num_rows(),
+                        metadata
+                    );
+
+                    let num_messages = batch.num_rows() as u32;
+                    let ingestion_result = ingestor
+                        .write(WriteBatchRequest {
+                            namespace: namespace_ref.clone(),
+                            topic: topic_ref.clone(),
+                            partition: metadata.partition_value,
+                            timestamp: metadata.timestamp,
+                            records: batch,
+                        })
+                        .await;
+
+                    let response = match ingestion_result {
+                        Ok(info) => CommittedBatch::Accepted(info),
+                        Err(_err) => CommittedBatch::Rejected(RejectedBatchInfo { num_messages }),
+                    };
+
+                    let Ok(_) = tx
+                        .send(Ok(PutResult {
+                            app_metadata: IngestionResponseMetadata::new(
+                                metadata.request_id,
+                                response,
+                            )
+                            .encode(),
+                        }))
+                        .await
+                    else {
+                        break;
+                    };
+                }
             }
         });
 
-        // let output = futures::stream::once(async { Err(Status::unimplemented("message")) });
         Ok(Response::new(ReceiverStream::new(rx).boxed()))
     }
 }

@@ -126,7 +126,7 @@ async fn run_grpc_server(
     cluster_meta: Arc<InMemoryClusterMetadata>,
     log_meta: Arc<InMemoryLogMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
-    _batch_ingestor: BatchIngestorClient,
+    batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
@@ -143,9 +143,18 @@ async fn run_grpc_server(
     let namespace_provider_factory =
         NamespaceProviderFactory::new(cluster_meta.clone(), log_meta.clone(), object_store_factory);
 
+    let topic_cache = TopicCache::new(cluster_meta.clone());
+    let namespace_cache = NamespaceCache::new(cluster_meta.clone());
+
     let admin_service = ClusterMetadataServer::new(cluster_meta).into_tonic_server();
     let offset_registry_service = LogMetadataServer::new(log_meta).into_tonic_server();
-    let sql_service = WingsFlightSqlServer::new(namespace_provider_factory).into_tonic_server();
+    let sql_service = WingsFlightSqlServer::new(
+        namespace_cache,
+        topic_cache,
+        batch_ingestor,
+        namespace_provider_factory,
+    )
+    .into_tonic_server();
 
     let server = tonic::transport::Server::builder()
         .add_service(reflection_service)
