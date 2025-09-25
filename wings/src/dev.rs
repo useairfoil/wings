@@ -137,6 +137,7 @@ async fn run_grpc_server(
         .register_encoded_file_descriptor_set(
             wings_control_plane::log_metadata::tonic::file_descriptor_set(),
         )
+        .register_encoded_file_descriptor_set(WingsFlightSqlServer::file_descriptor_set())
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 

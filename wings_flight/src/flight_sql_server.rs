@@ -38,6 +38,8 @@ use crate::{
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
+const DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("arrow_flight_protocol");
+
 pub struct WingsFlightSqlServer {
     topic_cache: TopicCache,
     namespace_cache: NamespaceCache,
@@ -58,6 +60,10 @@ impl WingsFlightSqlServer {
             ingestor,
             provider_factory,
         }
+    }
+
+    pub fn file_descriptor_set() -> &'static [u8] {
+        DESCRIPTOR_SET
     }
 
     pub fn into_tonic_server(self) -> FlightServiceServer<Self> {
