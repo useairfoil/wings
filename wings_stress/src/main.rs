@@ -1,22 +1,25 @@
 use clap::{Args, Parser};
+use error::{ClientSnafu, WriteSnafu};
 use snafu::ResultExt;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
+use wings_client::{TopicClient, WingsClient};
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
     resources::{NamespaceName, TopicName},
 };
-use wings_push_client::HttpPushClient;
 
 use crate::{
     error::{
-        ClusterMetadataSnafu, ConnectionSnafu, HttpPushSnafu, InvalidNamespaceNameSnafu,
-        InvalidRangeSnafu, InvalidRemoteUrlSnafu, Result,
+        ClusterMetadataSnafu, ConnectionSnafu, InvalidNamespaceNameSnafu, InvalidRangeSnafu,
+        InvalidRemoteUrlSnafu, JoinSnafu, Result,
     },
     generators::{RequestGenerator, TopicType},
     helpers::parse_range,
 };
 
+mod conversions;
 mod error;
 mod generators;
 mod helpers;
@@ -26,12 +29,6 @@ mod helpers;
 #[command(about = "Wings stress testing CLI")]
 #[command(version)]
 struct Cli {
-    /// HTTP ingestor address.
-    ///
-    /// The address where the Wings HTTP ingestor is running. Should match
-    /// the address used in the 'wings dev' command.
-    #[arg(long, default_value = "http://127.0.0.1:7780")]
-    http_address: String,
     /// The type of topics to generate.
     ///
     /// Repeat this flag to generate multiple topic types.
@@ -94,46 +91,81 @@ async fn main() -> Result<()> {
     println!("  Batch Size: {:?}", batch_size_range);
     println!("  Partitions: {:?}", cli.partitions);
 
-    let admin = cli.remote.admin_client().await?;
-    let client = HttpPushClient::new(&cli.http_address, namespace.clone());
+    let cluster_meta = cli.remote.cluster_metadata_client().await?;
+    let ingestion_client = cli.remote.ingestion_client().await?;
 
-    for topic in cli.topic.iter() {
-        ensure_topic_exists(&admin, &namespace, topic).await?;
+    let mut tasks = JoinSet::new();
+
+    for topic in cli.topic.into_iter() {
+        let topic_name = ensure_topic_exists(&cluster_meta, &namespace, &topic).await?;
+        let topic_client = ingestion_client
+            .topic(topic_name.clone())
+            .await
+            .context(ClientSnafu {})?;
+        let batch_size_range = batch_size_range.clone();
+        let ct = ct.clone();
+        tasks.spawn(async move {
+            let request_generator = RequestGenerator::new(topic, batch_size_range, cli.partitions);
+            run_stress_test_for_topic(request_generator, topic_client, ct).await
+        });
     }
 
-    let mut request_generator = RequestGenerator::new(cli.topic, batch_size_range, cli.partitions);
+    while let Some(result) = tasks.join_next().await.transpose().context(JoinSnafu {})? {
+        ct.cancel();
+        result?;
+    }
 
+    Ok(())
+}
+
+async fn run_stress_test_for_topic(
+    mut generator: RequestGenerator,
+    client: TopicClient,
+    ct: CancellationToken,
+) -> Result<()> {
+    // TODO: this loop should send multiple requests in parallel
+    println!("Starting stress test for topic");
     loop {
-        let push_req = request_generator.create_request(&client).send();
-
-        tokio::select! {
-            _ = ct.cancelled() => {
-                break;
-            }
-            response = push_req => {
-                let response = response.context(HttpPushSnafu {})?;
-                let success_count = response.batches.iter().filter(|b| b.is_success()).count();
-                let error_count = response.batches.iter().filter(|b| b.is_error()).count();
-                let success_offsets = response
-                    .batches
-                    .iter()
-                    .flat_map(|b| b.as_success())
-                    .map(|(s, e)| format!("{}-{}", s, e))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                println!("Success {} Error {}\t{}", success_count, error_count, success_offsets);
-            }
+        if ct.is_cancelled() {
+            println!("cancelled");
+            break;
         }
+
+        let request = generator.create_request();
+        println!(
+            "Sending request {:?} {}",
+            request.partition_value,
+            request.data.num_rows()
+        );
+        let response = client
+            .push(request)
+            .await
+            .context(ClientSnafu {})?
+            .wait_for_response()
+            .await
+            .context(WriteSnafu {})?;
+
+        println!(
+            "Batch written: {} -- {}",
+            response.start_offset, response.end_offset
+        );
     }
+
+    println!("Done");
 
     Ok(())
 }
 
 impl RemoteArgs {
     /// Create a new gRPC client for the admin service.
-    pub async fn admin_client(&self) -> Result<ClusterMetadataClient<Channel>> {
+    pub async fn cluster_metadata_client(&self) -> Result<ClusterMetadataClient<Channel>> {
         let channel = self.channel().await?;
         Ok(ClusterMetadataClient::new(channel))
+    }
+
+    pub async fn ingestion_client(&self) -> Result<WingsClient> {
+        let channel = self.channel().await?;
+        Ok(WingsClient::new(channel))
     }
 
     async fn channel(&self) -> Result<Channel> {
@@ -151,10 +183,10 @@ async fn ensure_topic_exists(
     admin: &ClusterMetadataClient<Channel>,
     namespace: &NamespaceName,
     topic: &TopicType,
-) -> Result<()> {
+) -> Result<TopicName> {
     let topic_name = TopicName::new_unchecked(topic.topic_name(), namespace.clone());
     match admin.get_topic(topic_name.clone()).await {
-        Ok(_) => return Ok(()),
+        Ok(_) => return Ok(topic_name),
         Err(err) if err.is_not_found() => {}
         Err(err) => {
             return Err(err).context(ClusterMetadataSnafu {
@@ -164,11 +196,11 @@ async fn ensure_topic_exists(
     };
 
     admin
-        .create_topic(topic_name, topic.topic_options())
+        .create_topic(topic_name.clone(), topic.topic_options())
         .await
         .context(ClusterMetadataSnafu {
             operation: "create_topic",
         })?;
 
-    Ok(())
+    Ok(topic_name)
 }

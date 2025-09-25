@@ -18,6 +18,7 @@ axum.workspace = true
 bytesize.workspace = true
 clap.workspace = true
 datafusion.workspace = true
+futures.workspace = true
 nu-ansi-term = "0.50.1"
 object_store.workspace = true
 rand = "0.8"

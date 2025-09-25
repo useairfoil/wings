@@ -1,7 +1,8 @@
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
+use tokio::task::JoinError;
+use wings_client::{ClientError, WriteError};
 use wings_control_plane::{cluster_metadata::ClusterMetadataError, resources::ResourceError};
-use wings_push_client::HttpPushClientError;
 
 use crate::helpers::RangeParserError;
 
@@ -24,8 +25,12 @@ pub enum CliError {
         operation: &'static str,
         source: ClusterMetadataError,
     },
-    #[snafu(display("Failed HTTP push operation"))]
-    HttpPushError { source: HttpPushClientError },
+    #[snafu(display("Failed client operation"))]
+    ClientError { source: ClientError },
+    #[snafu(display("Failed write operation"))]
+    WriteError { source: WriteError },
+    #[snafu(display("Failed join operation"))]
+    JoinError { source: JoinError },
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;

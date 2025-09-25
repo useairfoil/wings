@@ -81,7 +81,7 @@ impl PushArgs {
                         println!("Success: {:?}", info);
                     }
                     Err(inner) => match inner {
-                        WriteError::Batch(error) => {
+                        WriteError::Batch { info: error } => {
                             println!("Batch error: {:?}", error);
                         }
                         _ => {

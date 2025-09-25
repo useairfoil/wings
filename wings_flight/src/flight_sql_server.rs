@@ -458,6 +458,8 @@ impl FlightSqlService for WingsFlightSqlServer {
                         Err(_err) => CommittedBatch::Rejected(RejectedBatchInfo { num_messages }),
                     };
 
+                    println!("Replying with result: {:?}", response);
+
                     let Ok(_) = tx
                         .send(Ok(PutResult {
                             app_metadata: IngestionResponseMetadata::new(

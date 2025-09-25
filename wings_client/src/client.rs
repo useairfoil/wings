@@ -2,32 +2,27 @@ use std::{
     collections::HashMap,
     pin::Pin,
     sync::atomic::{AtomicU64, Ordering},
-    task::{Context, Poll},
     time::{Duration, SystemTime},
 };
 
 use arrow::array::RecordBatch;
-use arrow_flight::{
-    FlightData, FlightDescriptor, PutResult, flight_service_client::FlightServiceClient,
-};
+use arrow_flight::{FlightData, PutResult};
 use futures::{Stream, StreamExt, TryStreamExt};
-use snafu::ResultExt;
+use snafu::{ResultExt, Snafu};
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
     Request, Status,
-    metadata::{Ascii, MetadataMap, MetadataValue},
-    transport::Channel,
+    metadata::{Ascii, MetadataValue},
 };
 use tracing::debug;
 use wings_control_plane::{
     log_metadata::{AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo},
-    resources::{NamespaceName, PartitionValue, Topic, TopicName},
+    resources::{PartitionValue, Topic, TopicName},
 };
 use wings_flight::{IngestionResponseMetadata, TicketDecodeError};
-use wings_ingestor_core::WriteBatchError;
 
-use crate::{ClientError, WingsClient, encode::IngestionFlightDataEncoder, error::Result};
+use crate::{WingsClient, encode::IngestionFlightDataEncoder, error::Result};
 
 const DEFAULT_CHANNEL_SIZE: usize = 1024;
 
@@ -40,13 +35,18 @@ pub struct TopicClient {
     inner: Mutex<InnerClient>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Snafu)]
 pub enum WriteError {
+    #[snafu(display("Stream closed"))]
     StreamClosed,
+    #[snafu(display("Timeout"))]
     Timeout,
-    Tonic(Status),
-    Batch(RejectedBatchInfo),
-    TicketDecode(TicketDecodeError),
+    #[snafu(display("Tonic error"))]
+    Tonic { source: Status },
+    #[snafu(display("Rejected batch"))]
+    Batch { info: RejectedBatchInfo },
+    #[snafu(display("Ticket decode error"))]
+    TicketDecode { source: TicketDecodeError },
 }
 
 pub struct WriteRequest {
@@ -138,7 +138,7 @@ impl InnerClient {
         if let Some(response) = self.completed.remove(&request_id) {
             match response {
                 CommittedBatch::Accepted(info) => return Ok(info),
-                CommittedBatch::Rejected(reason) => return Err(WriteError::Batch(reason)),
+                CommittedBatch::Rejected(reason) => return Err(WriteError::Batch { info: reason }),
             }
         };
 
@@ -149,20 +149,28 @@ impl InnerClient {
                 Err(_) => return Err(WriteError::Timeout),
                 Ok(Ok(None)) => return Err(WriteError::StreamClosed),
                 Ok(Ok(Some(put_result))) => put_result,
-                Ok(Err(err)) => return Err(WriteError::Tonic(err)),
+                Ok(Err(err)) => return Err(WriteError::Tonic { source: err }),
             };
 
-            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata)
-                .map_err(WriteError::TicketDecode)?;
+            // TODO: this is shite. the issue is that request_id has no result so it would fail.
+            // we need to improve on this.
+            let response =
+                IngestionResponseMetadata::try_decode_partial(put_result.app_metadata.clone())
+                    .context(TicketDecodeSnafu {})?;
 
             if response.request_id == 0 {
                 continue;
             }
 
+            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata)
+                .context(TicketDecodeSnafu {})?;
+
             if response.request_id == request_id {
                 match response.result {
                     CommittedBatch::Accepted(info) => return Ok(info),
-                    CommittedBatch::Rejected(reason) => return Err(WriteError::Batch(reason)),
+                    CommittedBatch::Rejected(reason) => {
+                        return Err(WriteError::Batch { info: reason });
+                    }
                 }
             } else {
                 self.completed.insert(response.request_id, response.result);
@@ -194,6 +202,6 @@ fn prepare_request(
 
 impl From<Status> for WriteError {
     fn from(status: Status) -> Self {
-        WriteError::Tonic(status)
+        WriteError::Tonic { source: status }
     }
 }

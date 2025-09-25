@@ -1,10 +1,10 @@
 use arrow_flight::flight_service_client::FlightServiceClient;
 use error::ClusterMetadataSnafu;
 use snafu::ResultExt;
-use tonic::{metadata::MetadataMap, transport::Channel};
+use tonic::transport::Channel;
 use wings_control_plane::cluster_metadata::ClusterMetadata;
 use wings_control_plane::cluster_metadata::tonic::ClusterMetadataClient;
-use wings_control_plane::resources::{NamespaceName, PartitionValue, TopicName};
+use wings_control_plane::resources::TopicName;
 
 mod client;
 mod encode;
@@ -16,7 +16,6 @@ pub use self::error::{ClientError, Result};
 /// A high-level client to interact with Wings' data plane.
 #[derive(Debug, Clone)]
 pub struct WingsClient {
-    metadata: MetadataMap,
     /// Arrow fligt client.
     flight: FlightServiceClient<Channel>,
     /// Cluster metadata client. Used to fetch the topic's schema.
@@ -30,7 +29,6 @@ impl WingsClient {
         let cluster_meta = ClusterMetadataClient::new(channel);
 
         Self {
-            metadata: MetadataMap::new(),
             flight,
             cluster_meta,
         }

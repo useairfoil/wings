@@ -19,21 +19,13 @@
 //! This code is a modified version of the [original arrow flight encoder](https://github.com/apache/arrow-rs/blob/main/arrow-flight/src/encode.rs).
 //! All copyright to the original authors is reserved.
 
-use std::{collections::VecDeque, io::Write, pin::Pin, task::Poll};
-
 use arrow::{
     array::RecordBatch,
     datatypes::{Schema, SchemaRef},
     ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions},
 };
-use arrow_flight::{
-    FlightData, FlightDescriptor, SchemaAsIpc, encode::DictionaryHandling,
-    flight_descriptor::DescriptorType,
-};
-use bytes::Bytes;
-use futures::{Stream, stream::BoxStream};
+use arrow_flight::{FlightData, FlightDescriptor, SchemaAsIpc, flight_descriptor::DescriptorType};
 use snafu::ResultExt;
-use tokio::sync::mpsc;
 use wings_control_plane::resources::TopicName;
 use wings_flight::IngestionRequestMetadata;
 
