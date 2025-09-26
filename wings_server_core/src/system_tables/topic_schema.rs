@@ -10,14 +10,11 @@ use datafusion::{
     prelude::Expr,
 };
 use wings_control_plane::{
-    cluster_metadata::ClusterMetadata,
+    cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
     resources::{NamespaceName, Topic},
 };
 
-use super::{
-    helpers::{TOPIC_NAME_COLUMN, find_topic_name_in_filters},
-    provider::SystemTable,
-};
+use super::{helpers::TOPIC_NAME_COLUMN, provider::SystemTable};
 
 pub struct TopicSchemaTable {
     cluster_meta: Arc<dyn ClusterMetadata>,
@@ -46,17 +43,14 @@ impl SystemTable for TopicSchemaTable {
         _filters: Vec<Expr>,
         _limit: Option<usize>,
     ) -> Result<RecordBatch, DataFusionError> {
-        /*
-        let topics = if let Some(topic_names) = find_topic_name_in_filters(&filters) {
-            collect_namespace_topics_from_ids(&self.cluster_meta, &self.namespace, &topic_names)
-                .await?
-        } else {
-            collect_namespace_topics(&self.cluster_meta, &self.namespace).await?
-        };
+        let topics = collect_namespace_topics(
+            &self.cluster_meta,
+            &self.namespace,
+            CollectNamespaceTopicsOptions::default(),
+        )
+        .await?;
 
         from_topics(self.schema.clone(), &topics)
-        */
-        todo!();
     }
 }
 

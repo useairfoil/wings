@@ -159,7 +159,6 @@ impl IngestionResponseMetadata {
 
     pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {
         let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
-        println!("Decoded response metadata: {:?}", proto);
         let result = proto
             .result
             .ok_or_else(|| {
@@ -180,7 +179,6 @@ impl IngestionResponseMetadata {
             result: Some(self.result.into()),
         };
 
-        println!("Encoded response metadata: {:?}", proto);
         proto.encode_to_vec().into()
     }
 }

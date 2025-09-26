@@ -4,7 +4,7 @@ use snafu::ResultExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_client::{TopicClient, WingsClient};
+use wings_client::{TopicClient, WingsClient, WriteError};
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
     resources::{NamespaceName, TopicName},
@@ -127,28 +127,28 @@ async fn run_stress_test_for_topic(
     println!("Starting stress test for topic");
     loop {
         if ct.is_cancelled() {
-            println!("cancelled");
             break;
         }
 
         let request = generator.create_request();
-        println!(
-            "Sending request {:?} {}",
-            request.partition_value,
-            request.data.num_rows()
-        );
-        let response = client
+        match client
             .push(request)
             .await
             .context(ClientSnafu {})?
             .wait_for_response()
             .await
-            .context(WriteSnafu {})?;
-
-        println!(
-            "Batch written: {} -- {}",
-            response.start_offset, response.end_offset
-        );
+        {
+            Ok(info) => {
+                println!(
+                    "Batch written: {} -- {}",
+                    info.start_offset, info.end_offset
+                );
+            }
+            Err(WriteError::Batch { info }) => {
+                println!("Batch write failed: {:?}", info);
+            }
+            Err(err) => return Err(err).context(WriteSnafu {}),
+        }
     }
 
     println!("Done");

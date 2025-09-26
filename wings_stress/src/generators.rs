@@ -1,5 +1,5 @@
 //! RecordBatch generators.
-use std::{ops::RangeInclusive, sync::Arc};
+use std::{ops::RangeInclusive, sync::Arc, time::SystemTime};
 
 use clap::ValueEnum;
 use datafusion::common::arrow::{
@@ -27,7 +27,7 @@ pub struct RequestGenerator {
 }
 
 pub trait RecordBatchGenerator {
-    fn new_batch(&mut self, size: usize) -> (Option<PartitionValue>, RecordBatch);
+    fn new_batch(&mut self, size: usize) -> WriteRequest;
 }
 
 impl RequestGenerator {
@@ -43,12 +43,7 @@ impl RequestGenerator {
     pub fn create_request(&mut self) -> WriteRequest {
         // random batch size
         let batch_size = 42;
-        let (partition_value, data) = self.inner.new_batch(batch_size);
-        WriteRequest {
-            data,
-            partition_value,
-            timestamp: None,
-        }
+        self.inner.new_batch(batch_size)
     }
 }
 
@@ -96,7 +91,7 @@ impl OrderRecordBatchGenerator {
 }
 
 impl RecordBatchGenerator for OrderRecordBatchGenerator {
-    fn new_batch(&mut self, batch_size: usize) -> (Option<PartitionValue>, RecordBatch) {
+    fn new_batch(&mut self, batch_size: usize) -> WriteRequest {
         let customer_id = self.customer_id;
 
         let _partition_value = PartitionValue::Int64(customer_id);
@@ -147,8 +142,18 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             self.customer_id = 1;
         }
 
-        // (Some(partition_value), batch)
-        (None, batch)
+        // For now, generate invalid timestamps every 13th record
+        let timestamp = if self.customer_id % 13 == 0 {
+            Some(SystemTime::UNIX_EPOCH)
+        } else {
+            None
+        };
+
+        WriteRequest {
+            data: batch,
+            partition_value: None,
+            timestamp,
+        }
     }
 }
 
