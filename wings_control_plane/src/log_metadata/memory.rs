@@ -352,7 +352,7 @@ impl Ord for PartitionKey {
             self.partition_value.as_ref(),
             other.partition_value.as_ref(),
         ) {
-            (Some(self_value), Some(other_value)) => self_value.cmp(&other_value),
+            (Some(self_value), Some(other_value)) => self_value.cmp(other_value),
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Less,
             (Some(_), None) => Ordering::Greater,

@@ -480,6 +480,7 @@ impl FlightSqlService for WingsFlightSqlServer {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn get_namespace_from_headers(headers: &MetadataMap) -> Result<NamespaceName, Status> {
     let namespace = headers
         .get(WINGS_FLIGHT_SQL_NAMESPACE_HEADER)
@@ -506,5 +507,5 @@ fn validate_logical_plan(plan: &LogicalPlan) -> Result<(), FlightServerError> {
         .with_allow_ddl(false)
         .with_allow_dml(false)
         .with_allow_statements(false);
-    verifier.verify_plan(&plan).map_err(FlightServerError::from)
+    verifier.verify_plan(plan).map_err(FlightServerError::from)
 }

@@ -26,10 +26,8 @@ impl BatchIngestorClient {
                 message: "failed to send request".to_string(),
             })?;
 
-        let response = rx.await.map_err(|_| WriteBatchError::Internal {
+        rx.await.map_err(|_| WriteBatchError::Internal {
             message: "reply channel closed".to_string(),
-        })?;
-
-        response
+        })?
     }
 }

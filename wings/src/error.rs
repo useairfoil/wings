@@ -21,12 +21,14 @@ pub enum CliError {
     #[snafu(display("Failed cluster metadata operation {operation}"))]
     ClusterMetadata {
         operation: &'static str,
-        source: ClusterMetadataError,
+        #[snafu(source(from(ClusterMetadataError, Box::new)))]
+        source: Box<ClusterMetadataError>,
     },
     #[snafu(display("Failed log metadata operation {operation}"))]
     LogMetadata {
         operation: &'static str,
-        source: LogMetadataError,
+        #[snafu(source(from(LogMetadataError, Box::new)))]
+        source: Box<LogMetadataError>,
     },
     #[snafu(display("Invalid {name} argument: {message}"))]
     InvalidArgument { name: &'static str, message: String },
@@ -53,7 +55,10 @@ pub enum CliError {
     #[snafu(display("Tonic server error"))]
     TonicServer { source: tonic::transport::Error },
     #[snafu(display("Client error"))]
-    Client { source: wings_client::ClientError },
+    Client {
+        #[snafu(source(from(wings_client::ClientError, Box::new)))]
+        source: Box<wings_client::ClientError>,
+    },
     #[snafu(display("JSON parse error"))]
     JsonParse { source: serde_json::Error },
     #[snafu(display("DataFusion error"))]

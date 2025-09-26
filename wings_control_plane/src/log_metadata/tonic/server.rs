@@ -46,7 +46,6 @@ impl TonicService for LogMetadataServer {
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
-            .map_err(Into::into)
             .map_err(log_metadata_error_to_status)?;
 
         let pages = request

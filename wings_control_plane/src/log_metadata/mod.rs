@@ -245,3 +245,9 @@ impl FolioLocation {
         })
     }
 }
+
+impl AcceptedBatchInfo {
+    pub fn num_messages(&self) -> u32 {
+        (self.end_offset - self.start_offset + 1) as u32
+    }
+}

@@ -93,7 +93,7 @@ impl StatementQueryTicket {
     pub fn into_ticket(self) -> Ticket {
         let any = prost_types::Any {
             type_url: Self::TYPE_URL.to_string(),
-            value: self.encode_to_vec().into(),
+            value: self.encode_to_vec(),
         };
 
         let statement = TicketStatementQuery {

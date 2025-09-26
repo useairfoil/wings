@@ -35,7 +35,8 @@ pub enum WriteBatchError {
     #[snafu(display("Log metadata error: {}", message))]
     LogMetadata {
         message: String,
-        source: LogMetadataError,
+        #[snafu(source(from(LogMetadataError, Arc::new)))]
+        source: Arc<LogMetadataError>,
     },
     #[snafu(display("Batch rejected"))]
     BatchRejected { info: RejectedBatchInfo },

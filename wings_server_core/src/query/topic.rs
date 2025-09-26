@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use datafusion::{
     catalog::{Session, TableProvider},
-    common::arrow::datatypes::SchemaRef,
+    common::arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit},
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,
@@ -21,6 +21,9 @@ use crate::query::{
     exec::FolioExec,
     helpers::{find_partition_column_value, validate_offset_filters},
 };
+
+pub const OFFSET_COLUMN_NAME: &str = "__offset__";
+pub const TIMESTAMP_COLUMN_NAME: &str = "__timestamp__";
 
 pub struct TopicTableProvider {
     log_meta: Arc<dyn LogMetadata>,
@@ -46,7 +49,17 @@ impl TopicTableProvider {
     }
 
     pub fn output_schema(topic_schema: SchemaRef) -> SchemaRef {
-        todo!();
+        let mut fields = topic_schema.fields().to_vec();
+        fields.push(Field::new(OFFSET_COLUMN_NAME, DataType::UInt64, true).into());
+        fields.push(
+            Field::new(
+                TIMESTAMP_COLUMN_NAME,
+                DataType::Timestamp(TimeUnit::Millisecond, None),
+                true,
+            )
+            .into(),
+        );
+        Schema::new(fields).into()
     }
 }
 

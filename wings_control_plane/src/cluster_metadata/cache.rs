@@ -54,7 +54,6 @@ impl TopicCache {
                     ClusterMetadataError::Internal {
                         message: format!("Failed to unwrap Arc: {}", e),
                     }
-                    .into()
                 })
             })?;
         Ok(topic)
@@ -93,7 +92,6 @@ impl NamespaceCache {
                     ClusterMetadataError::Internal {
                         message: format!("Failed to unwrap Arc: {}", e),
                     }
-                    .into()
                 })
             })?;
         Ok(namespace)

@@ -42,6 +42,6 @@ impl WingsClient {
             .await
             .context(ClusterMetadataSnafu {})?;
 
-        TopicClient::new(&self, topic).await
+        TopicClient::new(self, topic).await
     }
 }

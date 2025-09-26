@@ -316,7 +316,7 @@ impl ClusterMetadataStore {
             });
         }
 
-        let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
+        let page_size = request.page_size.unwrap_or(100).clamp(1, 1000);
         let page_token = request.page_token.as_deref().unwrap_or("");
 
         let mut topic_keys: Vec<_> = self

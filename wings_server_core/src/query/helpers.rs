@@ -7,7 +7,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 
-pub const OFFSET_COLUMN_NAME: &str = "__offset__";
+use super::topic::OFFSET_COLUMN_NAME;
 
 pub type OffsetRangeInclusive = RangeInclusive<u64>;
 
@@ -50,13 +50,7 @@ pub fn validate_offset_filters(filters: &[Expr]) -> Result<OffsetRangeInclusive,
             "No {0} filter provided. You must provide a lower and upper bound for {0}.",
             OFFSET_COLUMN_NAME
         ))),
-        [bound] => match bound {
-            OffsetPart::Eq(offset) => Ok(*offset..=*offset),
-            _ => Err(DataFusionError::Plan(format!(
-                "Invalid {0} filter provided. You must provide a lower and upper bound for {0}.",
-                OFFSET_COLUMN_NAME
-            ))),
-        },
+        [OffsetPart::Eq(offset)] => Ok(*offset..=*offset),
         [bound0, bound1] => match (bound0, bound1) {
             (OffsetPart::Lower(l), OffsetPart::Upper(u)) => Ok(*l..=*u),
             (OffsetPart::Upper(u), OffsetPart::Lower(l)) => Ok(*l..=*u),
@@ -83,7 +77,7 @@ fn find_offset_bound_in_filter(filter: &Expr) -> Option<OffsetPart> {
             left,
             right,
             op: Operator::GtEq,
-        }) => offset_value(left, right).map(|offset| OffsetPart::Lower(offset)),
+        }) => offset_value(left, right).map(OffsetPart::Lower),
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
@@ -100,22 +94,22 @@ fn find_offset_bound_in_filter(filter: &Expr) -> Option<OffsetPart> {
             left,
             right,
             op: Operator::LtEq,
-        }) => offset_value(left, right).map(|offset| OffsetPart::Upper(offset)),
+        }) => offset_value(left, right).map(OffsetPart::Upper),
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::Eq,
-        }) => offset_value(left, right).map(|offset| OffsetPart::Eq(offset)),
+        }) => offset_value(left, right).map(OffsetPart::Eq),
         _ => None,
     }
 }
 
-fn offset_value(left: &Box<Expr>, right: &Box<Expr>) -> Option<u64> {
-    if left.deref() != &col(OFFSET_COLUMN_NAME) {
+fn offset_value(left: &Expr, right: &Expr) -> Option<u64> {
+    if left != &col(OFFSET_COLUMN_NAME) {
         return None;
     }
 
-    match right.deref() {
+    match right {
         Expr::Literal(ScalarValue::UInt64(Some(v)), _) => Some(*v),
         _ => None,
     }

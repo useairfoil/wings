@@ -47,7 +47,6 @@ impl TonicService for ClusterMetadataServer {
 
         let tenant_name = TenantName::new(request.tenant_id)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let tenant = self
@@ -67,7 +66,6 @@ impl TonicService for ClusterMetadataServer {
 
         let tenant_name = TenantName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let tenant = self
@@ -102,7 +100,6 @@ impl TonicService for ClusterMetadataServer {
 
         let tenant_name = TenantName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         self.inner
@@ -121,14 +118,12 @@ impl TonicService for ClusterMetadataServer {
 
         let tenant_name = TenantName::parse(&request.parent)
             .context(InvalidResourceNameSnafu { resource: "tenant" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let namespace_name = NamespaceName::new(request.namespace_id, tenant_name)
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let options = NamespaceOptions::try_from(request.namespace.unwrap_or_default())
@@ -153,7 +148,6 @@ impl TonicService for ClusterMetadataServer {
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let namespace = self
@@ -192,7 +186,6 @@ impl TonicService for ClusterMetadataServer {
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         self.inner
@@ -213,12 +206,10 @@ impl TonicService for ClusterMetadataServer {
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let topic_name = TopicName::new(request.topic_id, namespace_name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let options = TopicOptions::try_from(request.topic.unwrap_or_default())
@@ -241,7 +232,6 @@ impl TonicService for ClusterMetadataServer {
 
         let topic_name = TopicName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         let topic = self
@@ -279,7 +269,6 @@ impl TonicService for ClusterMetadataServer {
 
         let topic_name = TopicName::parse(&request.name)
             .context(InvalidResourceNameSnafu { resource: "topic" })
-            .map_err(Into::into)
             .map_err(cluster_metadata_error_to_status)?;
 
         self.inner

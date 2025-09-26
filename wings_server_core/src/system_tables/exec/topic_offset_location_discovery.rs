@@ -242,8 +242,8 @@ fn from_offset_location(
         }
         match offset_location {
             LogLocation::Folio(folio) => {
-                location_type_arr.append_value("folio".to_string());
-                folio_file_ref_arr.append_value(folio.file_ref.to_string());
+                location_type_arr.append_value("folio");
+                folio_file_ref_arr.append_value(&folio.file_ref);
                 folio_offset_bytes_arr.append_value(folio.offset_bytes);
                 folio_size_bytes_arr.append_value(folio.size_bytes);
             }

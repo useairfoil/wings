@@ -163,7 +163,7 @@ impl PushArgs {
 
             requests.entry(topic).or_default().push(WriteRequest {
                 partition_value,
-                timestamp: timestamp.clone(),
+                timestamp,
                 data,
             });
 

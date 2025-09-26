@@ -164,7 +164,7 @@ async fn upload_and_commit_folio(
         Err(source) => {
             let error = WriteBatchError::LogMetadata {
                 message: "failed to commit folio".to_string(),
-                source,
+                source: source.into(),
             };
             let replies = pages_replies.into_iter().flatten().collect::<Vec<_>>();
             return ReplyWithWriteBatchError::new_fanout(error, replies).into();

@@ -113,7 +113,7 @@ impl TopicClient {
         }
 
         Ok(WriteResponse {
-            client: &self,
+            client: self,
             request_id,
         })
     }

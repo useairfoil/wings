@@ -1,9 +1,9 @@
-use std::{any::Any, fmt, sync::Arc};
+use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
 use datafusion::{
     catalog::memory::DataSourceExec,
     common::arrow::{
-        array::{RecordBatch, UInt64Builder},
+        array::{RecordBatch, TimestampMillisecondBuilder, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
     datasource::{
@@ -21,7 +21,12 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use futures::StreamExt;
-use wings_control_plane::{log_metadata::FolioLocation, resources::PartitionValue};
+use wings_control_plane::{
+    log_metadata::{CommittedBatch, FolioLocation},
+    resources::PartitionValue,
+};
+
+use crate::query::topic::{OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME};
 
 pub struct FolioExec {
     partition_value_column: Option<(FieldRef, PartitionValue)>,
@@ -59,6 +64,8 @@ impl FolioExec {
                     &location.file_ref,
                     location.offset_bytes + location.size_bytes,
                 )
+                // TODO: this is not doing what we think it's doing.
+                // We need to somehow slice the file before reading it.
                 .with_range(
                     location.offset_bytes as _,
                     (location.offset_bytes + location.size_bytes) as _,
@@ -121,7 +128,6 @@ impl ExecutionPlan for FolioExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
-        /*
         let stream = self.inner.execute(partition, context)?;
         let stream_with_partition_and_offset = RecordBatchStreamAdapter::new(
             self.schema.clone(),
@@ -135,7 +141,9 @@ impl ExecutionPlan for FolioExec {
                     let mut partition_col_offset = 0;
 
                     for (col_index, output_col) in output_schema.fields().iter().enumerate() {
-                        if output_col.name() == OFFSET_COLUMN_NAME {
+                        if output_col.name() == OFFSET_COLUMN_NAME
+                            || output_col.name() == TIMESTAMP_COLUMN_NAME
+                        {
                             continue;
                         }
 
@@ -155,18 +163,28 @@ impl ExecutionPlan for FolioExec {
                     }
 
                     let mut offset_arr = UInt64Builder::new();
+                    let mut timestamp_arr = TimestampMillisecondBuilder::new();
                     for batch in location.batches.iter() {
                         match batch {
-                            CommittedBatch::Rejected { num_messages } => {
-                                offset_arr.append_nulls(*num_messages as _);
+                            CommittedBatch::Rejected(info) => {
+                                offset_arr.append_nulls(info.num_messages as _);
+                                timestamp_arr.append_nulls(info.num_messages as _);
                             }
                             CommittedBatch::Accepted(info) => {
+                                let ts_millis = info
+                                    .timestamp
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .expect("timestamp")
+                                    .as_millis();
                                 offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
+                                timestamp_arr
+                                    .append_value_n(ts_millis as _, info.num_messages() as _);
                             }
                         }
                     }
 
                     columns.push(Arc::new(offset_arr.finish()));
+                    columns.push(Arc::new(timestamp_arr.finish()));
 
                     let output = RecordBatch::try_new(output_schema.clone(), columns)?;
                     Ok(output)
@@ -175,8 +193,6 @@ impl ExecutionPlan for FolioExec {
         );
 
         Ok(Box::pin(stream_with_partition_and_offset))
-        */
-        todo!();
     }
 }
 
