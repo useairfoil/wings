@@ -59,7 +59,7 @@ impl DevArgs {
             TemporaryFileSystemFactory::new().context(ObjectStoreSnafu {})?;
         let object_store_factory = Arc::new(object_store_factory);
 
-        let log_metadata = Arc::new(InMemoryLogMetadata::default());
+        let log_metadata = Arc::new(InMemoryLogMetadata::new(cluster_metadata.clone()));
 
         info!(
             "Object store root path: {}",

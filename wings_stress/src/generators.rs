@@ -55,9 +55,17 @@ pub struct OrderRecordBatchGenerator {
 }
 
 impl OrderRecordBatchGenerator {
+    const PARTITION_KEY: usize = 1;
+
     fn new(partitions: u64) -> Self {
         let generator = OrderGenerator::new(1.0, 1, 1);
-        let schema = Arc::new(Schema::new(Self::fields()));
+        let fields_without_partition_key = Self::fields()
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| *index != Self::PARTITION_KEY)
+            .map(|(_, field)| field.clone())
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new(fields_without_partition_key));
         Self {
             customer_id: 1,
             schema,
@@ -81,8 +89,7 @@ impl OrderRecordBatchGenerator {
     }
 
     fn partition_key() -> Option<usize> {
-        // Some(1)
-        None
+        Some(Self::PARTITION_KEY)
     }
 
     fn topic_name() -> &'static str {
@@ -94,7 +101,14 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
     fn new_batch(&mut self, batch_size: usize) -> WriteRequest {
         let customer_id = self.customer_id;
 
-        let _partition_value = PartitionValue::Int64(customer_id);
+        // For now, generate invalid timestamps every 13th record
+        let timestamp = if customer_id % 13 == 0 {
+            Some(SystemTime::UNIX_EPOCH)
+        } else {
+            None
+        };
+
+        let partition_value = PartitionValue::Int64(customer_id);
 
         let rows: Vec<_> = self
             .order_generator_iter
@@ -106,7 +120,6 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             RecordBatch::new_empty(self.schema.clone())
         } else {
             let o_orderkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_orderkey));
-            let o_custkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_custkey));
             let o_orderstatus =
                 string_view_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
             let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
@@ -124,7 +137,6 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                 self.schema.clone(),
                 vec![
                     Arc::new(o_orderkey),
-                    Arc::new(o_custkey),
                     Arc::new(o_orderstatus),
                     Arc::new(o_totalprice),
                     Arc::new(o_orderdate),
@@ -142,16 +154,9 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             self.customer_id = 1;
         }
 
-        // For now, generate invalid timestamps every 13th record
-        let timestamp = if self.customer_id % 13 == 0 {
-            Some(SystemTime::UNIX_EPOCH)
-        } else {
-            None
-        };
-
         WriteRequest {
             data: batch,
-            partition_value: None,
+            partition_value: Some(partition_value),
             timestamp,
         }
     }

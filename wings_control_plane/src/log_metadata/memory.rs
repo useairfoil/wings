@@ -16,6 +16,7 @@ use dashmap::DashMap;
 use tracing::debug;
 
 use crate::{
+    cluster_metadata::{ClusterMetadata, cache::TopicCache},
     log_metadata::{
         AcceptedBatchInfo, RejectedBatchInfo,
         timestamp::{ValidateRequestResult, validate_timestamp_in_request},
@@ -30,10 +31,11 @@ use super::{
     timestamp::compare_batch_request_timestamps,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone)]
 pub struct InMemoryLogMetadata {
     /// Maps topic names to their log state
     topics: Arc<DashMap<TopicName, TopicLogState>>,
+    topic_cache: TopicCache,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +71,16 @@ struct PageInfo {
     pub end_offset: LogOffset,
     /// The batches in the page.
     pub batches: Vec<CommittedBatch>,
+}
+
+impl InMemoryLogMetadata {
+    pub fn new(cluster_meta: Arc<dyn ClusterMetadata>) -> Self {
+        let topic_cache = TopicCache::new(cluster_meta);
+        Self {
+            topics: Default::default(),
+            topic_cache,
+        }
+    }
 }
 
 #[async_trait]
@@ -130,15 +142,47 @@ impl LogMetadata for InMemoryLogMetadata {
             });
         };
 
+        let topic = self
+            .topic_cache
+            .get(request.topic_name.clone())
+            .await
+            .map_err(|_| LogMetadataError::InvalidArgument {
+                message: "could not get topic".to_string(),
+            })?;
+
         let page_size = request.page_size.unwrap_or(100);
 
-        // TODO: fetch topic schema and use it to parse partition value from page token string.
-        // For now just panic.
-        assert!(
-            request.page_token.is_none(),
-            "pagination token is not supported yet"
+        println!("ListPartitionsRequest: {:?}", request);
+
+        let partition_value = if let Some(data_type) = topic.partition_field_data_type() {
+            if let Some(page_token) = request.page_token.as_ref() {
+                let pv =
+                    PartitionValue::parse_with_datatype(data_type, page_token).map_err(|err| {
+                        LogMetadataError::InvalidArgument {
+                            message: format!("invalid partition value: {err}"),
+                        }
+                    })?;
+                Some(pv)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let partition_key = PartitionKey::new(request.topic_name.clone(), partition_value);
+
+        let start_key_range: Bound<&PartitionKey> =
+            if topic.partition_field().is_none() || partition_key.partition_value.is_none() {
+                Bound::Unbounded
+            } else {
+                Bound::Excluded(&partition_key)
+            };
+
+        debug!(
+            start_key_range = ?start_key_range,
+            "InMemoryLogMetadata::list_partitions start"
         );
-        let start_key_range: Bound<&PartitionKey> = Bound::Unbounded;
 
         let mut partitions = Vec::new();
         let mut next_page_token = None;
@@ -154,6 +198,11 @@ impl LogMetadata for InMemoryLogMetadata {
                 end_offset: state.next_offset,
             });
         }
+
+        debug!(
+            next_page_token = ?next_page_token,
+            "InMemoryLogMetadata::list_partitions done"
+        );
 
         Ok(ListPartitionsResponse {
             partitions,
