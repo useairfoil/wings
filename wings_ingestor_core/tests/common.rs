@@ -20,7 +20,7 @@ pub fn create_batch_ingestor() -> (
     let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new()
         .expect("object store factory")
         .into();
-    let log_meta: Arc<_> = InMemoryLogMetadata::default().into();
+    let log_meta: Arc<_> = InMemoryLogMetadata::new(cluster_meta.clone()).into();
     let ingestor = BatchIngestor::new(object_store_factory, log_meta);
 
     let client = ingestor.client();

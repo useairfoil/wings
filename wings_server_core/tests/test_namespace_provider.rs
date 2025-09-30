@@ -203,7 +203,10 @@ async fn test_topic_partition_value() -> Result<()> {
     let out = ctx
         .sql("SELECT * FROM system.topic_partition_value")
         .await
-        .expect("sql");
+        .expect("sql")
+        // Timestamp columns change value based on the current time
+        .drop_columns(&["latest_timestamp"])
+        .expect("drop timestamp columns");
     let out = out.collect().await.expect("collect");
     let expected = vec![
         "+--------+-----------+----------------------+-----------------+-------------+",

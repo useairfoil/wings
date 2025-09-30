@@ -117,7 +117,9 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
     let out = ctx
         .sql("SELECT * FROM my_topic WHERE __offset__ BETWEEN 0 AND 100")
         .await
-        .expect("sql");
+        .expect("sql")
+        .drop_columns(&["__timestamp__"])
+        .expect("drop columns");
 
     let out = out.collect().await.expect("collect");
     let expected = vec![
