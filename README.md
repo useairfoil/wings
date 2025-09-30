@@ -10,8 +10,10 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
 
  - [x] Write and read data
  - [x] Built-in timestamp support
- - [ ] Arrow Flight (+ SQL) for reading data
- - [ ] Arrow Flight (+ SQL) for ingesting data
+ - [ ] Arrow Flight for reading data
+   + [x] Flight SQL
+ - [x] Arrow Flight for ingesting data
+   + [ ] Flight SQL
  - [ ] Compaction to Parquet files
  - [ ] Control plane persistence based on PostgreSQL
  - [ ] Schema management and evolution
@@ -25,6 +27,7 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
  - [ ] Extensible secret management (for object store credentials)
  - [ ] ["Distributed mmap"](https://www.warpstream.com/blog/minimizing-s3-api-costs-with-distributed-mmap) based on [LiquidCache](https://github.com/XiangpengHao/liquid-cache)
  - [ ] Cloud-native control plane persistence (DynamoDB, Azure CosmosDB, Google Cloud Spanner)
+ - [ ] OpenDAL for writing data
  - [ ] Deterministic simulation testing
  - [ ] Read-only streams based on externally managed Iceberg catalogs
 
