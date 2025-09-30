@@ -1,7 +1,7 @@
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
 use tokio::task::JoinError;
-use wings_client::{ClientError, WriteError};
+use wings_client::ClientError;
 use wings_control_plane::{cluster_metadata::ClusterMetadataError, resources::ResourceError};
 
 use crate::helpers::RangeParserError;
@@ -27,8 +27,6 @@ pub enum CliError {
     },
     #[snafu(display("Failed client operation"))]
     ClientError { source: ClientError },
-    #[snafu(display("Failed write operation"))]
-    WriteError { source: WriteError },
     #[snafu(display("Failed join operation"))]
     JoinError { source: JoinError },
 }

@@ -5,13 +5,14 @@ use arrow_json::ReaderBuilder;
 use arrow_schema::SchemaRef;
 use clap::Parser;
 use datafusion::common::arrow::record_batch::RecordBatch;
-use futures::{StreamExt, stream::FuturesOrdered};
+use futures::{TryStreamExt, stream::FuturesOrdered};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_client::{WriteError, WriteRequest};
+use wings_client::WriteRequest;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    log_metadata::CommittedBatch,
     resources::{NamespaceName, PartitionValue, TopicName},
 };
 
@@ -75,19 +76,10 @@ impl PushArgs {
                 futures.push_back(response_fut.wait_for_response());
             }
 
-            while let Some(response) = futures.next().await {
+            while let Some(response) = futures.try_next().await.context(ClientSnafu {})? {
                 match response {
-                    Ok(info) => {
-                        println!("Success: {:?}", info);
-                    }
-                    Err(inner) => match inner {
-                        WriteError::Batch { info: error } => {
-                            println!("Batch error: {:?}", error);
-                        }
-                        _ => {
-                            println!("Other error: {:?}", inner);
-                        }
-                    },
+                    CommittedBatch::Accepted(info) => println!("Accepted: {:?}", info),
+                    CommittedBatch::Rejected(info) => println!("Rejected: {:?}", info),
                 }
             }
         }

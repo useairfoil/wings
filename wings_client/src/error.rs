@@ -1,4 +1,5 @@
 use snafu::Snafu;
+use wings_flight::TicketDecodeError;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -14,6 +15,14 @@ pub enum ClientError {
     ClusterMetadata {
         source: wings_control_plane::cluster_metadata::ClusterMetadataError,
     },
+    #[snafu(display("Ticket decode error"))]
+    TicketDecode { source: TicketDecodeError },
+    #[snafu(display("Stream closed"))]
+    StreamClosed,
+    #[snafu(display("Timeout"))]
+    Timeout,
+    #[snafu(display("Unexpected request ID: expected {expected}, actual {actual}"))]
+    UnexpectedRequestId { expected: u64, actual: u64 },
 }
 
 pub type Result<T, E = ClientError> = std::result::Result<T, E>;

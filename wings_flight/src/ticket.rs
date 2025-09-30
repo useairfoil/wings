@@ -150,11 +150,9 @@ impl IngestionResponseMetadata {
         Self { request_id, result }
     }
 
-    pub fn try_decode_partial(
-        ticket: Bytes,
-    ) -> Result<pb::IngestionResponseMetadata, TicketDecodeError> {
+    pub fn try_decode_schema_message(ticket: Bytes) -> Result<u64, TicketDecodeError> {
         let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
-        Ok(proto)
+        Ok(proto.request_id)
     }
 
     pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {

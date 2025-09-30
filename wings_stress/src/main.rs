@@ -1,12 +1,14 @@
 use clap::{Args, Parser};
-use error::{ClientSnafu, WriteSnafu};
+use error::ClientSnafu;
+use futures::{TryStreamExt, stream::FuturesUnordered};
 use snafu::ResultExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_client::{TopicClient, WingsClient, WriteError};
+use wings_client::{TopicClient, WingsClient};
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    log_metadata::CommittedBatch,
     resources::{NamespaceName, TopicName},
 };
 
@@ -48,6 +50,9 @@ struct Cli {
     /// Namespace name
     #[arg(long, default_value = "tenants/default/namespaces/default")]
     namespace: String,
+    /// The number of concurrent requests
+    #[arg(long, default_value = "10")]
+    concurrency: usize,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
@@ -106,7 +111,7 @@ async fn main() -> Result<()> {
         let ct = ct.clone();
         tasks.spawn(async move {
             let request_generator = RequestGenerator::new(topic, batch_size_range, cli.partitions);
-            run_stress_test_for_topic(request_generator, topic_client, ct).await
+            run_stress_test_for_topic(request_generator, topic_client, cli.concurrency, ct).await
         });
     }
 
@@ -121,33 +126,33 @@ async fn main() -> Result<()> {
 async fn run_stress_test_for_topic(
     mut generator: RequestGenerator,
     client: TopicClient,
+    concurrency: usize,
     ct: CancellationToken,
 ) -> Result<()> {
-    // TODO: this loop should send multiple requests in parallel
-    println!("Starting stress test for topic");
+    println!("Starting stress test for topic {}", client.topic_name());
+
+    let mut futures = FuturesUnordered::new();
+
     loop {
         if ct.is_cancelled() {
             break;
         }
 
-        let request = generator.create_request();
-        match client
-            .push(request)
-            .await
-            .context(ClientSnafu {})?
-            .wait_for_response()
-            .await
-        {
-            Ok(info) => {
-                println!(
-                    "Batch written: {} -- {}",
-                    info.start_offset, info.end_offset
-                );
+        while futures.len() < concurrency {
+            let request = generator.create_request();
+            let response_fut = client.push(request).await.context(ClientSnafu {})?;
+            futures.push(response_fut.wait_for_response());
+        }
+
+        let Some(response) = futures.try_next().await.context(ClientSnafu {})? else {
+            break;
+        };
+
+        match response {
+            CommittedBatch::Accepted(info) => {
+                println!("Accepted: {} -- {}", info.start_offset, info.end_offset)
             }
-            Err(WriteError::Batch { info }) => {
-                println!("Batch write failed: {:?}", info);
-            }
-            Err(err) => return Err(err).context(WriteSnafu {}),
+            CommittedBatch::Rejected(reason) => println!("Rejected: {}", reason.num_messages),
         }
     }
 

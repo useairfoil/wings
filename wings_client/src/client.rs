@@ -8,7 +8,7 @@ use std::{
 use arrow::array::RecordBatch;
 use arrow_flight::{FlightData, PutResult};
 use futures::{Stream, StreamExt, TryStreamExt};
-use snafu::{ResultExt, Snafu};
+use snafu::ResultExt;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
@@ -17,36 +17,31 @@ use tonic::{
 };
 use tracing::debug;
 use wings_control_plane::{
-    log_metadata::{AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo},
+    log_metadata::CommittedBatch,
     resources::{PartitionValue, Topic, TopicName},
 };
-use wings_flight::{IngestionResponseMetadata, TicketDecodeError};
+use wings_flight::IngestionResponseMetadata;
 
-use crate::{WingsClient, encode::IngestionFlightDataEncoder, error::Result};
+use crate::{
+    WingsClient,
+    encode::IngestionFlightDataEncoder,
+    error::{
+        Result, StreamClosedSnafu, TicketDecodeSnafu, TimeoutSnafu, TonicSnafu,
+        UnexpectedRequestIdSnafu,
+    },
+};
 
 const DEFAULT_CHANNEL_SIZE: usize = 1024;
 
 /// A client to read and write data for a specific topic.
 pub struct TopicClient {
+    topic_name: TopicName,
     tx: mpsc::Sender<FlightData>,
     next_request_id: AtomicU64,
     // TODO: if the lock is not held across async, replace the implementation
     encoder: Mutex<IngestionFlightDataEncoder>,
     inner: Mutex<InnerClient>,
-}
-
-#[derive(Debug, Snafu)]
-pub enum WriteError {
-    #[snafu(display("Stream closed"))]
-    StreamClosed,
-    #[snafu(display("Timeout"))]
-    Timeout,
-    #[snafu(display("Tonic error"))]
-    Tonic { source: Status },
-    #[snafu(display("Rejected batch"))]
-    Batch { info: RejectedBatchInfo },
-    #[snafu(display("Ticket decode error"))]
-    TicketDecode { source: TicketDecodeError },
+    timeout_duration: Duration,
 }
 
 pub struct WriteRequest {
@@ -83,7 +78,23 @@ impl TopicClient {
         let _ = tx.send(schema_message).await;
 
         let request = prepare_request(&topic.name, rx);
-        let response_stream = inner.do_put(request).await?.into_inner().boxed();
+        let mut response_stream = inner.do_put(request).await?.into_inner().boxed();
+
+        let Some(put_result) = response_stream.try_next().await? else {
+            return StreamClosedSnafu.fail();
+        };
+
+        let request_id =
+            IngestionResponseMetadata::try_decode_schema_message(put_result.app_metadata)
+                .context(TicketDecodeSnafu {})?;
+
+        if request_id != 0 {
+            return UnexpectedRequestIdSnafu {
+                expected: 0u64,
+                actual: request_id,
+            }
+            .fail();
+        }
 
         let inner = InnerClient {
             response_stream,
@@ -91,11 +102,17 @@ impl TopicClient {
         };
 
         Ok(Self {
+            topic_name: topic.name.clone(),
             tx,
             encoder: Mutex::new(encoder),
             next_request_id: AtomicU64::new(1),
             inner: Mutex::new(inner),
+            timeout_duration: Duration::from_secs(3),
         })
+    }
+
+    pub fn topic_name(&self) -> &TopicName {
+        &self.topic_name
     }
 
     pub async fn push(&self, request: WriteRequest) -> Result<WriteResponse<'_>> {
@@ -119,14 +136,16 @@ impl TopicClient {
         })
     }
 
-    async fn wait_for_response(&self, request_id: u64) -> Result<AcceptedBatchInfo, WriteError> {
+    async fn wait_for_response(&self, request_id: u64) -> Result<CommittedBatch> {
         let mut inner = self.inner.lock().await;
-        inner.wait_for_response(request_id).await
+        inner
+            .wait_for_response(request_id, self.timeout_duration)
+            .await
     }
 }
 
 impl WriteResponse<'_> {
-    pub async fn wait_for_response(self) -> Result<AcceptedBatchInfo, WriteError> {
+    pub async fn wait_for_response(self) -> Result<CommittedBatch> {
         self.client.wait_for_response(self.request_id).await
     }
 }
@@ -135,44 +154,29 @@ impl InnerClient {
     async fn wait_for_response(
         &mut self,
         request_id: u64,
-    ) -> Result<AcceptedBatchInfo, WriteError> {
+        timeout_duration: Duration,
+    ) -> Result<CommittedBatch> {
         if let Some(response) = self.completed.remove(&request_id) {
-            match response {
-                CommittedBatch::Accepted(info) => return Ok(info),
-                CommittedBatch::Rejected(reason) => return Err(WriteError::Batch { info: reason }),
-            }
+            return Ok(response);
         };
 
         loop {
-            let response =
-                tokio::time::timeout(Duration::from_secs(1), self.response_stream.try_next());
+            let response = tokio::time::timeout(timeout_duration, self.response_stream.try_next());
+
             let put_result = match response.await {
-                Err(_) => return Err(WriteError::Timeout),
-                Ok(Ok(None)) => return Err(WriteError::StreamClosed),
+                Err(_) => return TimeoutSnafu {}.fail(),
+                Ok(Ok(None)) => return StreamClosedSnafu {}.fail(),
                 Ok(Ok(Some(put_result))) => put_result,
-                Ok(Err(err)) => return Err(WriteError::Tonic { source: err }),
+                Ok(Err(err)) => return Err(err).context(TonicSnafu {}),
             };
 
-            // TODO: this is shite. the issue is that request_id has no result so it would fail.
-            // we need to improve on this.
-            let response =
-                IngestionResponseMetadata::try_decode_partial(put_result.app_metadata.clone())
-                    .context(TicketDecodeSnafu {})?;
-
-            if response.request_id == 0 {
-                continue;
-            }
-
-            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata)
+            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata.clone())
                 .context(TicketDecodeSnafu {})?;
 
+            assert_ne!(response.request_id, 0, "received invalid request id");
+
             if response.request_id == request_id {
-                match response.result {
-                    CommittedBatch::Accepted(info) => return Ok(info),
-                    CommittedBatch::Rejected(reason) => {
-                        return Err(WriteError::Batch { info: reason });
-                    }
-                }
+                return Ok(response.result);
             } else {
                 self.completed.insert(response.request_id, response.result);
             }
@@ -199,10 +203,4 @@ fn prepare_request(
         .insert("x-wings-namespace", namespace_ascii);
 
     request
-}
-
-impl From<Status> for WriteError {
-    fn from(status: Status) -> Self {
-        WriteError::Tonic { source: status }
-    }
 }

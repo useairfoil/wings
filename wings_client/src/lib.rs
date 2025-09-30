@@ -10,7 +10,7 @@ mod client;
 mod encode;
 mod error;
 
-pub use self::client::{TopicClient, WriteError, WriteRequest, WriteResponse};
+pub use self::client::{TopicClient, WriteRequest, WriteResponse};
 pub use self::error::{ClientError, Result};
 
 /// A high-level client to interact with Wings' data plane.
