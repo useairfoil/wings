@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::mpsc;
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
+use tracing::debug;
 use wings_control_plane::log_metadata::{
     CommitPageRequest, CommitPageResponse, CommittedBatch, LogMetadata,
 };
@@ -30,6 +31,7 @@ pub async fn run_background_ingestor(ingestor: BatchIngestor, ct: CancellationTo
     ingestor.run(ct).await
 }
 
+#[derive(Debug)]
 struct CommittedFolio {
     pages: Vec<CommitPageResponse<WithReplyChannel<CommittedBatch>>>,
 }
@@ -79,6 +81,8 @@ impl BatchIngestor {
                         continue;
                     };
 
+                    debug!(folio = ?folio, error = ?error, "timer expired. ready to upload and commit");
+
                     error.send_to_all();
 
                     // Try to remove any duplicate timer keys.
@@ -91,16 +95,23 @@ impl BatchIngestor {
                         break;
                     };
 
+                    debug!(queue_size = self.rx.len(), "received batch");
+
                     match folio_writer.write_batch(request, &mut folio_timer) {
-                        Ok(None) => {},
-                        Ok(Some((folio, errors))) => {
+                        Ok(None) => {
+                            debug!("batch written to folio");
+                        },
+                        Ok(Some((folio, error))) => {
                             folio_timer.remove(&folio.timer_key);
 
-                            errors.send_to_all();
+                            debug!(folio = ?folio, error = ?error, "batch full. ready to upload and commit");
+
+                            error.send_to_all();
 
                             upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio));
                         }
                         Err(error) => {
+                            debug!(error = ?error, "failed to write batch");
                             error.send_to_all();
                         }
                     }
@@ -109,6 +120,7 @@ impl BatchIngestor {
                     match task {
                         None => break,
                         Some(Ok(committed_folio)) => {
+                            debug!(folio = ?committed_folio, "folio uploaded and committed");
                             reply_with_committed_folio(committed_folio);
                         }
                         Some(Err(errors)) => {

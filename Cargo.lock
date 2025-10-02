@@ -4735,6 +4735,7 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-util",
+ "tracing",
  "ulid",
  "wings-control-plane",
  "wings-object-store",

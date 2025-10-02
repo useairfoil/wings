@@ -54,6 +54,7 @@ pub struct WithReplyChannel<T> {
 }
 
 #[must_use]
+#[derive(Debug)]
 pub struct ReplyWithWriteBatchError {
     replies: Vec<(WriteBatchResultSender, WriteBatchError)>,
 }

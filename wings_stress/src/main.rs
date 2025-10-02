@@ -1,6 +1,5 @@
 use clap::{Args, Parser};
 use error::ClientSnafu;
-use futures::{TryStreamExt, stream::FuturesUnordered};
 use snafu::ResultExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -103,16 +102,20 @@ async fn main() -> Result<()> {
 
     for topic in cli.topic.into_iter() {
         let topic_name = ensure_topic_exists(&cluster_meta, &namespace, &topic).await?;
-        let topic_client = ingestion_client
-            .topic(topic_name.clone())
-            .await
-            .context(ClientSnafu {})?;
-        let batch_size_range = batch_size_range.clone();
-        let ct = ct.clone();
-        tasks.spawn(async move {
-            let request_generator = RequestGenerator::new(topic, batch_size_range, cli.partitions);
-            run_stress_test_for_topic(request_generator, topic_client, cli.concurrency, ct).await
-        });
+        for _ in 0..cli.concurrency {
+            let topic_client = ingestion_client
+                .topic(topic_name.clone())
+                .await
+                .context(ClientSnafu {})?;
+            let batch_size_range = batch_size_range.clone();
+            let ct = ct.clone();
+
+            tasks.spawn(async move {
+                let request_generator =
+                    RequestGenerator::new(topic, batch_size_range, cli.partitions);
+                run_stress_test_for_topic(request_generator, topic_client, ct).await
+            });
+        }
     }
 
     while let Some(result) = tasks.join_next().await.transpose().context(JoinSnafu {})? {
@@ -126,27 +129,23 @@ async fn main() -> Result<()> {
 async fn run_stress_test_for_topic(
     mut generator: RequestGenerator,
     client: TopicClient,
-    concurrency: usize,
     ct: CancellationToken,
 ) -> Result<()> {
     println!("Starting stress test for topic {}", client.topic_name());
-
-    let mut futures = FuturesUnordered::new();
 
     loop {
         if ct.is_cancelled() {
             break;
         }
 
-        while futures.len() < concurrency {
-            let request = generator.create_request();
-            let response_fut = client.push(request).await.context(ClientSnafu {})?;
-            futures.push(response_fut.wait_for_response());
-        }
-
-        let Some(response) = futures.try_next().await.context(ClientSnafu {})? else {
-            break;
-        };
+        let request = generator.create_request();
+        let response = client
+            .push(request)
+            .await
+            .context(ClientSnafu {})?
+            .wait_for_response()
+            .await
+            .context(ClientSnafu {})?;
 
         match response {
             CommittedBatch::Accepted(info) => {
