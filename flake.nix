@@ -65,13 +65,21 @@
           doCheck = false;
         });
 
+        stress = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          pname = "wings-stress";
+          version = "0.0.0";
+          doCheck = false;
+          cargoExtraArgs = "-p wings-stress";
+        });
+
         dockerImage = pkgs.dockerTools.buildImage {
           name = "ghcr.io/useairfoil/wings";
           tag = "latest";
           created = "now";
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
-            paths = [ binary ];
+            paths = [ binary stress ];
             pathsToLink = [ "/bin" ];
           };
           config = {
@@ -144,6 +152,7 @@
       {
         packages = {
           default = binary;
+          stress = stress;
           image = dockerArchive;
         };
 
