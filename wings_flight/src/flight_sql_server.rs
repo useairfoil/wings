@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow_flight::{
-    FlightDescriptor, FlightEndpoint, FlightInfo, PutResult, Ticket,
+    FlightDescriptor, FlightEndpoint, FlightInfo, Ticket,
     decode::{DecodedPayload, FlightDataDecoder},
     encode::FlightDataEncoderBuilder,
     error::FlightError,
@@ -25,20 +25,20 @@ use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
 use wings_control_plane::{
     cluster_metadata::cache::{NamespaceCache, TopicCache},
-    log_metadata::{CommittedBatch, RejectedBatchInfo},
     resources::{NamespaceName, TopicName},
 };
-use wings_ingestor_core::{BatchIngestorClient, WriteBatchRequest};
+use wings_ingestor_core::BatchIngestorClient;
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
-    IngestionRequestMetadata, IngestionResponseMetadata, error::FlightServerError,
-    ticket::StatementQueryTicket,
+    error::FlightServerError, ingestion::process_ingestion_stream, ticket::StatementQueryTicket,
 };
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
 
 const DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("arrow_flight_protocol");
+
+const INGESTION_CHANNEL_SIZE: usize = 64;
 
 pub struct WingsFlightSqlServer {
     topic_cache: TopicCache,
@@ -366,112 +366,77 @@ impl FlightSqlService for WingsFlightSqlServer {
             .namespace_cache
             .get(namespace_name.clone())
             .await
-            // TODO: map error to status.
             .map_err(|err| {
-                Status::not_found(format!(
-                    "failed to resolve namespace: {namespace_name} {err}"
-                ))
+                if err.is_not_found() {
+                    Status::not_found(format!("namespace not found: {namespace_name}"))
+                } else {
+                    Status::internal(format!("failed to resolve namespace: {namespace_name}"))
+                }
             })?;
+
+        debug!(namespace = %namespace_ref.name, "Starting ingestion stream");
 
         let mut request_stream = FlightDataDecoder::new(request.into_inner().map_err(From::from));
         let Some(first_message) = request_stream.try_next().await? else {
-            return Err(Status::invalid_argument("missing first message"));
+            return Err(Status::invalid_argument("empty stream"));
         };
 
         let Some(flight_descriptor) = first_message.inner.flight_descriptor else {
             return Err(Status::invalid_argument("missing flight descriptor"));
         };
 
+        debug!(namespace = %namespace_ref.name, "Received flight descriptor");
+
         let topic_name: TopicName = flight_descriptor
             .path
             .first()
             .ok_or_else(|| Status::invalid_argument("missing path"))?
             .parse()
-            .unwrap(/* TODO: handle error */);
+            .map_err(|err| {
+                Status::invalid_argument(format!("failed to parse topic name: {err}"))
+            })?;
 
         let topic_ref = self
             .topic_cache
             .get(topic_name.clone())
             .await
-            // TODO: map error to status.
             .map_err(|err| {
-                Status::not_found(format!("failed to resolve topic: {topic_name} {err}"))
+                if err.is_not_found() {
+                    Status::not_found(format!("topic not found: {topic_name}"))
+                } else {
+                    Status::internal(format!("failed to resolve topic: {topic_name}"))
+                }
             })?;
 
         let DecodedPayload::Schema(_schema) = first_message.payload else {
             return Err(Status::invalid_argument("expected schema"));
         };
 
-        println!("topic_name: {}", topic_name);
+        let (tx, rx) = mpsc::channel(INGESTION_CHANNEL_SIZE);
 
-        // TODO: delete all of this and implement
-        let (tx, rx) = mpsc::channel(100);
+        debug!(topic = %topic_ref.name, "Starting ingestion stream loop");
 
-        // TODO:
-        //  - validate namespace
-        //  - validate topic matches namespace
-        //  - parse partition value, timestamp
-        //  - parse record batches
         tokio::spawn({
             let namespace_ref = namespace_ref.clone();
             let topic_ref = topic_ref.clone();
             let ingestor = self.ingestor.clone();
+
             async move {
-                // Send a message to the channel in response to the first request.
-                let Ok(_) = tx
-                    .send(Ok(PutResult {
-                        app_metadata: Default::default(),
-                    }))
-                    .await
-                else {
-                    return;
-                };
-
-                while let Some(flight_data) = request_stream.try_next().await.unwrap() {
-                    let metadata =
-                        IngestionRequestMetadata::try_decode(flight_data.app_metadata()).unwrap();
-
-                    let DecodedPayload::RecordBatch(batch) = flight_data.payload else {
-                        println!("Received unexpected payload type");
-                        continue;
-                    };
-
-                    println!(
-                        "Received {} rows with metadata: {:?}",
-                        batch.num_rows(),
-                        metadata
-                    );
-
-                    let num_messages = batch.num_rows() as u32;
-                    let ingestion_result = ingestor
-                        .write(WriteBatchRequest {
-                            namespace: namespace_ref.clone(),
-                            topic: topic_ref.clone(),
-                            partition: metadata.partition_value,
-                            timestamp: metadata.timestamp,
-                            records: batch,
-                        })
-                        .await;
-
-                    let response = match ingestion_result {
-                        Ok(info) => CommittedBatch::Accepted(info),
-                        Err(_err) => CommittedBatch::Rejected(RejectedBatchInfo { num_messages }),
-                    };
-
-                    println!("Replying with result: {:?}", response);
-
-                    let Ok(_) = tx
-                        .send(Ok(PutResult {
-                            app_metadata: IngestionResponseMetadata::new(
-                                metadata.request_id,
-                                response,
-                            )
-                            .encode(),
-                        }))
-                        .await
-                    else {
-                        break;
-                    };
+                match process_ingestion_stream(
+                    namespace_ref,
+                    topic_ref,
+                    request_stream,
+                    ingestor,
+                    tx.clone(),
+                )
+                .await
+                {
+                    Ok(_) => {}
+                    Err(_err) => {
+                        let _ = tx
+                            .send(Err(Status::internal("error processing stream")))
+                            .await;
+                    }
                 }
             }
         });
