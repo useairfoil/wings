@@ -2,7 +2,7 @@ use std::{any::Any, fmt, sync::Arc};
 
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, RecordBatch, StringViewBuilder, UInt64Builder},
+        array::{ArrayRef, RecordBatch, StringBuilder, UInt64Builder},
         datatypes::{DataType, Field, Schema, SchemaRef},
     },
     error::{DataFusionError, Result},
@@ -57,16 +57,16 @@ impl TopicOffsetLocationDiscoveryExec {
 
     pub fn schema() -> SchemaRef {
         let fields = vec![
-            Field::new("tenant", DataType::Utf8View, false),
-            Field::new("namespace", DataType::Utf8View, false),
-            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-            Field::new("partition_value", DataType::Utf8View, true),
+            Field::new("tenant", DataType::Utf8, false),
+            Field::new("namespace", DataType::Utf8, false),
+            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
+            Field::new("partition_value", DataType::Utf8, true),
             // TODO: add start and end timestamp
             Field::new("start_offset", DataType::UInt64, false),
             Field::new("end_offset", DataType::UInt64, false),
-            Field::new("location_type", DataType::Utf8View, false),
+            Field::new("location_type", DataType::Utf8, false),
             // Folio-specific columns
-            Field::new("folio_file_ref", DataType::Utf8View, true),
+            Field::new("folio_file_ref", DataType::Utf8, true),
             Field::new("folio_offset_bytes", DataType::UInt64, true),
             Field::new("folio_size_bytes", DataType::UInt64, true),
         ];
@@ -209,14 +209,14 @@ fn from_offset_location(
         return Ok(RecordBatch::new_empty(schema));
     }
 
-    let mut tenant_arr = StringViewBuilder::with_capacity(offsets.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(offsets.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(offsets.len());
-    let mut partition_value_arr = StringViewBuilder::with_capacity(offsets.len());
+    let mut tenant_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut topic_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut partition_value_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut start_offset_arr = UInt64Builder::with_capacity(offsets.len());
     let mut end_offset_arr = UInt64Builder::with_capacity(offsets.len());
-    let mut location_type_arr = StringViewBuilder::with_capacity(offsets.len());
-    let mut folio_file_ref_arr = StringViewBuilder::with_capacity(offsets.len());
+    let mut location_type_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut folio_file_ref_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut folio_offset_bytes_arr = UInt64Builder::with_capacity(offsets.len());
     let mut folio_size_bytes_arr = UInt64Builder::with_capacity(offsets.len());
 

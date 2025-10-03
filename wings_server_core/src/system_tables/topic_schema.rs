@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, BooleanBuilder, RecordBatch, StringViewBuilder},
+        array::{ArrayRef, BooleanBuilder, RecordBatch, StringBuilder},
         datatypes::{DataType, Field, Schema, SchemaRef},
     },
     error::DataFusionError,
@@ -64,11 +64,11 @@ impl std::fmt::Debug for TopicSchemaTable {
 
 fn topic_schema_schema() -> SchemaRef {
     let fields = vec![
-        Field::new("tenant", DataType::Utf8View, false),
-        Field::new("namespace", DataType::Utf8View, false),
-        Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-        Field::new("field", DataType::Utf8View, false),
-        Field::new("data_type", DataType::Utf8View, false),
+        Field::new("tenant", DataType::Utf8, false),
+        Field::new("namespace", DataType::Utf8, false),
+        Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
+        Field::new("field", DataType::Utf8, false),
+        Field::new("data_type", DataType::Utf8, false),
         Field::new("nullable", DataType::Boolean, false),
         Field::new("is_partition_key", DataType::Boolean, false),
     ];
@@ -77,11 +77,11 @@ fn topic_schema_schema() -> SchemaRef {
 }
 
 fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataFusionError> {
-    let mut tenant_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut field_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut data_type_arr = StringViewBuilder::with_capacity(topics.len());
+    let mut tenant_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut topic_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut field_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut data_type_arr = StringBuilder::with_capacity(topics.len(), 0);
     let mut nullable_arr = BooleanBuilder::with_capacity(topics.len());
     let mut is_partition_key_arr = BooleanBuilder::with_capacity(topics.len());
 

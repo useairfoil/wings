@@ -3,7 +3,7 @@ use std::{ops::RangeInclusive, sync::Arc, time::SystemTime};
 
 use clap::ValueEnum;
 use datafusion::common::arrow::{
-    array::{Date32Array, Int32Array, Int64Array, StringViewArray},
+    array::{Date32Array, Int32Array, Int64Array, StringArray},
     datatypes::{DataType, Field, Fields, Schema},
     record_batch::RecordBatch,
 };
@@ -12,7 +12,7 @@ use wings_client::WriteRequest;
 use wings_control_plane::resources::{PartitionValue, TopicOptions};
 
 use crate::conversions::{
-    decimal128_array_from_iter, string_view_array_from_display_iter, to_arrow_date32,
+    decimal128_array_from_iter, string_array_from_display_iter, to_arrow_date32,
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug, Hash)]
@@ -78,13 +78,13 @@ impl OrderRecordBatchGenerator {
         Fields::from(vec![
             Field::new("o_orderkey", DataType::Int64, false),
             Field::new("o_custkey", DataType::Int64, false),
-            Field::new("o_orderstatus", DataType::Utf8View, false),
+            Field::new("o_orderstatus", DataType::Utf8, false),
             Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
             Field::new("o_orderdate", DataType::Date32, false),
-            Field::new("o_orderpriority", DataType::Utf8View, false),
-            Field::new("o_clerk", DataType::Utf8View, false),
+            Field::new("o_orderpriority", DataType::Utf8, false),
+            Field::new("o_clerk", DataType::Utf8, false),
             Field::new("o_shippriority", DataType::Int32, false),
-            Field::new("o_comment", DataType::Utf8View, false),
+            Field::new("o_comment", DataType::Utf8, false),
         ])
     }
 
@@ -121,17 +121,17 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
         } else {
             let o_orderkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_orderkey));
             let o_orderstatus =
-                string_view_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
+                string_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
             let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
             let o_orderdate = Date32Array::from_iter_values(
                 rows.iter().map(|r| r.o_orderdate).map(to_arrow_date32),
             );
             let o_orderpriority =
-                StringViewArray::from_iter_values(rows.iter().map(|r| r.o_orderpriority));
-            let o_clerk = string_view_array_from_display_iter(rows.iter().map(|r| r.o_clerk));
+                StringArray::from_iter_values(rows.iter().map(|r| r.o_orderpriority));
+            let o_clerk = string_array_from_display_iter(rows.iter().map(|r| r.o_clerk));
             let o_shippriority =
                 Int32Array::from_iter_values(rows.iter().map(|r| r.o_shippriority));
-            let o_comment = StringViewArray::from_iter_values(rows.iter().map(|r| r.o_comment));
+            let o_comment = StringArray::from_iter_values(rows.iter().map(|r| r.o_comment));
 
             RecordBatch::try_new(
                 self.schema.clone(),

@@ -2,7 +2,7 @@ use std::{any::Any, fmt, sync::Arc};
 
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, RecordBatch, StringViewBuilder, UInt32Builder},
+        array::{ArrayRef, RecordBatch, StringBuilder, UInt32Builder},
         datatypes::{DataType, Field, Schema, SchemaRef},
     },
     error::{DataFusionError, Result},
@@ -49,9 +49,9 @@ impl TopicDiscoveryExec {
 
     pub fn schema() -> SchemaRef {
         let fields = vec![
-            Field::new("tenant", DataType::Utf8View, false),
-            Field::new("namespace", DataType::Utf8View, false),
-            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
+            Field::new("tenant", DataType::Utf8, false),
+            Field::new("namespace", DataType::Utf8, false),
+            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
             Field::new("partition_key", DataType::UInt32, true),
         ];
 
@@ -142,9 +142,9 @@ impl fmt::Debug for TopicDiscoveryExec {
 }
 
 fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch> {
-    let mut tenant_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(topics.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(topics.len());
+    let mut tenant_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut topic_arr = StringBuilder::with_capacity(topics.len(), 0);
     let mut partition_key_arr = UInt32Builder::with_capacity(topics.len());
 
     for topic in topics {

@@ -2,9 +2,7 @@ use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
 use datafusion::{
     common::arrow::{
-        array::{
-            ArrayRef, RecordBatch, StringViewBuilder, TimestampMillisecondBuilder, UInt64Builder,
-        },
+        array::{ArrayRef, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder},
         datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit},
     },
     error::{DataFusionError, Result},
@@ -56,10 +54,10 @@ impl TopicPartitionValueDiscoveryExec {
 
     pub fn schema() -> SchemaRef {
         let fields = vec![
-            Field::new("tenant", DataType::Utf8View, false),
-            Field::new("namespace", DataType::Utf8View, false),
-            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8View, false),
-            Field::new("partition_value", DataType::Utf8View, true),
+            Field::new("tenant", DataType::Utf8, false),
+            Field::new("namespace", DataType::Utf8, false),
+            Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
+            Field::new("partition_value", DataType::Utf8, true),
             Field::new("next_offset", DataType::UInt64, false),
             Field::new(
                 "latest_timestamp",
@@ -180,10 +178,10 @@ fn from_partition_values(
         return Ok(RecordBatch::new_empty(schema));
     }
 
-    let mut tenant_arr = StringViewBuilder::with_capacity(states.len());
-    let mut namespace_arr = StringViewBuilder::with_capacity(states.len());
-    let mut topic_arr = StringViewBuilder::with_capacity(states.len());
-    let mut partition_value_arr = StringViewBuilder::with_capacity(states.len());
+    let mut tenant_arr = StringBuilder::with_capacity(states.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(states.len(), 0);
+    let mut topic_arr = StringBuilder::with_capacity(states.len(), 0);
+    let mut partition_value_arr = StringBuilder::with_capacity(states.len(), 0);
     let mut next_offset_arr = UInt64Builder::with_capacity(states.len());
     let mut latest_timestamp_arr = TimestampMillisecondBuilder::with_capacity(states.len());
 

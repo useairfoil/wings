@@ -4,7 +4,7 @@
 // Once they become compatible, we can use the crate directly.
 //! Routines to convert TPCH types to Arrow types
 
-use datafusion::common::arrow::array::{StringViewArray, StringViewBuilder};
+use datafusion::common::arrow::array::{StringArray, StringBuilder};
 use std::fmt::Write;
 use tpchgen::dates::TPCHDate;
 use tpchgen::decimal::TPCHDecimal;
@@ -49,17 +49,17 @@ where
         .unwrap()
 }
 
-/// Coverts an iterator of displayable values to an Arrow StringViewArray
+/// Coverts an iterator of displayable values to an Arrow StringArray
 ///
 /// This results in an extra copy of the data, which could be avoided for some types
-pub fn string_view_array_from_display_iter<I>(values: I) -> StringViewArray
+pub fn string_array_from_display_iter<I>(values: I) -> StringArray
 where
     I: Iterator<Item: std::fmt::Display>,
 {
     let mut buffer = String::new();
     let values = values.into_iter();
     let size_hint = values.size_hint().0;
-    let mut builder = StringViewBuilder::with_capacity(size_hint);
+    let mut builder = StringBuilder::with_capacity(size_hint, 0);
     for v in values {
         buffer.clear();
         write!(&mut buffer, "{v}").unwrap();
