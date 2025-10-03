@@ -1,3 +1,60 @@
+//! Ingestion handler for the Wings Flight server.
+//!
+//! ## Input stream
+//!
+//! ### Schema and flight descriptor message
+//!
+//! The first message in the input stream must contain the schema and the
+//! `FlightDescriptor` that describes the data being ingested.
+//! The descriptor must contain a single-element `path` with the topic name (the full name, including tenant and namespace).
+//! The topic namespace must match the namespace in the request.
+//! The schema describes the structure of the data being ingested.
+//!
+//! ### Batch messages
+//!
+//! All messages after the schema messages must contain data. Notice that the same stream can ingest multiple batches.
+//!
+//! All messages must contain the following `IngestionRequestMetadata` information in the `FlightData.app_metadata` field:
+//!
+//!  - `request_id: u64`: the unique request identifier used to correlate the request with the response.
+//!  - `partition_value: Option<PartitionValue>`: the partition value used to partition the data, if any.
+//!  - `timestamp: Option<SystemTime>`: the timestamp to assign to the data, if any.
+//!
+//! Notice that `request_id = 0` is reserved for the schema message.
+//!
+//! If the client wants to ingest large batches (> 2MiB), it must split the batch into smaller batches. At the moment,
+//! these batches must have different `request_id`s, but we plan to support joining them into a single batch in the future.
+//!
+//! ## Response stream
+//!
+//! The response stream contains the results of the ingestion requests in the `PutResult.app_metadata` field. This field
+//! contains a `IngestionResponseMetadata`:
+//!
+//!  - `request_id: u64`: the request id.
+//!  - `result: CommittedBatch`: the committed batch. The batch can be either accepted or rejected. If accepted, the information about the batch is included.
+//!
+//! ## Diagram
+//!
+//! ```txt
+//! Client                             Server
+//!   |                                  |
+//!   |-id=0-------- Schema ------------>|     # The client sends the schema message with the topic name
+//!   |<----------------------------id=0-|
+//!   |                                  |
+//!   |                                  |
+//!   |-id=1-------- Batch ------------->|     # The client sends batches of data
+//!   |-id=2-------- Batch ------------->|
+//!   |                                  |
+//!   |<---------- Accepted --------id=1-|     # The server sends the response as it finishes ingesting the batch
+//!   |-id=3-------- Batch ------------->|
+//!   |                                  |
+//!   |<---------- Accepted --------id=3-|     # Responses are not guaranteed to be in order
+//!   |-id=4-------- Batch ------------->|
+//!   |                                  |
+//!   |<---------- Accepted --------id=2-|
+//!   |<---------- Rejected --------id=4-|     # Batches can be rejected for various reasons
+//!   |                                  |
+//! ```
 use std::sync::Arc;
 
 use arrow_flight::{

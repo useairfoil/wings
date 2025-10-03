@@ -396,6 +396,10 @@ impl FlightSqlService for WingsFlightSqlServer {
                 Status::invalid_argument(format!("failed to parse topic name: {err}"))
             })?;
 
+        if topic_name.parent() != &namespace_ref.name {
+            return Err(Status::invalid_argument("topic not in namespace"));
+        }
+
         let topic_ref = self
             .topic_cache
             .get(topic_name.clone())
