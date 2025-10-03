@@ -86,7 +86,7 @@ impl TableProvider for TopicTableProvider {
 
     async fn scan(
         &self,
-        _state: &dyn Session,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         limit: Option<usize>,
@@ -139,6 +139,7 @@ impl TableProvider for TopicTableProvider {
             .into_iter()
             .map(|(_, partition_value, location)| match location {
                 LogLocation::Folio(folio) => FolioExec::try_new_exec(
+                    state,
                     schema.clone(),
                     file_schema.clone(),
                     partition_value,

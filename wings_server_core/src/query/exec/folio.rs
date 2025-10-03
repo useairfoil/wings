@@ -1,15 +1,12 @@
 use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
 use datafusion::{
-    catalog::memory::DataSourceExec,
+    catalog::{Session, memory::DataSourceExec},
     common::arrow::{
         array::{RecordBatch, TimestampMillisecondBuilder, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
-    datasource::{
-        listing::PartitionedFile,
-        physical_plan::{FileScanConfigBuilder, ParquetSource},
-    },
+    datasource::physical_plan::{FileScanConfigBuilder, ParquetSource},
     error::DataFusionError,
     execution::{SendableRecordBatchStream, TaskContext, object_store::ObjectStoreUrl},
     physical_expr::EquivalenceProperties,
@@ -26,7 +23,10 @@ use wings_control_plane::{
     resources::PartitionValue,
 };
 
-use crate::query::topic::{OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME};
+use crate::{
+    folio_reader::FolioParquetFileReaderFactory,
+    query::topic::{OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME},
+};
 
 pub struct FolioExec {
     partition_value_column: Option<(FieldRef, PartitionValue)>,
@@ -38,6 +38,7 @@ pub struct FolioExec {
 
 impl FolioExec {
     pub fn try_new_exec(
+        state: &dyn Session,
         schema: SchemaRef,
         file_schema: SchemaRef,
         partition_value: Option<PartitionValue>,
@@ -57,20 +58,16 @@ impl FolioExec {
             }
         };
 
-        let file_source = Arc::new(ParquetSource::default());
+        let object_store = state.runtime_env().object_store(&object_store_url)?;
+        let folio_reader_factory: Arc<_> =
+            FolioParquetFileReaderFactory::new(object_store, location.clone()).into();
+        let partitioned_file = folio_reader_factory.partitioned_file();
+
+        let file_source: Arc<_> = ParquetSource::default()
+            .with_parquet_file_reader_factory(folio_reader_factory)
+            .into();
         let config = FileScanConfigBuilder::new(object_store_url, file_schema, file_source)
-            .with_file(
-                PartitionedFile::new(
-                    &location.file_ref,
-                    location.offset_bytes + location.size_bytes,
-                )
-                // TODO: this is not doing what we think it's doing.
-                // We need to somehow slice the file before reading it.
-                .with_range(
-                    location.offset_bytes as _,
-                    (location.offset_bytes + location.size_bytes) as _,
-                ),
-            )
+            .with_file(partitioned_file)
             .build();
         let inner = DataSourceExec::from_data_source(config);
 

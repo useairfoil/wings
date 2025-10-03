@@ -7,6 +7,7 @@ pub mod tonic;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use object_store::path::Path;
 
 use crate::resources::{NamespaceName, PartitionValue, TopicName};
 
@@ -243,6 +244,10 @@ impl FolioLocation {
                 timestamp: info.timestamp,
             }),
         })
+    }
+
+    pub fn path(&self) -> Path {
+        Path::from(self.file_ref.as_ref())
     }
 }
 
