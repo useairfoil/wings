@@ -78,6 +78,7 @@ impl OrderRecordBatchGenerator {
         Fields::from(vec![
             Field::new("o_orderkey", DataType::Int64, false),
             Field::new("o_custkey", DataType::Int64, false),
+            Field::new("o_custkey_check", DataType::Int64, false),
             Field::new("o_orderstatus", DataType::Utf8, false),
             Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
             Field::new("o_orderdate", DataType::Date32, false),
@@ -120,6 +121,8 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             RecordBatch::new_empty(self.schema.clone())
         } else {
             let o_orderkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_orderkey));
+            let o_custkey_check =
+                Int64Array::from_iter_values(std::iter::repeat_n(customer_id, batch_size));
             let o_orderstatus =
                 string_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
             let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
@@ -137,6 +140,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                 self.schema.clone(),
                 vec![
                     Arc::new(o_orderkey),
+                    Arc::new(o_custkey_check),
                     Arc::new(o_orderstatus),
                     Arc::new(o_totalprice),
                     Arc::new(o_orderdate),
