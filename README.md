@@ -4,6 +4,62 @@ Wings is a distributed event streaming platform built on top of Apache Datafusio
 
 The goal is to simplify the common use case of syncing streams to a data lake, while providing a streaming interface for applications.
 
+## Architecture
+
+Wings is composed of a stateful, centralized control plane and a stateless data plane.
+
+```txt
+       ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+       │                     │▒ │                     │▒ │                     │▒
+       │       Cluster       │▒ │         Log         │▒ │        Index        │▒
+       │      Metadata       │▒ │      Metadata       │▒ │      Metadata       │▒
+       │                     │▒ │                     │▒ │                     │▒
+       └─────────────────────┘▒ └─────────────────────┘▒ └─────────────────────┘▒
+        ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+
+Control P.
+═══════════════════════════════════════════════════════════════════════════════════════
+Data P.
+      ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │   Ingestor    │▒ │    Server     │▒ │   Compactor   │▒ │    Indexer    │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      │               │▒ │               │▒ │               │▒ │               │▒
+      └───────┬───────┘▒ └───────▲───────┘▒ └───────▲───────┘▒ └───────▲───────┘▒
+       ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒
+              │                  │                  │                  │
+              │                  │                  │                  │
+       ┌ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ┐
+              │                  │    Liquid Cache  │                  │
+       └ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ┘
+       ┌──────▼──────────────────┴──────────────────▼──────────────────▼─────────┐
+       │                                                                         │▒
+       │                              Object Store                               │▒
+       │                                                                         │▒
+       └─────────────────────────────────────────────────────────────────────────┘▒
+        ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+```
+
+**Control plane**
+
+ - Manage tenants, namespaces, and topics
+ - Commit and query logs metadata
+ - Manage background jobs such as compaction and indexing
+
+**Data plane**
+
+ - Prepare, upload, and commit write requests
+ - Serve read queries, for both data and metadata
+ - Run background jobs
+
 ## Roadmap
 
 **MVP**
@@ -22,6 +78,7 @@ The goal is to simplify the common use case of syncing streams to a data lake, w
 **Version 1.0**
 
  - [ ] Data retention policies
+ - [ ] Secondary indexes
  - [ ] Transactions with clearly defined semantics
  - [ ] Extensible authentication and authorization
  - [ ] Extensible secret management (for object store credentials)
