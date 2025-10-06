@@ -199,6 +199,10 @@ impl LogMetadata for InMemoryLogMetadata {
             });
         }
 
+        if partitions.len() < page_size {
+            next_page_token = None;
+        }
+
         debug!(
             next_page_token = ?next_page_token,
             "InMemoryLogMetadata::list_partitions done"
