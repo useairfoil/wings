@@ -4,12 +4,14 @@ use observability::init_observability;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    cluster::ClusterMetadataCommands, dev::DevArgs, error::Result, push::PushArgs, sql::SqlArgs,
+    cluster::ClusterMetadataCommands, dev::DevArgs, error::Result, fetch::FetchArgs,
+    push::PushArgs, sql::SqlArgs,
 };
 
 mod cluster;
 mod dev;
 mod error;
+mod fetch;
 mod flight;
 mod observability;
 mod push;
@@ -47,6 +49,10 @@ enum Commands {
         #[clap(flatten)]
         inner: PushArgs,
     },
+    Fetch {
+        #[clap(flatten)]
+        inner: FetchArgs,
+    },
     /// Run SQL queries against a namespace
     Sql {
         #[clap(flatten)]
@@ -74,6 +80,7 @@ async fn main() -> Result<()> {
         Commands::Cluster { inner } => inner.run(ct).await,
         Commands::Flight { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,
+        Commands::Fetch { inner } => inner.run(ct).await,
         Commands::Sql { inner } => inner.run(ct).await,
     }
 }

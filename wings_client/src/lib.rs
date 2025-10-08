@@ -1,17 +1,20 @@
 use arrow_flight::flight_service_client::FlightServiceClient;
 use error::ClusterMetadataSnafu;
+use fetch::FetchClient;
 use snafu::ResultExt;
 use tonic::transport::Channel;
 use wings_control_plane::cluster_metadata::ClusterMetadata;
 use wings_control_plane::cluster_metadata::tonic::ClusterMetadataClient;
 use wings_control_plane::resources::TopicName;
 
-mod client;
 mod encode;
 mod error;
+mod fetch;
+mod metadata;
+mod push;
 
-pub use self::client::{TopicClient, WriteRequest, WriteResponse};
 pub use self::error::{ClientError, Result};
+pub use self::push::{PushClient, WriteRequest, WriteResponse};
 
 /// A high-level client to interact with Wings' data plane.
 #[derive(Debug, Clone)]
@@ -34,14 +37,25 @@ impl WingsClient {
         }
     }
 
-    /// Returns a client to push data to the specified topic.
-    pub async fn topic(&self, topic_name: TopicName) -> Result<TopicClient> {
+    /// Returns a client to fetch data from the specified topic.
+    pub async fn fetch_client(&self, topic_name: TopicName) -> Result<FetchClient> {
         let topic = self
             .cluster_meta
             .get_topic(topic_name.clone())
             .await
             .context(ClusterMetadataSnafu {})?;
 
-        TopicClient::new(self, topic).await
+        Ok(FetchClient::new(self, topic))
+    }
+
+    /// Returns a client to push data to the specified topic.
+    pub async fn push_client(&self, topic_name: TopicName) -> Result<PushClient> {
+        let topic = self
+            .cluster_meta
+            .get_topic(topic_name.clone())
+            .await
+            .context(ClusterMetadataSnafu {})?;
+
+        PushClient::new(self, topic).await
     }
 }

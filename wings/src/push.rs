@@ -68,7 +68,10 @@ impl PushArgs {
 
         for (topic_name, requests) in requests_by_topic.into_iter() {
             println!("Pushing data to topic {}", topic_name);
-            let topic_client = client.topic(topic_name).await.context(ClientSnafu {})?;
+            let topic_client = client
+                .push_client(topic_name)
+                .await
+                .context(ClientSnafu {})?;
             let mut futures = FuturesOrdered::new();
 
             for request in requests {

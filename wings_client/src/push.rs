@@ -11,10 +11,7 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{
-    Request, Status,
-    metadata::{Ascii, MetadataValue},
-};
+use tonic::Status;
 use tracing::debug;
 use wings_control_plane::{
     log_metadata::CommittedBatch,
@@ -29,12 +26,13 @@ use crate::{
         Result, StreamClosedSnafu, TicketDecodeSnafu, TimeoutSnafu, TonicSnafu,
         UnexpectedRequestIdSnafu,
     },
+    metadata::new_request_for_namespace,
 };
 
 const DEFAULT_CHANNEL_SIZE: usize = 1024;
 
-/// A client to read and write data for a specific topic.
-pub struct TopicClient {
+/// A client to push data to a specific topic.
+pub struct PushClient {
     topic_name: TopicName,
     tx: mpsc::Sender<FlightData>,
     next_request_id: AtomicU64,
@@ -51,7 +49,7 @@ pub struct WriteRequest {
 }
 
 pub struct WriteResponse<'a> {
-    client: &'a TopicClient,
+    client: &'a PushClient,
     request_id: u64,
 }
 
@@ -60,7 +58,7 @@ struct InnerClient {
     completed: HashMap<u64, CommittedBatch>,
 }
 
-impl TopicClient {
+impl PushClient {
     pub(crate) async fn new(client: &WingsClient, topic: Topic) -> Result<Self> {
         debug!(topic = ?topic, "connecting to flight push endpoint");
         let mut inner = client.flight.clone();
@@ -77,7 +75,8 @@ impl TopicClient {
             encoder.encode_schema(&topic.name, topic.schema_without_partition_field());
         let _ = tx.send(schema_message).await;
 
-        let request = prepare_request(&topic.name, rx);
+        let input_stream = ReceiverStream::new(rx);
+        let request = new_request_for_namespace(&topic.name.parent, input_stream);
         let mut response_stream = inner.do_put(request).await?.into_inner().boxed();
 
         let Some(put_result) = response_stream.try_next().await? else {
@@ -182,25 +181,4 @@ impl InnerClient {
             }
         }
     }
-}
-
-fn prepare_request(
-    topic_name: &TopicName,
-    rx: mpsc::Receiver<FlightData>,
-) -> Request<ReceiverStream<FlightData>> {
-    let input_stream = ReceiverStream::new(rx);
-    let mut request = Request::new(input_stream);
-
-    // PANIC: we know that the namespace name must be a valid ASCII string
-    let namespace_ascii: MetadataValue<Ascii> = topic_name
-        .parent()
-        .to_string()
-        .parse()
-        .expect("non-ascii namespace name");
-
-    request
-        .metadata_mut()
-        .insert("x-wings-namespace", namespace_ascii);
-
-    request
 }

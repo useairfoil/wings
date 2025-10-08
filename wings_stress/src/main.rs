@@ -5,7 +5,7 @@ use snafu::ResultExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_client::{TopicClient, WingsClient};
+use wings_client::{PushClient, WingsClient};
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
     log_metadata::CommittedBatch,
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
     for topic in cli.topic.into_iter() {
         let topic_name = ensure_topic_exists(&cluster_meta, &namespace, &topic).await?;
         let topic_client = ingestion_client
-            .topic(topic_name.clone())
+            .push_client(topic_name.clone())
             .await
             .context(ClientSnafu {})?;
         let batch_size_range = batch_size_range.clone();
@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
 
 async fn run_stress_test_for_topic(
     mut generator: RequestGenerator,
-    client: TopicClient,
+    client: PushClient,
     concurrency: usize,
     ct: CancellationToken,
 ) -> Result<()> {

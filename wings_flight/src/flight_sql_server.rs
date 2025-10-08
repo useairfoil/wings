@@ -31,7 +31,8 @@ use wings_ingestor_core::BatchIngestorClient;
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
-    error::FlightServerError, ingestion::process_ingestion_stream, ticket::StatementQueryTicket,
+    FetchTicket, error::FlightServerError, ingestion::process_ingestion_stream,
+    ticket::StatementQueryTicket,
 };
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
@@ -335,6 +336,87 @@ impl FlightSqlService for WingsFlightSqlServer {
             .sql(&ticket.query)
             .await
             .map_err(FlightServerError::from)?;
+
+        let schema: Arc<_> = out.schema().as_arrow().clone().into();
+
+        let stream = out
+            .execute_stream()
+            .await
+            .map_err(FlightServerError::from)?;
+
+        let stream = FlightDataEncoderBuilder::new()
+            .with_schema(schema)
+            .build(stream.map_err(|err| FlightError::from_external_error(Box::new(err))))
+            .map_err(Status::from)
+            .boxed();
+
+        Ok(Response::new(stream))
+    }
+
+    #[instrument(level = "DEBUG", skip_all)]
+    async fn do_get_fallback(
+        &self,
+        request: Request<Ticket>,
+        message: Any,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let namespace_name = get_namespace_from_headers(request.metadata())?;
+
+        let FetchTicket {
+            topic_name,
+            partition_value,
+            offset,
+            timeout: _timeout,
+            min_batch_size,
+            max_batch_size,
+        } = FetchTicket::try_decode_any(message)?;
+
+        let _min_batch_size = min_batch_size.unwrap_or(1);
+        let max_batch_size = max_batch_size.unwrap_or(10_000);
+
+        if topic_name.parent() != &namespace_name {
+            return Err(Status::invalid_argument(format!(
+                "topic name must be in namespace: {namespace_name}"
+            )));
+        }
+
+        let topic_ref = self
+            .topic_cache
+            .get(topic_name.clone())
+            .await
+            .map_err(|err| {
+                if err.is_not_found() {
+                    Status::not_found(format!("topic not found: {topic_name}"))
+                } else {
+                    Status::internal(format!("failed to resolve topic: {topic_name}"))
+                }
+            })?;
+
+        let ctx = self
+            .new_session_context(namespace_name)
+            .await
+            .map_err(FlightServerError::from)?;
+
+        // TODO: rewrite all of this to build the plan programatically
+        // it should also use the min batch size and timeout while running the query.
+        let partition_query = if let Some(field) = topic_ref.partition_field() {
+            format!(
+                "AND {} = {}",
+                field.name(),
+                partition_value.map(|v| v.to_string()).unwrap_or_default()
+            )
+        } else {
+            String::new()
+        };
+
+        let query = format!(
+            "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {}",
+            topic_name.id(),
+            offset,
+            offset + max_batch_size as u64,
+            partition_query
+        );
+
+        let out = ctx.sql(&query).await.map_err(FlightServerError::from)?;
 
         let schema: Arc<_> = out.schema().as_arrow().clone().into();
 

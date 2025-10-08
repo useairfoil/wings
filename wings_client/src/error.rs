@@ -1,5 +1,6 @@
+use arrow_flight::error::FlightError;
 use snafu::Snafu;
-use wings_flight::TicketDecodeError;
+use wings_flight::{TicketDecodeError, TicketEncodeError};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -17,6 +18,12 @@ pub enum ClientError {
     },
     #[snafu(display("Ticket decode error"))]
     TicketDecode { source: TicketDecodeError },
+    #[snafu(display("Ticket encode error"))]
+    TicketEncode { source: TicketEncodeError },
+    #[snafu(display("Missing partition value. Please set it with `with_partition`"))]
+    MissingPartitionValue,
+    #[snafu(display("Flight error"))]
+    FlightError { source: FlightError },
     #[snafu(display("Stream closed"))]
     StreamClosed,
     #[snafu(display("Timeout"))]
