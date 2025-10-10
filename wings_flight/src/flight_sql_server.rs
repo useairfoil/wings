@@ -370,7 +370,7 @@ impl FlightSqlService for WingsFlightSqlServer {
             max_batch_size,
         } = FetchTicket::try_decode_any(message)?;
 
-        let _min_batch_size = min_batch_size.unwrap_or(1);
+        let min_batch_size = min_batch_size.unwrap_or(1);
         let max_batch_size = max_batch_size.unwrap_or(10_000);
 
         if topic_name.parent() != &namespace_name {
@@ -396,6 +396,13 @@ impl FlightSqlService for WingsFlightSqlServer {
             .await
             .map_err(FlightServerError::from)?;
 
+        ctx.state_ref()
+            .write()
+            .config_mut()
+            .options_mut()
+            .set("wings.min_rows", &format!("{min_batch_size}"))
+            .expect("update options");
+
         // TODO: rewrite all of this to build the plan programatically
         // it should also use the min batch size and timeout while running the query.
         let partition_query = if let Some(field) = topic_ref.partition_field() {
@@ -409,7 +416,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         };
 
         let query = format!(
-            "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {}",
+            "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
             topic_name.id(),
             offset,
             offset + max_batch_size as u64,

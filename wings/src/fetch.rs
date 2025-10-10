@@ -23,6 +23,9 @@ pub struct FetchArgs {
     /// Change the maximum batch size
     #[arg(long)]
     max_batch_size: Option<usize>,
+    /// Change the minimum batch size
+    #[arg(long)]
+    min_batch_size: Option<usize>,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
@@ -51,6 +54,10 @@ impl FetchArgs {
 
         if let Some(max_batch_size) = self.max_batch_size {
             topic_client = topic_client.with_max_batch_size(max_batch_size);
+        }
+
+        if let Some(min_batch_size) = self.min_batch_size {
+            topic_client = topic_client.with_min_batch_size(min_batch_size);
         }
 
         loop {

@@ -15,7 +15,7 @@ extensions_options! {
 }
 
 impl ConfigExtension for FetchOptions {
-    const PREFIX: &'static str = "wings.fetch";
+    const PREFIX: &'static str = "wings";
 }
 
 impl FetchOptions {

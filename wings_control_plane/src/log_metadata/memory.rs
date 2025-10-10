@@ -13,7 +13,7 @@ use std::{
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{
     cluster_metadata::{ClusterMetadata, cache::TopicCache},
@@ -358,26 +358,50 @@ impl PartitionLogState {
     fn get_log_location_by_offset(
         &self,
         offset: u64,
-        _options: GetLogLocationOptions,
+        options: GetLogLocationOptions,
     ) -> Result<Vec<LogLocation>> {
+        let target_offset = offset + options.min_rows as u64;
         // Find the batch containing this offset
         let batch_start = self.pages.range(..=offset).next_back();
 
-        let Some((&_start_offset, batch_info)) = batch_start else {
+        debug!(offset, target_offset, "get log location by offset");
+
+        let Some((&start_offset, _page_info)) = batch_start else {
+            debug!("no page found for offset");
             return Ok(Vec::default());
         };
 
-        // TODO: Implement logic to fetch multiple locations at once
-        if offset <= batch_info.end_offset.offset {
-            return Ok(vec![LogLocation::Folio(FolioLocation {
-                file_ref: batch_info.file_ref.clone(),
-                offset_bytes: batch_info.offset_bytes,
-                size_bytes: batch_info.size_bytes,
-                batches: batch_info.batches.clone(),
-            })]);
+        let mut locations = Vec::new();
+        for (start_offset, page_info) in self.pages.range(start_offset..) {
+            trace!(
+                start_offset,
+                end_offset = page_info.end_offset.offset,
+                target_offset,
+                "processing page"
+            );
+
+            if page_info.end_offset.offset < offset {
+                continue;
+            }
+
+            if *start_offset > target_offset {
+                break;
+            }
+
+            locations.push(LogLocation::Folio(FolioLocation {
+                file_ref: page_info.file_ref.clone(),
+                offset_bytes: page_info.offset_bytes,
+                size_bytes: page_info.size_bytes,
+                batches: page_info.batches.clone(),
+            }));
         }
 
-        Ok(Vec::default())
+        // TODO: check that target offset was reached. if not, wait for changes to the next offset
+        // unfortunately that means this method becomes async and we need to lock the inner state
+        // every time state is updated, the notifier is notified and we can push more locations
+        // until the target offset is reached
+
+        Ok(locations)
     }
 }
 

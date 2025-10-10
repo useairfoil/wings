@@ -166,7 +166,7 @@ pub fn gen_log_location_stream_in_range(
 ) -> impl LogLocationStream {
     async_stream::stream! {
         let mut current_offset = *offset_range.start();
-        loop {
+        'outer: loop {
             if current_offset > *offset_range.end() {
                 break;
             }
@@ -178,7 +178,7 @@ pub fn gen_log_location_stream_in_range(
                 options: options.clone(),
             };
 
-            let mut response = log_metadata
+            let response = log_metadata
                 .get_log_location(request)
                 .await?;
 
@@ -186,19 +186,15 @@ pub fn gen_log_location_stream_in_range(
                 break;
             }
 
-            assert_eq!(response.len(), 1);
+            for location in response {
+                let Some(end_offset) = location.end_offset() else {
+                    break 'outer;
+                };
 
-            let Some(location) = response.pop() else {
-                break;
-            };
+                current_offset = end_offset.offset + 1;
 
-            let Some(end_offset) = location.end_offset() else {
-                break;
-            };
-
-            current_offset = end_offset.offset + 1;
-
-            yield Ok((topic_name.clone(), partition_value.clone(), location));
+                yield Ok((topic_name.clone(), partition_value.clone(), location));
+            }
         }
     }
 }
