@@ -119,12 +119,9 @@ impl LogMetadata for InMemoryLogMetadata {
         Ok(committed_pages)
     }
 
-    async fn get_log_location(
-        &self,
-        request: GetLogLocationRequest,
-    ) -> Result<Option<LogLocation>> {
+    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
         let Some(topic_state) = self.topics.get(&request.topic_name) else {
-            return Ok(None);
+            return Ok(Vec::default());
         };
 
         let partition_key = PartitionKey::new(request.topic_name, request.partition_value);
@@ -267,9 +264,9 @@ impl TopicLogState {
         partition_key: PartitionKey,
         location: LogLocationRequest,
         options: GetLogLocationOptions,
-    ) -> Result<Option<LogLocation>> {
+    ) -> Result<Vec<LogLocation>> {
         let Some(partition_state) = self.partitions.get(&partition_key) else {
-            return Ok(None);
+            return Ok(Vec::default());
         };
 
         partition_state.get_log_location(location, options)
@@ -352,7 +349,7 @@ impl PartitionLogState {
         &self,
         location: LogLocationRequest,
         options: GetLogLocationOptions,
-    ) -> Result<Option<LogLocation>> {
+    ) -> Result<Vec<LogLocation>> {
         match location {
             LogLocationRequest::Offset(offset) => self.get_log_location_by_offset(offset, options),
         }
@@ -362,25 +359,25 @@ impl PartitionLogState {
         &self,
         offset: u64,
         _options: GetLogLocationOptions,
-    ) -> Result<Option<LogLocation>> {
+    ) -> Result<Vec<LogLocation>> {
         // Find the batch containing this offset
         let batch_start = self.pages.range(..=offset).next_back();
 
         let Some((&_start_offset, batch_info)) = batch_start else {
-            return Ok(None);
+            return Ok(Vec::default());
         };
 
+        // TODO: Implement logic to fetch multiple locations at once
         if offset <= batch_info.end_offset.offset {
-            return Ok(LogLocation::Folio(FolioLocation {
+            return Ok(vec![LogLocation::Folio(FolioLocation {
                 file_ref: batch_info.file_ref.clone(),
                 offset_bytes: batch_info.offset_bytes,
                 size_bytes: batch_info.size_bytes,
                 batches: batch_info.batches.clone(),
-            })
-            .into());
+            })]);
         }
 
-        Ok(None)
+        Ok(Vec::default())
     }
 }
 

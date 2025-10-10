@@ -61,6 +61,10 @@ message GetLogLocationOptions {
 }
 
 message GetLogLocationResponse {
+  repeated LogLocation locations = 1;
+}
+
+message LogLocation {
   oneof location {
     FolioLocation folio_location = 1;
   }

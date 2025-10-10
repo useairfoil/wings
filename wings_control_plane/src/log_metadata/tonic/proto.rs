@@ -361,34 +361,46 @@ impl From<LogLocationRequest> for pb::get_log_location_request::Location {
     }
 }
 
-impl TryFrom<pb::GetLogLocationResponse> for Option<LogLocation> {
+impl TryFrom<pb::GetLogLocationResponse> for Vec<LogLocation> {
     type Error = LogMetadataError;
 
     fn try_from(response: pb::GetLogLocationResponse) -> Result<Self, Self::Error> {
-        use pb::get_log_location_response::Location as ProtoLocation;
+        use pb::log_location::Location as ProtoLocation;
 
-        let Some(location) = response.location else {
-            return Ok(None);
-        };
-
-        match location {
-            ProtoLocation::FolioLocation(folio) => {
-                let inner = folio.try_into()?;
-                Ok(LogLocation::Folio(inner).into())
-            }
-        }
+        response
+            .locations
+            .into_iter()
+            .map(|location| match location.location {
+                None => Err(LogMetadataError::Internal {
+                    message: "missing location in LogLocation proto".to_string(),
+                }),
+                Some(ProtoLocation::FolioLocation(folio)) => {
+                    let inner = folio.try_into()?;
+                    Ok(LogLocation::Folio(inner))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()
     }
 }
 
-impl From<Option<LogLocation>> for pb::GetLogLocationResponse {
-    fn from(location: Option<LogLocation>) -> Self {
-        use pb::get_log_location_response::Location;
+impl From<Vec<LogLocation>> for pb::GetLogLocationResponse {
+    fn from(locations: Vec<LogLocation>) -> Self {
+        use pb::log_location::Location;
 
-        let inner = location.map(|location| match location {
-            LogLocation::Folio(folio) => Location::FolioLocation(folio.into()),
-        });
+        let locations = locations
+            .into_iter()
+            .map(|location| {
+                let inner = match location {
+                    LogLocation::Folio(folio) => Location::FolioLocation(folio.into()),
+                };
 
-        pb::GetLogLocationResponse { location: inner }
+                pb::LogLocation {
+                    location: Some(inner),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        pb::GetLogLocationResponse { locations }
     }
 }
 

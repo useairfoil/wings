@@ -69,10 +69,7 @@ where
             .try_into()
     }
 
-    async fn get_log_location(
-        &self,
-        request: GetLogLocationRequest,
-    ) -> Result<Option<LogLocation>> {
+    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
         let request: pb::GetLogLocationRequest = request.into();
 
         let response = self

@@ -24,9 +24,8 @@ pub trait LogMetadata: Send + Sync {
         pages: &[CommitPageRequest],
     ) -> Result<Vec<CommitPageResponse>>;
 
-    /// Retrieves the location of the log for the specified topic and partition.
-    async fn get_log_location(&self, request: GetLogLocationRequest)
-    -> Result<Option<LogLocation>>;
+    /// Retrieves the locations of the logs for the specified topic and partition.
+    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>>;
 
     /// List the partitions of a topic.
     async fn list_partitions(
@@ -131,7 +130,7 @@ pub struct GetLogLocationOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogLocationRequest {
-    /// Request the location of the log at the specified offset.
+    /// Request the location of the logs starting at the specified offset.
     Offset(u64),
 }
 

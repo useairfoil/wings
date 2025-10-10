@@ -178,11 +178,17 @@ pub fn gen_log_location_stream_in_range(
                 options: options.clone(),
             };
 
-            let response = log_metadata
+            let mut response = log_metadata
                 .get_log_location(request)
                 .await?;
 
-            let Some(location) = response else {
+            if response.is_empty() {
+                break;
+            }
+
+            assert_eq!(response.len(), 1);
+
+            let Some(location) = response.pop() else {
                 break;
             };
 
