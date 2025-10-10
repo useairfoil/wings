@@ -7,9 +7,9 @@ use snafu::{ResultExt, ensure};
 use crate::{
     log_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse,
-        CommittedBatch, FolioLocation, GetLogLocationRequest, ListPartitionsRequest,
-        ListPartitionsResponse, LogLocation, LogLocationRequest, LogMetadataError, LogOffset,
-        PartitionMetadata, RejectedBatchInfo,
+        CommittedBatch, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
+        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogLocationRequest,
+        LogMetadataError, LogOffset, PartitionMetadata, RejectedBatchInfo,
         error::{InvalidArgumentSnafu, InvalidResourceNameSnafu, InvalidTimestampSnafu},
     },
     resources::{PartitionValue, TopicName},
@@ -278,12 +278,12 @@ impl TryFrom<pb::GetLogLocationRequest> for GetLogLocationRequest {
 
         let partition_value = request.partition.map(TryFrom::try_from).transpose()?;
 
-        let deadline = request
-            .deadline
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Arc::new)
-            .context(InvalidTimestampSnafu {})?;
+        let options = request
+            .options
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing options in GetLocationRequest proto".to_string(),
+            })?
+            .try_into()?;
 
         let location = request
             .location
@@ -295,8 +295,27 @@ impl TryFrom<pb::GetLogLocationRequest> for GetLogLocationRequest {
         Ok(GetLogLocationRequest {
             topic_name,
             partition_value,
-            deadline,
+            options,
             location,
+        })
+    }
+}
+
+impl TryFrom<pb::GetLogLocationOptions> for GetLogLocationOptions {
+    type Error = LogMetadataError;
+
+    fn try_from(options: pb::GetLogLocationOptions) -> Result<Self, Self::Error> {
+        let deadline = options
+            .deadline
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Arc::new)
+            .context(InvalidTimestampSnafu {})?;
+
+        Ok(GetLogLocationOptions {
+            deadline,
+            min_rows: options.min_rows as _,
+            max_rows: options.max_rows as _,
         })
     }
 }
@@ -306,8 +325,18 @@ impl From<GetLogLocationRequest> for pb::GetLogLocationRequest {
         pb::GetLogLocationRequest {
             topic: request.topic_name.to_string(),
             partition: request.partition_value.as_ref().map(Into::into),
-            deadline: request.deadline.map(Into::into),
+            options: Some(request.options.into()),
             location: Some(request.location.into()),
+        }
+    }
+}
+
+impl From<GetLogLocationOptions> for pb::GetLogLocationOptions {
+    fn from(options: GetLogLocationOptions) -> Self {
+        Self {
+            deadline: options.deadline.map(Into::into),
+            min_rows: options.min_rows as _,
+            max_rows: options.max_rows as _,
         }
     }
 }

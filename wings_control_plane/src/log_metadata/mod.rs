@@ -113,10 +113,20 @@ pub struct GetLogLocationRequest {
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The deadline for the request.
-    pub deadline: Option<SystemTime>,
     /// The location request.
     pub location: LogLocationRequest,
+    /// The options for the request.
+    pub options: GetLogLocationOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GetLogLocationOptions {
+    /// The deadline for the request.
+    pub deadline: Option<SystemTime>,
+    /// The minimum number of rows to retrieve.
+    pub min_rows: usize,
+    /// The (soft) maximum number of rows to retrieve.
+    pub max_rows: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

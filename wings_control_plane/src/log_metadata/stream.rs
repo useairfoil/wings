@@ -15,7 +15,7 @@ use crate::{
     resources::{PartitionValue, TopicName},
 };
 
-use super::{LogLocation, LogMetadata, PartitionMetadata, Result};
+use super::{GetLogLocationOptions, LogLocation, LogMetadata, PartitionMetadata, Result};
 
 pub trait PartitionMetadataPageStream:
     Stream<Item = Result<(TopicName, Vec<PartitionMetadata>)>>
@@ -71,8 +71,9 @@ impl PaginatedLogLocationStream {
         log_metadata: Arc<dyn LogMetadata>,
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
+        options: GetLogLocationOptions,
     ) -> Self {
-        let inner = gen_log_location_stream(log_metadata, topic_name, partition_value);
+        let inner = gen_log_location_stream(log_metadata, topic_name, partition_value, options);
         Self {
             inner: Box::pin(inner),
         }
@@ -83,12 +84,14 @@ impl PaginatedLogLocationStream {
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
         offset_range: RangeInclusive<u64>,
+        options: GetLogLocationOptions,
     ) -> Self {
         let inner = gen_log_location_stream_in_range(
             log_metadata,
             topic_name,
             partition_value,
             offset_range,
+            options,
         );
         Self {
             inner: Box::pin(inner),
@@ -143,8 +146,15 @@ pub fn gen_log_location_stream(
     log_metadata: Arc<dyn LogMetadata>,
     topic_name: TopicName,
     partition_value: Option<PartitionValue>,
+    options: GetLogLocationOptions,
 ) -> impl LogLocationStream {
-    gen_log_location_stream_in_range(log_metadata, topic_name, partition_value, 0..=u64::MAX)
+    gen_log_location_stream_in_range(
+        log_metadata,
+        topic_name,
+        partition_value,
+        0..=u64::MAX,
+        options,
+    )
 }
 
 pub fn gen_log_location_stream_in_range(
@@ -152,6 +162,7 @@ pub fn gen_log_location_stream_in_range(
     topic_name: TopicName,
     partition_value: Option<PartitionValue>,
     offset_range: RangeInclusive<u64>,
+    options: GetLogLocationOptions,
 ) -> impl LogLocationStream {
     async_stream::stream! {
         let mut current_offset = *offset_range.start();
@@ -164,7 +175,7 @@ pub fn gen_log_location_stream_in_range(
                 topic_name: topic_name.clone(),
                 partition_value: partition_value.clone(),
                 location: LogLocationRequest::Offset(current_offset),
-                deadline: None,
+                options: options.clone(),
             };
 
             let response = log_metadata

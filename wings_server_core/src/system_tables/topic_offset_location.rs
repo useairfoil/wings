@@ -14,7 +14,7 @@ use wings_control_plane::{
     cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
 };
 
-use crate::datafusion_helpers::apply_projection;
+use crate::{datafusion_helpers::apply_projection, options::SessionConfigExt};
 
 use super::{exec::TopicOffsetLocationDiscoveryExec, helpers::find_topic_name_in_filters};
 
@@ -63,18 +63,21 @@ impl TableProvider for TopicOffsetLocationSystemTable {
 
     async fn scan(
         &self,
-        _state: &dyn Session,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
         let topics_filter = find_topic_name_in_filters(filters);
 
+        let fetch_options = state.config().fetch_options().clone();
+
         let topic_offset_exec = TopicOffsetLocationDiscoveryExec::new(
             self.cluster_meta.clone(),
             self.log_meta.clone(),
             self.namespace.clone(),
             topics_filter,
+            fetch_options,
         );
 
         apply_projection(Arc::new(topic_offset_exec), projection)

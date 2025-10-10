@@ -25,9 +25,9 @@ use crate::{
 };
 
 use super::{
-    CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation, GetLogLocationRequest,
-    ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogLocationRequest, LogMetadata,
-    LogMetadataError, LogOffset, PartitionMetadata, Result,
+    CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation, GetLogLocationOptions,
+    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
+    LogLocationRequest, LogMetadata, LogMetadataError, LogOffset, PartitionMetadata, Result,
     timestamp::compare_batch_request_timestamps,
 };
 
@@ -128,7 +128,7 @@ impl LogMetadata for InMemoryLogMetadata {
         };
 
         let partition_key = PartitionKey::new(request.topic_name, request.partition_value);
-        topic_state.get_log_location(partition_key, request.location, request.deadline)
+        topic_state.get_log_location(partition_key, request.location, request.options)
     }
 
     async fn list_partitions(
@@ -266,13 +266,13 @@ impl TopicLogState {
         &self,
         partition_key: PartitionKey,
         location: LogLocationRequest,
-        deadline: Option<SystemTime>,
+        options: GetLogLocationOptions,
     ) -> Result<Option<LogLocation>> {
         let Some(partition_state) = self.partitions.get(&partition_key) else {
             return Ok(None);
         };
 
-        partition_state.get_log_location(location, deadline)
+        partition_state.get_log_location(location, options)
     }
 }
 
@@ -351,17 +351,17 @@ impl PartitionLogState {
     fn get_log_location(
         &self,
         location: LogLocationRequest,
-        deadline: Option<SystemTime>,
+        options: GetLogLocationOptions,
     ) -> Result<Option<LogLocation>> {
         match location {
-            LogLocationRequest::Offset(offset) => self.get_log_location_by_offset(offset, deadline),
+            LogLocationRequest::Offset(offset) => self.get_log_location_by_offset(offset, options),
         }
     }
 
     fn get_log_location_by_offset(
         &self,
         offset: u64,
-        _deadline: Option<SystemTime>,
+        _options: GetLogLocationOptions,
     ) -> Result<Option<LogLocation>> {
         // Find the batch containing this offset
         let batch_start = self.pages.range(..=offset).next_back();

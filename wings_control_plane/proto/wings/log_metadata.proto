@@ -48,10 +48,16 @@ message CommitPageResponse {
 message GetLogLocationRequest {
   string topic = 1;
   optional PartitionValue partition = 2;
-  google.protobuf.Timestamp deadline = 3;
+  GetLogLocationOptions options = 3;
   oneof location {
       uint64 offset = 4;
   }
+}
+
+message GetLogLocationOptions {
+  google.protobuf.Timestamp deadline = 1;
+  uint32 min_rows = 2;
+  uint32 max_rows = 3;
 }
 
 message GetLogLocationResponse {

@@ -1,4 +1,4 @@
-use std::{any::Any, fmt, sync::Arc};
+use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
 use datafusion::{
     common::arrow::{
@@ -25,7 +25,7 @@ use wings_control_plane::{
     resources::{NamespaceName, PartitionValue, TopicName},
 };
 
-use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
+use crate::{options::FetchOptions, system_tables::helpers::TOPIC_NAME_COLUMN};
 
 /// Execution plan for discovering the location of topic offsets.
 pub struct TopicOffsetLocationDiscoveryExec {
@@ -34,6 +34,7 @@ pub struct TopicOffsetLocationDiscoveryExec {
     namespace: NamespaceName,
     topics: Option<Vec<String>>,
     properties: PlanProperties,
+    fetch_options: FetchOptions,
 }
 
 impl TopicOffsetLocationDiscoveryExec {
@@ -42,6 +43,7 @@ impl TopicOffsetLocationDiscoveryExec {
         log_meta: Arc<dyn LogMetadata>,
         namespace: NamespaceName,
         topics: Option<Vec<String>>,
+        fetch_options: FetchOptions,
     ) -> Self {
         let schema = Self::schema();
         let properties = Self::compute_properties(&schema);
@@ -52,6 +54,7 @@ impl TopicOffsetLocationDiscoveryExec {
             namespace,
             topics,
             properties,
+            fetch_options,
         }
     }
 
@@ -161,8 +164,13 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
             }
         });
 
+        let log_location_options = self
+            .fetch_options
+            .get_log_location_options(SystemTime::now());
+
         let offset_locations = topic_partition_states.flat_map_unordered(None, {
             let offset_registry = offset_registry.clone();
+            let log_location_options = log_location_options.clone();
             move |state_result| {
                 let (topic_name, states) = match state_result {
                     Ok(v) => v,
@@ -173,11 +181,13 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
 
                 let stream_iter = states.into_iter().map({
                     let offset_registry = offset_registry.clone();
+                    let log_location_options = log_location_options.clone();
                     move |state| {
                         PaginatedLogLocationStream::new(
                             offset_registry.clone(),
                             topic_name.clone(),
                             state.partition_value,
+                            log_location_options.clone(),
                         )
                         .map_err(DataFusionError::from)
                     }

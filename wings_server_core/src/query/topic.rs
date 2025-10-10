@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use datafusion::{
@@ -17,9 +17,12 @@ use wings_control_plane::{
     resources::{Namespace, PartitionValue, Topic},
 };
 
-use crate::query::{
-    exec::FolioExec,
-    helpers::{find_partition_column_value, validate_offset_filters},
+use crate::{
+    options::SessionConfigExt,
+    query::{
+        exec::FolioExec,
+        helpers::{find_partition_column_value, validate_offset_filters},
+    },
 };
 
 pub const OFFSET_COLUMN_NAME: &str = "__offset__";
@@ -119,11 +122,15 @@ impl TableProvider for TopicTableProvider {
                 (None, None)
             };
 
+        let fetch_options = state.config().fetch_options();
+        let now = SystemTime::now();
+
         let offset_location_stream = PaginatedLogLocationStream::new_in_offset_range(
             self.log_meta.clone(),
             self.topic.name.clone(),
             partition_value,
             offset_range,
+            fetch_options.get_log_location_options(now),
         );
 
         let locations = offset_location_stream.try_collect::<Vec<_>>().await?;

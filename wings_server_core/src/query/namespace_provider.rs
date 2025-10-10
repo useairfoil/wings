@@ -15,7 +15,9 @@ use wings_control_plane::{
 };
 use wings_object_store::ObjectStoreFactory;
 
-use crate::{query::topic::TopicTableProvider, system_tables::SystemSchemaProvider};
+use crate::{
+    options::FetchOptions, query::topic::TopicTableProvider, system_tables::SystemSchemaProvider,
+};
 
 pub const DEFAULT_CATALOG: &str = "wings";
 pub const DEFAULT_SCHEMA: &str = "public";
@@ -94,7 +96,8 @@ impl NamespaceProvider {
     pub async fn new_session_context(&self) -> Result<SessionContext, DataFusionError> {
         let config = SessionConfig::new()
             .with_information_schema(true)
-            .with_default_catalog_and_schema(DEFAULT_CATALOG, DEFAULT_SCHEMA);
+            .with_default_catalog_and_schema(DEFAULT_CATALOG, DEFAULT_SCHEMA)
+            .with_option_extension(FetchOptions::default());
 
         let state = SessionStateBuilder::new().with_config(config);
 
