@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use datafusion::{common::extensions_options, config::ConfigExtension, prelude::SessionConfig};
 use wings_control_plane::log_metadata::GetLogLocationOptions;
@@ -19,10 +19,10 @@ impl ConfigExtension for FetchOptions {
 }
 
 impl FetchOptions {
-    pub fn get_log_location_options(&self, now: SystemTime) -> GetLogLocationOptions {
-        let deadline = now + Duration::from_millis(self.timeout_ms);
+    pub fn get_log_location_options(&self) -> GetLogLocationOptions {
+        let deadline = Duration::from_millis(self.timeout_ms);
         GetLogLocationOptions {
-            deadline: deadline.into(),
+            deadline,
             min_rows: self.min_rows,
             max_rows: self.max_rows,
         }

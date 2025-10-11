@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc, time::SystemTime};
+use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
 use datafusion::{
@@ -123,14 +123,13 @@ impl TableProvider for TopicTableProvider {
             };
 
         let fetch_options = state.config().fetch_options();
-        let now = SystemTime::now();
 
         let offset_location_stream = PaginatedLogLocationStream::new_in_offset_range(
             self.log_meta.clone(),
             self.topic.name.clone(),
             partition_value,
             offset_range,
-            fetch_options.get_log_location_options(now),
+            fetch_options.get_log_location_options(),
         );
 
         let locations = offset_location_stream.try_collect::<Vec<_>>().await?;

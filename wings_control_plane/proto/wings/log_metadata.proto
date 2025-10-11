@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package wings.v1.log_metadata;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -55,7 +56,7 @@ message GetLogLocationRequest {
 }
 
 message GetLogLocationOptions {
-  google.protobuf.Timestamp deadline = 1;
+  google.protobuf.Duration deadline = 1;
   uint32 min_rows = 2;
   uint32 max_rows = 3;
 }

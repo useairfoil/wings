@@ -46,6 +46,10 @@ pub enum LogMetadataError {
     InvalidTimestamp {
         source: Arc<prost_types::TimestampError>,
     },
+    #[snafu(display("invalid duration"))]
+    InvalidDuration {
+        source: Arc<prost_types::DurationError>,
+    },
 }
 
 pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;

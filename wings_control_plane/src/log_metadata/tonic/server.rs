@@ -137,5 +137,8 @@ fn log_metadata_error_to_status(error: LogMetadataError) -> Status {
         LogMetadataError::InvalidTimestamp { source } => {
             Status::invalid_argument(format!("invalid timestamp: {source}"))
         }
+        LogMetadataError::InvalidDuration { source } => {
+            Status::invalid_argument(format!("invalid duration: {source}"))
+        }
     }
 }

@@ -1,4 +1,4 @@
-use std::{any::Any, fmt, sync::Arc, time::SystemTime};
+use std::{any::Any, fmt, sync::Arc};
 
 use datafusion::{
     common::arrow::{
@@ -164,9 +164,7 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
             }
         });
 
-        let log_location_options = self
-            .fetch_options
-            .get_log_location_options(SystemTime::now());
+        let log_location_options = self.fetch_options.get_log_location_options();
 
         let offset_locations = topic_partition_states.flat_map_unordered(None, {
             let offset_registry = offset_registry.clone();

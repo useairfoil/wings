@@ -4,7 +4,7 @@ pub mod stream;
 pub mod timestamp;
 pub mod tonic;
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use object_store::path::Path;
@@ -121,7 +121,7 @@ pub struct GetLogLocationRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetLogLocationOptions {
     /// The deadline for the request.
-    pub deadline: Option<SystemTime>,
+    pub deadline: Duration,
     /// The minimum number of rows to retrieve.
     pub min_rows: usize,
     /// The (soft) maximum number of rows to retrieve.

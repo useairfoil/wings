@@ -10,7 +10,10 @@ use crate::{
         CommittedBatch, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
         ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogLocationRequest,
         LogMetadataError, LogOffset, PartitionMetadata, RejectedBatchInfo,
-        error::{InvalidArgumentSnafu, InvalidResourceNameSnafu, InvalidTimestampSnafu},
+        error::{
+            InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
+            InvalidTimestampSnafu,
+        },
     },
     resources::{PartitionValue, TopicName},
 };
@@ -307,10 +310,12 @@ impl TryFrom<pb::GetLogLocationOptions> for GetLogLocationOptions {
     fn try_from(options: pb::GetLogLocationOptions) -> Result<Self, Self::Error> {
         let deadline = options
             .deadline
-            .map(TryInto::try_into)
-            .transpose()
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing deadline in GetLogLocationOptions proto".to_string(),
+            })?
+            .try_into()
             .map_err(Arc::new)
-            .context(InvalidTimestampSnafu {})?;
+            .context(InvalidDurationSnafu {})?;
 
         Ok(GetLogLocationOptions {
             deadline,
@@ -320,24 +325,35 @@ impl TryFrom<pb::GetLogLocationOptions> for GetLogLocationOptions {
     }
 }
 
-impl From<GetLogLocationRequest> for pb::GetLogLocationRequest {
-    fn from(request: GetLogLocationRequest) -> Self {
-        pb::GetLogLocationRequest {
+impl TryFrom<GetLogLocationRequest> for pb::GetLogLocationRequest {
+    type Error = LogMetadataError;
+
+    fn try_from(request: GetLogLocationRequest) -> Result<Self, Self::Error> {
+        let options = request.options.try_into()?;
+        Ok(pb::GetLogLocationRequest {
             topic: request.topic_name.to_string(),
             partition: request.partition_value.as_ref().map(Into::into),
-            options: Some(request.options.into()),
+            options: Some(options),
             location: Some(request.location.into()),
-        }
+        })
     }
 }
 
-impl From<GetLogLocationOptions> for pb::GetLogLocationOptions {
-    fn from(options: GetLogLocationOptions) -> Self {
-        Self {
-            deadline: options.deadline.map(Into::into),
+impl TryFrom<GetLogLocationOptions> for pb::GetLogLocationOptions {
+    type Error = LogMetadataError;
+
+    fn try_from(options: GetLogLocationOptions) -> Result<Self, Self::Error> {
+        let deadline = options
+            .deadline
+            .try_into()
+            .map_err(Arc::new)
+            .context(InvalidDurationSnafu {})?;
+
+        Ok(Self {
+            deadline: Some(deadline),
             min_rows: options.min_rows as _,
             max_rows: options.max_rows as _,
-        }
+        })
     }
 }
 

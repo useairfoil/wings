@@ -70,7 +70,7 @@ where
     }
 
     async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
-        let request: pb::GetLogLocationRequest = request.into();
+        let request: pb::GetLogLocationRequest = request.try_into()?;
 
         let response = self
             .client
