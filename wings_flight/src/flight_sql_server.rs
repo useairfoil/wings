@@ -365,7 +365,7 @@ impl FlightSqlService for WingsFlightSqlServer {
             topic_name,
             partition_value,
             offset,
-            timeout: _timeout,
+            timeout,
             min_batch_size,
             max_batch_size,
         } = FetchTicket::try_decode_any(message)?;
@@ -396,15 +396,23 @@ impl FlightSqlService for WingsFlightSqlServer {
             .await
             .map_err(FlightServerError::from)?;
 
-        ctx.state_ref()
-            .write()
-            .config_mut()
-            .options_mut()
-            .set("wings.min_rows", &format!("{min_batch_size}"))
-            .expect("update options");
+        {
+            // Update configuration options so that the exec plans know about them
+            let state_ref = ctx.state_ref();
+            let mut state = state_ref.write();
+            let options = state.config_mut().options_mut();
+            options
+                .set("wings.min_rows", &format!("{min_batch_size}"))
+                .expect("update wings.min_rows");
+            options
+                .set("wings.max_rows", &format!("{max_batch_size}"))
+                .expect("update wings.max_rows");
+            options
+                .set("wings.timeout_ms", &format!("{}", timeout.as_millis()))
+                .expect("update wings.timeout_ms");
+        }
 
         // TODO: rewrite all of this to build the plan programatically
-        // it should also use the min batch size and timeout while running the query.
         let partition_query = if let Some(field) = topic_ref.partition_field() {
             format!(
                 "AND {} = {}",
@@ -419,9 +427,11 @@ impl FlightSqlService for WingsFlightSqlServer {
             "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
             topic_name.id(),
             offset,
-            offset + max_batch_size as u64,
+            offset + max_batch_size as u64 - 1,
             partition_query
         );
+
+        println!("Executing query: {}", query);
 
         let out = ctx.sql(&query).await.map_err(FlightServerError::from)?;
 

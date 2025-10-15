@@ -13,6 +13,10 @@ use std::{
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use tokio::{
+    sync::{Notify, futures::OwnedNotified},
+    time::Instant,
+};
 use tracing::{debug, trace};
 
 use crate::{
@@ -57,6 +61,8 @@ struct PartitionLogState {
     next_offset: LogOffset,
     /// Maps start offset to page information for lookup.
     pages: BTreeMap<u64, PageInfo>,
+    /// Notify when a new page is added.
+    notify: Arc<Notify>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +77,12 @@ struct PageInfo {
     pub end_offset: LogOffset,
     /// The batches in the page.
     pub batches: Vec<CommittedBatch>,
+}
+
+#[derive(Debug)]
+enum GetLogLocationResult {
+    Done,
+    NeedMore(OwnedNotified),
 }
 
 impl InMemoryLogMetadata {
@@ -120,12 +132,43 @@ impl LogMetadata for InMemoryLogMetadata {
     }
 
     async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
-        let Some(topic_state) = self.topics.get(&request.topic_name) else {
-            return Ok(Vec::default());
-        };
+        trace!(?request, "InMemoryLogMetadata::get_log_location");
+        let partition_key = PartitionKey::new(request.topic_name.clone(), request.partition_value);
+        let mut locations = Vec::new();
 
-        let partition_key = PartitionKey::new(request.topic_name, request.partition_value);
-        topic_state.get_log_location(partition_key, request.location, request.options)
+        let deadline = Instant::now() + request.options.deadline;
+
+        loop {
+            let notified = {
+                let Some(topic_state) = self.topics.get(&request.topic_name) else {
+                    return Ok(Vec::default());
+                };
+
+                match topic_state.get_log_location(
+                    &partition_key,
+                    &request.location,
+                    &request.options,
+                    &mut locations,
+                )? {
+                    GetLogLocationResult::Done => {
+                        return Ok(locations);
+                    }
+                    GetLogLocationResult::NeedMore(notified) => notified,
+                }
+            };
+
+            let timeout = tokio::time::sleep_until(deadline);
+            debug!("Waiting for more log locations");
+
+            tokio::select! {
+                _ = notified => {
+                    debug!("Notified of state change");
+                }
+                _ = timeout => {
+                    return Ok(locations);
+                }
+            }
+        }
     }
 
     async fn list_partitions(
@@ -254,6 +297,7 @@ impl TopicLogState {
             .or_insert_with(|| PartitionLogState {
                 next_offset: LogOffset::default(),
                 pages: BTreeMap::new(),
+                notify: Arc::new(Notify::new()),
             });
 
         partition_state.commit_page(page, file_ref, now_ts)
@@ -261,15 +305,16 @@ impl TopicLogState {
 
     fn get_log_location(
         &self,
-        partition_key: PartitionKey,
-        location: LogLocationRequest,
-        options: GetLogLocationOptions,
-    ) -> Result<Vec<LogLocation>> {
-        let Some(partition_state) = self.partitions.get(&partition_key) else {
-            return Ok(Vec::default());
+        partition_key: &PartitionKey,
+        location: &LogLocationRequest,
+        options: &GetLogLocationOptions,
+        locations: &mut Vec<LogLocation>,
+    ) -> Result<GetLogLocationResult> {
+        let Some(partition_state) = self.partitions.get(partition_key) else {
+            return Ok(GetLogLocationResult::Done);
         };
 
-        partition_state.get_log_location(location, options)
+        partition_state.get_log_location(location, options, locations)
     }
 }
 
@@ -336,6 +381,7 @@ impl PartitionLogState {
 
             self.pages.insert(start_offset.offset, page_info);
             self.next_offset = current_offset;
+            self.notify.notify_waiters();
         }
 
         Ok(CommitPageResponse {
@@ -347,19 +393,23 @@ impl PartitionLogState {
 
     fn get_log_location(
         &self,
-        location: LogLocationRequest,
-        options: GetLogLocationOptions,
-    ) -> Result<Vec<LogLocation>> {
+        location: &LogLocationRequest,
+        options: &GetLogLocationOptions,
+        locations: &mut Vec<LogLocation>,
+    ) -> Result<GetLogLocationResult> {
         match location {
-            LogLocationRequest::Offset(offset) => self.get_log_location_by_offset(offset, options),
+            LogLocationRequest::Offset(offset) => {
+                self.get_log_location_by_offset(*offset, options, locations)
+            }
         }
     }
 
     fn get_log_location_by_offset(
         &self,
         offset: u64,
-        options: GetLogLocationOptions,
-    ) -> Result<Vec<LogLocation>> {
+        options: &GetLogLocationOptions,
+        locations: &mut Vec<LogLocation>,
+    ) -> Result<GetLogLocationResult> {
         let target_offset = offset + options.min_rows as u64;
         // Find the batch containing this offset
         let batch_start = self.pages.range(..=offset).next_back();
@@ -368,10 +418,11 @@ impl PartitionLogState {
 
         let Some((&start_offset, _page_info)) = batch_start else {
             debug!("no page found for offset");
-            return Ok(Vec::default());
+            return Ok(GetLogLocationResult::Done);
         };
 
-        let mut locations = Vec::new();
+        let mut current_offset = None;
+
         for (start_offset, page_info) in self.pages.range(start_offset..) {
             trace!(
                 start_offset,
@@ -388,6 +439,8 @@ impl PartitionLogState {
                 break;
             }
 
+            current_offset = Some(page_info.end_offset.offset);
+
             locations.push(LogLocation::Folio(FolioLocation {
                 file_ref: page_info.file_ref.clone(),
                 offset_bytes: page_info.offset_bytes,
@@ -400,8 +453,19 @@ impl PartitionLogState {
         // unfortunately that means this method becomes async and we need to lock the inner state
         // every time state is updated, the notifier is notified and we can push more locations
         // until the target offset is reached
+        trace!(target_offset, ?current_offset, "finished get_log_location");
 
-        Ok(locations)
+        let Some(current_offset) = current_offset else {
+            let notified = self.notify.clone().notified_owned();
+            return Ok(GetLogLocationResult::NeedMore(notified));
+        };
+
+        if current_offset < target_offset {
+            let notified = self.notify.clone().notified_owned();
+            return Ok(GetLogLocationResult::NeedMore(notified));
+        }
+
+        Ok(GetLogLocationResult::Done)
     }
 }
 

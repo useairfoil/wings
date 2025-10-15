@@ -20,6 +20,7 @@ bytesize.workspace = true
 clap.workspace = true
 chrono = "0.4.41"
 datafusion.workspace = true
+duration-str.workspace = true
 futures.workspace = true
 nu-ansi-term = "0.50.1"
 object_store.workspace = true

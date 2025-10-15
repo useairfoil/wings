@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use arrow::{
     array::RecordBatch,
@@ -29,6 +29,7 @@ pub struct FetchClient {
     current_offset: u64,
     min_batch_size: usize,
     max_batch_size: usize,
+    timeout: Duration,
 }
 
 impl FetchClient {
@@ -45,6 +46,7 @@ impl FetchClient {
             current_offset: 0,
             min_batch_size: 1,
             max_batch_size: 1000,
+            timeout: Duration::from_millis(250),
         }
     }
 
@@ -74,6 +76,11 @@ impl FetchClient {
         self
     }
 
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
     pub async fn fetch_next(&mut self) -> Result<Vec<RecordBatch>> {
         debug!(topic = ?self.topic_name, "fetching data from flight do_get endpoint");
 
@@ -86,6 +93,7 @@ impl FetchClient {
             .with_offset(self.current_offset)
             .with_min_batch_size(self.min_batch_size)
             .with_max_batch_size(self.max_batch_size)
+            .with_timeout(self.timeout)
             .into_ticket()
             .context(TicketEncodeSnafu {})?;
 

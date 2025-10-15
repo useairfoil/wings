@@ -5,7 +5,10 @@ use tokio_util::sync::CancellationToken;
 use wings_control_plane::resources::{PartitionValue, TopicName};
 
 use crate::{
-    error::{ArrowSnafu, ClientSnafu, InvalidResourceNameSnafu, PartitionValueParseSnafu, Result},
+    error::{
+        ArrowSnafu, ClientSnafu, InvalidArgumentSnafu, InvalidResourceNameSnafu,
+        PartitionValueParseSnafu, Result,
+    },
     remote::RemoteArgs,
 };
 
@@ -26,12 +29,15 @@ pub struct FetchArgs {
     /// Change the minimum batch size
     #[arg(long)]
     min_batch_size: Option<usize>,
+    /// Change the timeout, e.g. 250ms or 1s
+    #[arg(long)]
+    timeout: Option<String>,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
 
 impl FetchArgs {
-    pub async fn run(self, _ct: CancellationToken) -> Result<()> {
+    pub async fn run(self, ct: CancellationToken) -> Result<()> {
         let client = self.remote.wings_client().await?;
 
         let topic_name = TopicName::parse(&self.topic)
@@ -60,17 +66,30 @@ impl FetchArgs {
             topic_client = topic_client.with_min_batch_size(min_batch_size);
         }
 
+        if let Some(timeout) = self.timeout {
+            let timeout = duration_str::parse(timeout).map_err(|message| {
+                InvalidArgumentSnafu {
+                    message,
+                    name: "timeout",
+                }
+                .build()
+            })?;
+            topic_client = topic_client.with_timeout(timeout);
+        }
+
         loop {
-            let batches = topic_client.fetch_next().await.context(ClientSnafu {})?;
+            let batches = match ct.run_until_cancelled(topic_client.fetch_next()).await {
+                Some(fut) => fut.context(ClientSnafu {})?,
+                None => return Ok(()),
+            };
 
             if batches.is_empty() {
-                break;
+                println!("...");
+                continue;
             }
 
             let out = pretty_format_batches(&batches).context(ArrowSnafu {})?;
             println!("{out}");
         }
-
-        Ok(())
     }
 }
