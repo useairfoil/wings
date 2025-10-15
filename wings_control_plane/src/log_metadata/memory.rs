@@ -449,10 +449,6 @@ impl PartitionLogState {
             }));
         }
 
-        // TODO: check that target offset was reached. if not, wait for changes to the next offset
-        // unfortunately that means this method becomes async and we need to lock the inner state
-        // every time state is updated, the notifier is notified and we can push more locations
-        // until the target offset is reached
         trace!(target_offset, ?current_offset, "finished get_log_location");
 
         let Some(current_offset) = current_offset else {
