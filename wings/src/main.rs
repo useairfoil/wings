@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
+use error::ObservabilitySnafu;
 use flight::FlightCommands;
-use observability::init_observability;
+use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
+use wings_observability::init_observability;
 
 use crate::{
     cluster::ClusterMetadataCommands, dev::DevArgs, error::Result, fetch::FetchArgs,
@@ -13,7 +15,6 @@ mod dev;
 mod error;
 mod fetch;
 mod flight;
-mod observability;
 mod push;
 mod remote;
 mod sql;
@@ -63,7 +64,8 @@ enum Commands {
 #[tokio::main]
 #[snafu::report]
 async fn main() -> Result<()> {
-    init_observability(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    init_observability(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+        .context(ObservabilitySnafu {})?;
 
     let cli = Cli::parse();
 

@@ -1,75 +1,14 @@
-use std::borrow::Cow;
 use std::{fmt, io};
 
 use nu_ansi_term::{Color, Style};
-use tracing::{Event, Level, Subscriber, field, span};
+use tracing::{field, span, Event, Level, Subscriber};
+use tracing_subscriber::{
+    field::{RecordFields, VisitFmt, VisitOutput},
+    fmt::{format::Writer, FmtContext, FormatEvent, FormatFields},
+    registry::LookupSpan,
+};
 
-use tracing_subscriber::field::{VisitFmt, VisitOutput};
-use tracing_subscriber::fmt::format::Writer;
-use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
-use tracing_subscriber::{EnvFilter, Layer};
-use tracing_subscriber::{prelude::*, registry::LookupSpan};
-
-const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
-
-pub type BoxedLayer<S> = Box<dyn Layer<S> + Send + Sync>;
-
-pub fn init_observability(
-    _package_name: impl Into<Cow<'static, str>>,
-    _package_version: impl Into<Cow<'static, str>>,
-) {
-    // The otel sdk doesn't follow the disabled env variable flag.
-    // so we manually implement it to disable otel exports.
-    // we diverge from the spec by defaulting to disabled.
-    let sdk_disabled = std::env::var(OTEL_SDK_DISABLED)
-        .map(|v| v == "true")
-        .unwrap_or(true);
-
-    if std::env::var("RUST_LOG").is_err() {
-        unsafe {
-            std::env::set_var("RUST_LOG", "info");
-        }
-    }
-
-    let layers = vec![stdout()];
-
-    if !sdk_disabled {
-        todo!();
-    }
-
-    tracing_subscriber::registry().with(layers).init();
-}
-
-fn stdout<S>() -> BoxedLayer<S>
-where
-    S: Subscriber,
-    for<'a> S: LookupSpan<'a>,
-{
-    let log_env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("INFO"));
-
-    let json_fmt = std::env::var("RUST_LOG_FORMAT")
-        .map(|val| val == "json")
-        .unwrap_or(false);
-
-    if json_fmt {
-        tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_target(true)
-            .json()
-            .with_filter(log_env_filter)
-            .boxed()
-    } else {
-        tracing_subscriber::fmt::layer()
-            .with_ansi(true)
-            .event_format(WingsFormat::default())
-            .fmt_fields(WingsFormat::default())
-            .with_filter(log_env_filter)
-            .boxed()
-    }
-}
-
-struct WingsFormat {
+pub struct WingsFormat {
     time_format: time::format_description::OwnedFormatItem,
 }
 
@@ -104,11 +43,7 @@ where
 }
 
 impl<'w> FormatFields<'w> for WingsFormat {
-    fn format_fields<R: __tracing_subscriber_field_RecordFields>(
-        &self,
-        writer: Writer<'w>,
-        fields: R,
-    ) -> fmt::Result {
+    fn format_fields<R: RecordFields>(&self, writer: Writer<'w>, fields: R) -> fmt::Result {
         let mut v = WingsFormatVisitor::new(writer, true);
         fields.record(&mut v);
         v.finish()

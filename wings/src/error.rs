@@ -8,6 +8,7 @@ use wings_control_plane::{
     log_metadata::LogMetadataError,
     resources::{PartitionValueParseError, ResourceError},
 };
+use wings_observability::ObservabilityError;
 
 /// CLI error types.
 #[derive(Debug, Snafu)]
@@ -69,6 +70,8 @@ pub enum CliError {
     Flight {
         source: arrow_flight::error::FlightError,
     },
+    #[snafu(display("Failed to initialize observability"))]
+    Observability { source: ObservabilityError },
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
