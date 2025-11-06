@@ -36,6 +36,7 @@ snafu.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+wings-observability = { path = "../wings_observability" }
 
 [build-dependencies]
 tonic-build.workspace = true

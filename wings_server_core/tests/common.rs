@@ -14,6 +14,7 @@ use wings_control_plane::{
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
+use wings_observability::MetricsExporter;
 use wings_server_core::query::NamespaceProviderFactory;
 
 pub fn create_ingestor_and_provider() -> (
@@ -23,6 +24,7 @@ pub fn create_ingestor_and_provider() -> (
     Arc<dyn ClusterMetadata>,
     CancellationToken,
 ) {
+    let metrics_exporter = MetricsExporter::default();
     let cluster_meta: Arc<_> = InMemoryClusterMetadata::new().into();
     let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new()
         .expect("object store factory")
@@ -31,6 +33,7 @@ pub fn create_ingestor_and_provider() -> (
     let factory = NamespaceProviderFactory::new(
         cluster_meta.clone(),
         log_meta.clone(),
+        metrics_exporter,
         object_store_factory.clone(),
     );
     let ingestor = BatchIngestor::new(object_store_factory, log_meta);

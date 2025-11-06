@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
+use wings_observability::KeyValue;
 
 use crate::resources::{
     Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName, Topic, TopicName, TopicOptions,
@@ -15,6 +16,7 @@ use crate::resources::{
 use super::{
     ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
     ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
+    metrics::ClusterMetadataMetrics,
 };
 
 #[derive(Debug, Default)]
@@ -32,6 +34,7 @@ struct ClusterMetadataStore {
 #[derive(Debug)]
 pub struct InMemoryClusterMetadata {
     store: RwLock<ClusterMetadataStore>,
+    metrics: ClusterMetadataMetrics,
 }
 
 impl InMemoryClusterMetadata {
@@ -39,12 +42,17 @@ impl InMemoryClusterMetadata {
     pub fn new() -> Self {
         Self {
             store: RwLock::new(ClusterMetadataStore::default()),
+            metrics: ClusterMetadataMetrics::default(),
         }
     }
 }
 
 impl ClusterMetadataStore {
-    fn create_tenant(&mut self, name: TenantName) -> Result<Tenant> {
+    fn create_tenant(
+        &mut self,
+        name: TenantName,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<Tenant> {
         let tenant_id = name.id().to_string();
 
         if self.tenants.contains_key(&tenant_id) {
@@ -56,6 +64,8 @@ impl ClusterMetadataStore {
 
         let tenant = Tenant::new(name);
         self.tenants.insert(tenant_id, tenant.clone());
+
+        metrics.tenants_count.add(1, &[]);
 
         Ok(tenant)
     }
@@ -110,7 +120,7 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_tenant(&mut self, name: TenantName) -> Result<()> {
+    fn delete_tenant(&mut self, name: TenantName, metrics: &ClusterMetadataMetrics) -> Result<()> {
         let tenant_id = name.id();
 
         if !self.tenants.contains_key(tenant_id) {
@@ -134,6 +144,8 @@ impl ClusterMetadataStore {
 
         self.tenants.remove(tenant_id);
 
+        metrics.tenants_count.add(-1, &[]);
+
         Ok(())
     }
 
@@ -141,14 +153,15 @@ impl ClusterMetadataStore {
         &mut self,
         name: NamespaceName,
         options: NamespaceOptions,
+        metrics: &ClusterMetadataMetrics,
     ) -> Result<Namespace> {
         let namespace_key = name.name();
-        let tenant_id = name.parent().id();
+        let tenant_id = name.parent().id().to_string();
 
-        if !self.tenants.contains_key(tenant_id) {
+        if !self.tenants.contains_key(&tenant_id) {
             return Err(ClusterMetadataError::NotFound {
                 resource: "tenant",
-                message: tenant_id.to_string(),
+                message: tenant_id,
             });
         }
 
@@ -161,6 +174,10 @@ impl ClusterMetadataStore {
 
         let namespace = Namespace::new(name, options);
         self.namespaces.insert(namespace_key, namespace.clone());
+
+        metrics
+            .namespaces_count
+            .add(1, &[KeyValue::new("tenant", tenant_id)]);
 
         Ok(namespace)
     }
@@ -232,7 +249,11 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_namespace(&mut self, name: NamespaceName) -> Result<()> {
+    fn delete_namespace(
+        &mut self,
+        name: NamespaceName,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<()> {
         let namespace_key = name.name();
 
         if !self.namespaces.contains_key(&namespace_key) {
@@ -255,10 +276,21 @@ impl ClusterMetadataStore {
         }
 
         self.namespaces.remove(&namespace_key);
+
+        let tenant_id = name.parent.id().to_string();
+        metrics
+            .namespaces_count
+            .add(-1, &[KeyValue::new("tenant", tenant_id)]);
+
         Ok(())
     }
 
-    fn create_topic(&mut self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+    fn create_topic(
+        &mut self,
+        name: TopicName,
+        options: TopicOptions,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<Topic> {
         let topic_key = name.name();
         let namespace_key = name.parent().name();
 
@@ -289,8 +321,19 @@ impl ClusterMetadataStore {
             }
         }
 
+        let namespace_id = name.parent().id().to_string();
+        let tenant_id = name.parent().parent().id().to_string();
+
         let topic = Topic::new(name, options);
         self.topics.insert(topic_key, topic.clone());
+
+        metrics.topics_count.add(
+            1,
+            &[
+                KeyValue::new("tenant", tenant_id),
+                KeyValue::new("namespace", namespace_id),
+            ],
+        );
 
         Ok(topic)
     }
@@ -362,7 +405,7 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_topic(&mut self, name: TopicName) -> Result<()> {
+    fn delete_topic(&mut self, name: TopicName, metrics: &ClusterMetadataMetrics) -> Result<()> {
         let topic_key = name.name();
 
         if !self.topics.contains_key(&topic_key) {
@@ -372,7 +415,19 @@ impl ClusterMetadataStore {
             });
         }
 
+        let namespace_id = name.parent().id().to_string();
+        let tenant_id = name.parent().parent().id().to_string();
+
         self.topics.remove(&topic_key);
+
+        metrics.topics_count.add(
+            -1,
+            &[
+                KeyValue::new("tenant", tenant_id),
+                KeyValue::new("namespace", namespace_id),
+            ],
+        );
+
         Ok(())
     }
 }
@@ -381,7 +436,7 @@ impl ClusterMetadataStore {
 impl ClusterMetadata for InMemoryClusterMetadata {
     async fn create_tenant(&self, name: TenantName) -> Result<Tenant> {
         let mut store = self.store.write().await;
-        store.create_tenant(name)
+        store.create_tenant(name, &self.metrics)
     }
 
     async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
@@ -396,7 +451,7 @@ impl ClusterMetadata for InMemoryClusterMetadata {
 
     async fn delete_tenant(&self, name: TenantName) -> Result<()> {
         let mut store = self.store.write().await;
-        store.delete_tenant(name)
+        store.delete_tenant(name, &self.metrics)
     }
 
     async fn create_namespace(
@@ -405,7 +460,7 @@ impl ClusterMetadata for InMemoryClusterMetadata {
         options: NamespaceOptions,
     ) -> Result<Namespace> {
         let mut store = self.store.write().await;
-        store.create_namespace(name, options)
+        store.create_namespace(name, options, &self.metrics)
     }
 
     async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
@@ -423,12 +478,12 @@ impl ClusterMetadata for InMemoryClusterMetadata {
 
     async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
         let mut store = self.store.write().await;
-        store.delete_namespace(name)
+        store.delete_namespace(name, &self.metrics)
     }
 
     async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
         let mut store = self.store.write().await;
-        store.create_topic(name, options)
+        store.create_topic(name, options, &self.metrics)
     }
 
     async fn get_topic(&self, name: TopicName) -> Result<Topic> {
@@ -443,7 +498,7 @@ impl ClusterMetadata for InMemoryClusterMetadata {
 
     async fn delete_topic(&self, name: TopicName, _force: bool) -> Result<()> {
         let mut store = self.store.write().await;
-        store.delete_topic(name)
+        store.delete_topic(name, &self.metrics)
     }
 }
 

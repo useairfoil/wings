@@ -19,6 +19,7 @@ async-trait.workspace = true
 datafusion.workspace = true
 futures.workspace = true
 object_store.workspace = true
+opentelemetry_sdk.workspace = true
 parquet.workspace = true
 pin-project.workspace = true
 serde.workspace = true
@@ -29,6 +30,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
+wings-observability = { path = "../wings_observability" }
 
 [dev-dependencies]
 wings-ingestor-core = { path = "../wings_ingestor_core" }

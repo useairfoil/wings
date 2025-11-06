@@ -3,7 +3,7 @@ use error::ObservabilitySnafu;
 use flight::FlightCommands;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_observability::init_observability;
+use wings_observability::{MetricsExporter, init_observability};
 
 use crate::{
     cluster::ClusterMetadataCommands, dev::DevArgs, error::Result, fetch::FetchArgs,
@@ -64,8 +64,14 @@ enum Commands {
 #[tokio::main]
 #[snafu::report]
 async fn main() -> Result<()> {
-    init_observability(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
-        .context(ObservabilitySnafu {})?;
+    let metrics_exporter = MetricsExporter::default();
+
+    init_observability(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        metrics_exporter.clone(),
+    )
+    .context(ObservabilitySnafu {})?;
 
     let cli = Cli::parse();
 
@@ -78,7 +84,7 @@ async fn main() -> Result<()> {
     });
 
     match cli.command {
-        Commands::Dev { inner } => inner.run(ct).await,
+        Commands::Dev { inner } => inner.run(metrics_exporter, ct).await,
         Commands::Cluster { inner } => inner.run(ct).await,
         Commands::Flight { inner } => inner.run(ct).await,
         Commands::Push { inner } => inner.run(ct).await,

@@ -1,5 +1,6 @@
 mod exec;
 mod helpers;
+mod metrics;
 mod namespace_info;
 mod provider;
 mod topic;
@@ -17,10 +18,11 @@ use datafusion::{
 use wings_control_plane::{
     cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
 };
+use wings_observability::MetricsExporter;
 
 use self::{
-    namespace_info::NamespaceInfoTable, provider::SystemTableProvider, topic::TopicSystemTable,
-    topic_offset_location::TopicOffsetLocationSystemTable,
+    metrics::MetricsSystemTable, namespace_info::NamespaceInfoTable, provider::SystemTableProvider,
+    topic::TopicSystemTable, topic_offset_location::TopicOffsetLocationSystemTable,
     topic_partition_value::TopicPartitionValueSystemTable, topic_schema::TopicSchemaTable,
 };
 
@@ -29,6 +31,7 @@ pub const TOPIC_TABLE_NAME: &str = "topic";
 pub const TOPIC_SCHEMA_TABLE_NAME: &str = "topic_schema";
 pub const TOPIC_PARTITION_VALUE_TABLE_NAME: &str = "topic_partition_value";
 pub const TOPIC_OFFSET_LOCATION_TABLE_NAME: &str = "topic_offset_location";
+pub const METRICS_TABLE_NAME: &str = "metrics";
 
 pub struct SystemSchemaProvider {
     namespace: NamespaceName,
@@ -58,6 +61,7 @@ impl SystemSchemaProvider {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
         log_meta: Arc<dyn LogMetadata>,
+        metrics_exporter: MetricsExporter,
         namespace: NamespaceName,
     ) -> Self {
         let mut tables = HashMap::<&'static str, Arc<dyn TableProvider>>::new();
@@ -93,6 +97,9 @@ impl SystemSchemaProvider {
             namespace.clone(),
         ));
         tables.insert(TOPIC_OFFSET_LOCATION_TABLE_NAME, topic_offset_location);
+
+        let metrics = Arc::new(MetricsSystemTable::new(metrics_exporter));
+        tables.insert(METRICS_TABLE_NAME, metrics);
 
         Self { namespace, tables }
     }

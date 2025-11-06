@@ -59,7 +59,7 @@ moka = { version = "0.12.10", features = ["future"] }
 object_store = "0.12.2"
 opentelemetry = "0.31.0"
 opentelemetry-otlp = { version = "0.31.0", features = ["trace", "metrics", "grpc-tonic"] }
-opentelemetry_sdk = { version = "0.31.0", features = ["trace", "metrics", "rt-tokio"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["trace", "metrics", "rt-tokio", "experimental_metrics_custom_reader"] }
 parquet = "56.2.0"
 paste = "1.0.15"
 pin-project = "1.1.10"

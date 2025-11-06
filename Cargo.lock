@@ -4937,6 +4937,7 @@ dependencies = [
  "tonic 0.13.1",
  "tonic-build",
  "tracing",
+ "wings-observability",
 ]
 
 [[package]]
@@ -5045,6 +5046,7 @@ dependencies = [
  "datafusion",
  "futures",
  "object_store",
+ "opentelemetry_sdk",
  "parquet",
  "pin-project",
  "serde",
@@ -5056,6 +5058,7 @@ dependencies = [
  "wings-control-plane",
  "wings-ingestor-core",
  "wings-object-store",
+ "wings-observability",
 ]
 
 [[package]]

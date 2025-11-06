@@ -18,6 +18,7 @@ use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
 use wings_object_store::{ObjectStoreFactory, TemporaryFileSystemFactory};
+use wings_observability::MetricsExporter;
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::error::{
@@ -36,7 +37,7 @@ pub struct DevArgs {
 }
 
 impl DevArgs {
-    pub async fn run(self, ct: CancellationToken) -> Result<()> {
+    pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
         let (cluster_metadata, default_namespace) = new_dev_cluster_metadata_service().await;
 
         let metadata_address = self
@@ -72,6 +73,7 @@ impl DevArgs {
             cluster_metadata.clone(),
             log_metadata,
             object_store_factory,
+            metrics_exporter,
             ingestor.client(),
             metadata_address,
             ct.clone(),
@@ -126,6 +128,7 @@ async fn run_grpc_server(
     cluster_meta: Arc<InMemoryClusterMetadata>,
     log_meta: Arc<InMemoryLogMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
+    metrics_exporter: MetricsExporter,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
@@ -141,8 +144,12 @@ async fn run_grpc_server(
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let namespace_provider_factory =
-        NamespaceProviderFactory::new(cluster_meta.clone(), log_meta.clone(), object_store_factory);
+    let namespace_provider_factory = NamespaceProviderFactory::new(
+        cluster_meta.clone(),
+        log_meta.clone(),
+        metrics_exporter,
+        object_store_factory,
+    );
 
     let topic_cache = TopicCache::new(cluster_meta.clone());
     let namespace_cache = NamespaceCache::new(cluster_meta.clone());

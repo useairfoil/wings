@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use opentelemetry::metrics::Meter;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, InstrumentationScope};
 use opentelemetry_otlp::{ExporterBuildError, MetricExporter, SpanExporter};
@@ -10,14 +9,21 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use snafu::{ResultExt, Snafu};
 use tracing::Subscriber;
-
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{prelude::*, registry::LookupSpan};
 use tracing_subscriber::{EnvFilter, Layer};
 
+pub use opentelemetry::{
+    metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
+    KeyValue,
+};
+
+pub use crate::metrics::MetricsExporter;
+
 use crate::format::WingsFormat;
 
 mod format;
+mod metrics;
 
 const OTEL_SDK_DISABLED: &str = "OTEL_SDK_DISABLED";
 
@@ -36,6 +42,7 @@ pub fn meter(name: &'static str) -> Meter {
 pub fn init_observability(
     package_name: impl Into<Cow<'static, str>>,
     package_version: impl Into<Cow<'static, str>>,
+    metrics_exporter: MetricsExporter,
 ) -> Result<(), ObservabilityError> {
     // The otel sdk doesn't follow the disabled env variable flag.
     // so we manually implement it to disable otel exports.
@@ -50,12 +57,14 @@ pub fn init_observability(
         }
     }
 
-    let mut layers = vec![stdout()];
+    let otel_layer = otel(
+        package_name,
+        package_version,
+        metrics_exporter,
+        !sdk_disabled,
+    )?;
 
-    if !sdk_disabled {
-        let otel_layer = otel(package_name, package_version)?;
-        layers.push(otel_layer);
-    }
+    let layers = vec![stdout(), otel_layer];
 
     tracing_subscriber::registry().with(layers).init();
 
@@ -94,6 +103,8 @@ where
 fn otel<S>(
     package_name: impl Into<Cow<'static, str>>,
     version: impl Into<Cow<'static, str>>,
+    additional_reader: MetricsExporter,
+    sdk_enabled: bool,
 ) -> Result<BoxedLayer<S>, ObservabilityError>
 where
     S: Subscriber + Send + Sync,
@@ -112,31 +123,38 @@ where
         .with_version(version.clone())
         .build();
 
-    let span_exporter = SpanExporter::builder()
-        .with_tonic()
-        .build()
-        .context(ExporterSnafu {})?;
+    let mut trace_provider = SdkTracerProvider::builder().with_resource(resource.clone());
 
-    let trace_provider = SdkTracerProvider::builder()
-        .with_resource(resource.clone())
-        .with_batch_exporter(span_exporter)
-        .build();
+    if sdk_enabled {
+        let span_exporter = SpanExporter::builder()
+            .with_tonic()
+            .build()
+            .context(ExporterSnafu {})?;
 
+        trace_provider = trace_provider.with_batch_exporter(span_exporter);
+    }
+
+    let trace_provider = trace_provider.build();
     let tracer = trace_provider.tracer_with_scope(instrumentation_lib.clone());
 
-    let metrics_exporter = MetricExporter::builder()
-        .with_tonic()
-        .build()
-        .context(ExporterSnafu {})?;
-
-    let metrics_reader = PeriodicReader::builder(metrics_exporter)
-        .with_interval(Duration::from_secs(10))
-        .build();
-
-    let meter_provider = MeterProviderBuilder::default()
+    let mut meter_provider = MeterProviderBuilder::default()
         .with_resource(resource)
-        .with_reader(metrics_reader)
-        .build();
+        .with_reader(additional_reader);
+
+    if sdk_enabled {
+        let metrics_exporter = MetricExporter::builder()
+            .with_tonic()
+            .build()
+            .context(ExporterSnafu {})?;
+
+        let metrics_reader = PeriodicReader::builder(metrics_exporter)
+            .with_interval(Duration::from_secs(10))
+            .build();
+
+        meter_provider = meter_provider.with_reader(metrics_reader);
+    }
+
+    let meter_provider = meter_provider.build();
 
     global::set_meter_provider(meter_provider.clone());
 

@@ -4,6 +4,7 @@ pub mod cache;
 mod error;
 mod helpers;
 mod memory;
+mod metrics;
 pub mod stream;
 pub mod tonic;
 

@@ -14,6 +14,7 @@ use wings_control_plane::{
     resources::{Namespace, NamespaceName, Topic},
 };
 use wings_object_store::ObjectStoreFactory;
+use wings_observability::MetricsExporter;
 
 use crate::{
     options::FetchOptions, query::topic::TopicTableProvider, system_tables::SystemSchemaProvider,
@@ -28,6 +29,7 @@ pub struct NamespaceProviderFactory {
     cluster_meta: Arc<dyn ClusterMetadata>,
     log_meta: Arc<dyn LogMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
+    metrics_exporter: MetricsExporter,
 }
 
 #[derive(Clone)]
@@ -43,12 +45,14 @@ impl NamespaceProviderFactory {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
         log_meta: Arc<dyn LogMetadata>,
+        metrics_exporter: MetricsExporter,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
     ) -> Self {
         Self {
             cluster_meta,
             log_meta,
             object_store_factory,
+            metrics_exporter,
         }
     }
 
@@ -60,6 +64,7 @@ impl NamespaceProviderFactory {
             self.cluster_meta.clone(),
             self.log_meta.clone(),
             self.object_store_factory.clone(),
+            self.metrics_exporter.clone(),
             namespace_name,
         )
         .await
@@ -71,6 +76,7 @@ impl NamespaceProvider {
         cluster_meta: Arc<dyn ClusterMetadata>,
         log_meta: Arc<dyn LogMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
+        metrics_exporter: MetricsExporter,
         namespace_name: NamespaceName,
     ) -> Result<Self, DataFusionError> {
         let namespace = cluster_meta.get_namespace(namespace_name.clone()).await?;
@@ -81,8 +87,12 @@ impl NamespaceProvider {
             CollectNamespaceTopicsOptions::default(),
         )
         .await?;
-        let system_schema_provider =
-            SystemSchemaProvider::new(cluster_meta.clone(), log_meta.clone(), namespace_name);
+        let system_schema_provider = SystemSchemaProvider::new(
+            cluster_meta.clone(),
+            log_meta.clone(),
+            metrics_exporter,
+            namespace_name,
+        );
 
         Ok(Self {
             log_meta,
