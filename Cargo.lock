@@ -4965,6 +4965,7 @@ dependencies = [
  "tracing",
  "wings-control-plane",
  "wings-ingestor-core",
+ "wings-observability",
  "wings-server-core",
 ]
 

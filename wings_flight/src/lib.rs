@@ -1,6 +1,7 @@
 mod error;
 mod flight_sql_server;
 mod ingestion;
+mod metrics;
 mod ticket;
 
 pub use self::flight_sql_server::WingsFlightSqlServer;

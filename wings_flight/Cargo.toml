@@ -32,6 +32,7 @@ tracing.workspace = true
 wings-control-plane = { path = "../wings_control_plane" }
 wings-server-core = { path = "../wings_server_core" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
+wings-observability = { path = "../wings_observability" }
 
 [build-dependencies]
 tonic-build.workspace = true

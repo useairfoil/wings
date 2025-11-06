@@ -32,7 +32,7 @@ use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
     FetchTicket, error::FlightServerError, ingestion::process_ingestion_stream,
-    ticket::StatementQueryTicket,
+    metrics::FlightServerMetrics, ticket::StatementQueryTicket,
 };
 
 pub const WINGS_FLIGHT_SQL_NAMESPACE_HEADER: &str = "x-wings-namespace";
@@ -46,6 +46,7 @@ pub struct WingsFlightSqlServer {
     namespace_cache: NamespaceCache,
     ingestor: BatchIngestorClient,
     provider_factory: NamespaceProviderFactory,
+    metrics: FlightServerMetrics,
 }
 
 impl WingsFlightSqlServer {
@@ -60,6 +61,7 @@ impl WingsFlightSqlServer {
             topic_cache,
             ingestor,
             provider_factory,
+            metrics: FlightServerMetrics::default(),
         }
     }
 
@@ -442,10 +444,46 @@ impl FlightSqlService for WingsFlightSqlServer {
             .await
             .map_err(FlightServerError::from)?;
 
+        let metrics_kv = {
+            use wings_observability::KeyValue as KV;
+            let topic_id = topic_name.id().to_string();
+            let namespace_id = topic_name.parent().id().to_string();
+            let tenant_id = topic_name.parent().parent().id().to_string();
+
+            vec![
+                KV::new("tenant", tenant_id),
+                KV::new("namespace", namespace_id),
+                KV::new("topic", topic_id),
+            ]
+        };
+
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
-            .build(stream.map_err(|err| FlightError::from_external_error(Box::new(err))))
+            .build(
+                stream
+                    .inspect({
+                        let metrics = self.metrics.clone();
+                        let metrics_kv = metrics_kv.clone();
+                        move |batch| {
+                            if let Ok(batch) = batch {
+                                metrics.fetch_rows.add(batch.num_rows() as _, &metrics_kv);
+                            }
+                        }
+                    })
+                    .map_err(|err| FlightError::from_external_error(Box::new(err))),
+            )
             .map_err(Status::from)
+            .inspect({
+                let metrics = self.metrics.clone();
+                let metrics_kv = metrics_kv.clone();
+                move |message| {
+                    if let Ok(data) = message {
+                        metrics
+                            .fetch_bytes
+                            .add(data.data_body.len() as _, &metrics_kv);
+                    }
+                }
+            })
             .boxed();
 
         Ok(Response::new(stream))
