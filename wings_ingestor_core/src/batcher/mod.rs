@@ -14,12 +14,14 @@ use crate::{
     write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
 
-use self::partition::PartitionFolioWriter;
+use self::{metrics::IngestionMetrics, partition::PartitionFolioWriter};
 
+mod metrics;
 mod partition;
 
 #[derive(Default)]
 pub struct NamespaceFolioWriter {
+    metrics: IngestionMetrics,
     namespaces: HashMap<NamespaceName, NamespaceFolioState>,
 }
 
@@ -97,7 +99,7 @@ impl NamespaceFolioWriter {
             }
         };
 
-        let written = folio_writer.write_batch(request)?;
+        let written = folio_writer.write_batch(request, &self.metrics)?;
         folio_state.current_size += written as u64;
 
         if folio_state.current_size >= folio_state.flush_size {
@@ -105,7 +107,7 @@ impl NamespaceFolioWriter {
                 return Ok(None);
             };
 
-            return Ok(state.finish().into());
+            return Ok(state.finish(&self.metrics).into());
         }
 
         Ok(None)
@@ -118,7 +120,7 @@ impl NamespaceFolioWriter {
     ) -> Option<(NamespaceFolio, ReplyWithWriteBatchError)> {
         let state = self.namespaces.remove(&namespace)?;
 
-        state.finish().into()
+        state.finish(&self.metrics).into()
     }
 }
 
@@ -136,13 +138,13 @@ impl NamespaceFolioState {
     }
 
     /// Flushes the namespace folio, ready for the next step.
-    pub fn finish(self) -> (NamespaceFolio, ReplyWithWriteBatchError) {
+    pub fn finish(self, metrics: &IngestionMetrics) -> (NamespaceFolio, ReplyWithWriteBatchError) {
         let mut pages = Vec::with_capacity(self.partitions.len());
         let mut errors = ReplyWithWriteBatchError::new_empty();
 
         for (key, partition_writer) in self.partitions.into_iter() {
             let (topic_name, partition) = key;
-            match partition_writer.finish(topic_name, partition) {
+            match partition_writer.finish(topic_name, partition, metrics) {
                 Ok(folio) => pages.push(folio),
                 Err(err) => errors.merge(err),
             }

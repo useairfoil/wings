@@ -4988,6 +4988,7 @@ dependencies = [
  "ulid",
  "wings-control-plane",
  "wings-object-store",
+ "wings-observability",
 ]
 
 [[package]]

@@ -15,7 +15,7 @@ use crate::{
     write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
 
-use super::FolioPage;
+use super::{FolioPage, metrics::IngestionMetrics};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
@@ -24,6 +24,7 @@ pub struct PartitionFolioWriter {
     writer: ArrowWriter<Vec<u8>>,
     schema: SchemaRef,
     batches: Vec<WithReplyChannel<CommitBatchRequest>>,
+    metrics_kv: Vec<wings_observability::KeyValue>,
 }
 
 impl PartitionFolioWriter {
@@ -39,9 +40,23 @@ impl PartitionFolioWriter {
             KeyValue::new("WINGS:topic-name".to_string(), topic_name.to_string()),
             KeyValue::new("WINGS:partition-value".to_string(), partition_value),
         ];
+
         let write_properties = WriterProperties::builder()
             .set_key_value_metadata(kv_metadata.into())
             .build();
+
+        let metrics_kv = {
+            use wings_observability::KeyValue as KV;
+
+            let topic_id = topic_name.id().to_string();
+            let namespace_id = topic_name.parent().id().to_string();
+            let tenant_id = topic_name.parent().parent().id().to_string();
+            vec![
+                KV::new("tenant", tenant_id),
+                KV::new("namespace", namespace_id),
+                KV::new("topic", topic_id),
+            ]
+        };
 
         let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
         // The writer will only fail if the schema is unsupported
@@ -54,6 +69,7 @@ impl PartitionFolioWriter {
         Ok(Self {
             writer,
             schema,
+            metrics_kv,
             batches: Vec::new(),
         })
     }
@@ -65,6 +81,7 @@ impl PartitionFolioWriter {
     pub fn write_batch(
         &mut self,
         request: WithReplyChannel<WriteBatchRequest>,
+        metrics: &IngestionMetrics,
     ) -> std::result::Result<usize, ReplyWithWriteBatchError> {
         let batch = request.data;
         // The writer will error if the schema does not match (which is good!), but it will also become poisoned.
@@ -75,7 +92,7 @@ impl PartitionFolioWriter {
             return ReplyWithWriteBatchError::new_single(error, request.reply).into();
         }
 
-        let initial_size = self.buffer_size();
+        let initial_size = self.estimate_bytes();
 
         if let Err(err) = self.writer.write(&batch.records) {
             let error = WriteBatchError::Parquet {
@@ -85,22 +102,27 @@ impl PartitionFolioWriter {
             return ReplyWithWriteBatchError::new_single(error, request.reply).into();
         };
 
+        let num_messages = batch.records.num_rows() as u32;
+
         self.batches.push(WithReplyChannel {
             reply: request.reply,
             data: CommitBatchRequest {
-                num_messages: batch.records.num_rows() as _,
+                num_messages,
                 timestamp: batch.timestamp,
             },
         });
 
-        let bytes_written = self.buffer_size() - initial_size;
+        let bytes_written = self.estimate_bytes() - initial_size;
+        metrics
+            .written_rows
+            .add(num_messages as _, &self.metrics_kv);
 
         Ok(bytes_written)
     }
 
-    /// Returns the current size of the buffer in bytes.
-    pub fn buffer_size(&self) -> usize {
-        self.writer.inner().len()
+    /// Returns the estimated size of the buffer in bytes.
+    pub fn estimate_bytes(&self) -> usize {
+        self.writer.bytes_written() + self.writer.in_progress_size()
     }
 
     /// Closes the writer and returns the final parquet data with metadata.
@@ -110,14 +132,22 @@ impl PartitionFolioWriter {
         self,
         topic_name: TopicName,
         partition_value: Option<PartitionValue>,
+        metrics: &IngestionMetrics,
     ) -> Result<FolioPage, ReplyWithWriteBatchError> {
         match self.writer.into_inner() {
-            Ok(data) => Ok(FolioPage {
-                topic_name,
-                partition_value,
-                data,
-                batches: self.batches,
-            }),
+            Ok(data) => {
+                let bytes_written = data.len();
+                metrics
+                    .written_bytes
+                    .add(bytes_written as _, &self.metrics_kv);
+
+                Ok(FolioPage {
+                    topic_name,
+                    partition_value,
+                    data,
+                    batches: self.batches,
+                })
+            }
             Err(err) => {
                 let error = WriteBatchError::Parquet {
                     message: "failed to finalize batch".to_string(),
