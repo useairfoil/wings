@@ -293,7 +293,7 @@ impl TryFrom<pb::GetLogLocationRequest> for GetLogLocationRequest {
             .ok_or_else(|| LogMetadataError::Internal {
                 message: "missing location in GetLocationRequest proto".to_string(),
             })?
-            .into();
+            .try_into()?;
 
         Ok(GetLogLocationRequest {
             topic_name,
@@ -357,12 +357,40 @@ impl TryFrom<GetLogLocationOptions> for pb::GetLogLocationOptions {
     }
 }
 
-impl From<pb::get_log_location_request::Location> for LogLocationRequest {
-    fn from(value: pb::get_log_location_request::Location) -> Self {
+impl TryFrom<pb::get_log_location_request::Location> for LogLocationRequest {
+    type Error = LogMetadataError;
+
+    fn try_from(value: pb::get_log_location_request::Location) -> Result<Self, Self::Error> {
         use pb::get_log_location_request::Location;
 
         match value {
-            Location::Offset(offset) => LogLocationRequest::Offset(offset),
+            Location::Offset(offset) => Ok(LogLocationRequest::Offset(offset)),
+            Location::TimestampRange(range) => {
+                let start_timestamp = range
+                    .start_timestamp
+                    .ok_or_else(|| LogMetadataError::Internal {
+                        message: "missing start_timestamp in TimestampRange".to_string(),
+                    })?
+                    .try_into()
+                    .map_err(|err| LogMetadataError::Internal {
+                        message: format!("invalid start_timestamp: {}", err),
+                    })?;
+
+                let end_timestamp = range
+                    .end_timestamp
+                    .ok_or_else(|| LogMetadataError::Internal {
+                        message: "missing end_timestamp in TimestampRange".to_string(),
+                    })?
+                    .try_into()
+                    .map_err(|err| LogMetadataError::Internal {
+                        message: format!("invalid end_timestamp: {}", err),
+                    })?;
+
+                Ok(LogLocationRequest::TimestampRange(
+                    start_timestamp,
+                    end_timestamp,
+                ))
+            }
         }
     }
 }
@@ -373,6 +401,12 @@ impl From<LogLocationRequest> for pb::get_log_location_request::Location {
 
         match value {
             LogLocationRequest::Offset(offset) => Location::Offset(offset),
+            LogLocationRequest::TimestampRange(start_ts, end_ts) => {
+                Location::TimestampRange(pb::TimestampRange {
+                    start_timestamp: Some(start_ts.into()),
+                    end_timestamp: Some(end_ts.into()),
+                })
+            }
         }
     }
 }

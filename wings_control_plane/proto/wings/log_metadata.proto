@@ -52,6 +52,7 @@ message GetLogLocationRequest {
   GetLogLocationOptions options = 3;
   oneof location {
       uint64 offset = 4;
+      TimestampRange timestamp_range = 5;
   }
 }
 
@@ -59,6 +60,13 @@ message GetLogLocationOptions {
   google.protobuf.Duration deadline = 1;
   uint32 min_rows = 2;
   uint32 max_rows = 3;
+}
+
+message TimestampRange {
+  /// The start timestamp (inclusive) for the range query.
+  google.protobuf.Timestamp start_timestamp = 1;
+  /// The end timestamp (inclusive) for the range query.
+  google.protobuf.Timestamp end_timestamp = 2;
 }
 
 message GetLogLocationResponse {

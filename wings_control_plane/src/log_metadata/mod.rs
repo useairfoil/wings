@@ -4,10 +4,12 @@ pub mod stream;
 pub mod timestamp;
 pub mod tonic;
 
+use std::fmt;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use object_store::path::Path;
+use time::UtcDateTime;
 
 use crate::resources::{NamespaceName, PartitionValue, TopicName};
 
@@ -35,7 +37,7 @@ pub trait LogMetadata: Send + Sync {
 }
 
 /// The offset of a log together with its timestamp.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct LogOffset {
     /// The offset of the log.
     pub offset: u64,
@@ -58,7 +60,7 @@ pub struct RejectedBatchInfo {
     pub num_messages: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AcceptedBatchInfo {
     /// The offset of the first message in the batch.
     pub start_offset: u64,
@@ -132,6 +134,8 @@ pub struct GetLogLocationOptions {
 pub enum LogLocationRequest {
     /// Request the location of the logs starting at the specified offset.
     Offset(u64),
+    /// Request the location of the logs within the specified timestamp range.
+    TimestampRange(SystemTime, SystemTime),
 }
 
 /// Location of a specific log.
@@ -263,5 +267,26 @@ impl FolioLocation {
 impl AcceptedBatchInfo {
     pub fn num_messages(&self) -> u32 {
         (self.end_offset - self.start_offset + 1) as u32
+    }
+}
+
+impl fmt::Debug for LogOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let timestamp: UtcDateTime = self.timestamp.into();
+        f.debug_struct("LogOffset")
+            .field("offset", &self.offset)
+            .field("timestamp", &timestamp)
+            .finish()
+    }
+}
+
+impl fmt::Debug for AcceptedBatchInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let timestamp: UtcDateTime = self.timestamp.into();
+        f.debug_struct("AcceptedBatchInfo")
+            .field("start_offset", &self.start_offset)
+            .field("end_offset", &self.end_offset)
+            .field("timestamp", &timestamp)
+            .finish()
     }
 }

@@ -61,6 +61,9 @@ struct PartitionLogState {
     next_offset: LogOffset,
     /// Maps start offset to page information for lookup.
     pages: BTreeMap<u64, PageInfo>,
+    /// Maps timestamp to the first offset containing that timestamp.
+    /// Used for efficient timestamp-based queries.
+    timestamp_index: BTreeMap<SystemTime, u64>,
     /// Notify when a new page is added.
     notify: Arc<Notify>,
 }
@@ -297,6 +300,7 @@ impl TopicLogState {
             .or_insert_with(|| PartitionLogState {
                 next_offset: LogOffset::default(),
                 pages: BTreeMap::new(),
+                timestamp_index: BTreeMap::new(),
                 notify: Arc::new(Notify::new()),
             });
 
@@ -380,6 +384,11 @@ impl PartitionLogState {
             );
 
             self.pages.insert(start_offset.offset, page_info);
+            // TODO: check this is correct. Maybe the timestamp index should have the
+            // timestamp from the current offset?
+            self.timestamp_index
+                .insert(start_offset.timestamp, start_offset.offset);
+
             self.next_offset = current_offset;
             self.notify.notify_waiters();
         }
@@ -400,6 +409,9 @@ impl PartitionLogState {
         match location {
             LogLocationRequest::Offset(offset) => {
                 self.get_log_location_by_offset(*offset, options, locations)
+            }
+            LogLocationRequest::TimestampRange(start_ts, end_ts) => {
+                self.get_log_location_by_timestamp_range(*start_ts, *end_ts, options, locations)
             }
         }
     }
@@ -462,6 +474,44 @@ impl PartitionLogState {
         }
 
         Ok(GetLogLocationResult::Done)
+    }
+
+    fn get_log_location_by_timestamp_range(
+        &self,
+        start_timestamp: SystemTime,
+        end_timestamp: SystemTime,
+        options: &GetLogLocationOptions,
+        locations: &mut Vec<LogLocation>,
+    ) -> Result<GetLogLocationResult> {
+        if self.timestamp_index.is_empty() {
+            return Ok(GetLogLocationResult::Done);
+        }
+
+        let start_offset = self
+            .timestamp_index
+            .range(start_timestamp..)
+            .next()
+            .map(|(_, &offset)| offset)
+            .unwrap_or(0);
+
+        let end_offset = self
+            .timestamp_index
+            .range(..=end_timestamp)
+            .next_back()
+            .map(|(_, &offset)| offset)
+            .unwrap_or(self.next_offset.offset.saturating_sub(1));
+
+        let rows = (end_offset - start_offset + 1) as usize;
+        let min_rows = rows;
+        let max_rows = options.max_rows.max(rows);
+
+        let options = GetLogLocationOptions {
+            min_rows,
+            max_rows,
+            ..options.clone()
+        };
+
+        self.get_log_location_by_offset(start_offset, &options, locations)
     }
 }
 

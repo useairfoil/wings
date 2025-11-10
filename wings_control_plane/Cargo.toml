@@ -33,6 +33,7 @@ paste.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 snafu.workspace = true
+time.workspace = true
 tokio.workspace = true
 tonic.workspace = true
 tracing.workspace = true
