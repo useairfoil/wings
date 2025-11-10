@@ -11,7 +11,7 @@ use futures::Stream;
 use pin_project::pin_project;
 
 use crate::{
-    log_metadata::{GetLogLocationRequest, ListPartitionsRequest, LogLocationRequest},
+    log_metadata::{GetLogLocationRequest, ListPartitionsRequest},
     resources::{PartitionValue, TopicName},
 };
 
@@ -174,7 +174,7 @@ pub fn gen_log_location_stream_in_range(
             let request = GetLogLocationRequest {
                 topic_name: topic_name.clone(),
                 partition_value: partition_value.clone(),
-                location: LogLocationRequest::Offset(current_offset),
+                offset: current_offset,
                 options: options.clone(),
             };
 

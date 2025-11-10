@@ -8,8 +8,8 @@ use crate::{
     log_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse,
         CommittedBatch, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
-        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogLocationRequest,
-        LogMetadataError, LogOffset, PartitionMetadata, RejectedBatchInfo,
+        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset,
+        PartitionMetadata, RejectedBatchInfo,
         error::{
             InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
             InvalidTimestampSnafu,
@@ -288,18 +288,11 @@ impl TryFrom<pb::GetLogLocationRequest> for GetLogLocationRequest {
             })?
             .try_into()?;
 
-        let location = request
-            .location
-            .ok_or_else(|| LogMetadataError::Internal {
-                message: "missing location in GetLocationRequest proto".to_string(),
-            })?
-            .try_into()?;
-
         Ok(GetLogLocationRequest {
             topic_name,
             partition_value,
             options,
-            location,
+            offset: request.offset,
         })
     }
 }
@@ -333,8 +326,8 @@ impl TryFrom<GetLogLocationRequest> for pb::GetLogLocationRequest {
         Ok(pb::GetLogLocationRequest {
             topic: request.topic_name.to_string(),
             partition: request.partition_value.as_ref().map(Into::into),
+            offset: request.offset,
             options: Some(options),
-            location: Some(request.location.into()),
         })
     }
 }
@@ -354,60 +347,6 @@ impl TryFrom<GetLogLocationOptions> for pb::GetLogLocationOptions {
             min_rows: options.min_rows as _,
             max_rows: options.max_rows as _,
         })
-    }
-}
-
-impl TryFrom<pb::get_log_location_request::Location> for LogLocationRequest {
-    type Error = LogMetadataError;
-
-    fn try_from(value: pb::get_log_location_request::Location) -> Result<Self, Self::Error> {
-        use pb::get_log_location_request::Location;
-
-        match value {
-            Location::Offset(offset) => Ok(LogLocationRequest::Offset(offset)),
-            Location::TimestampRange(range) => {
-                let start_timestamp = range
-                    .start_timestamp
-                    .ok_or_else(|| LogMetadataError::Internal {
-                        message: "missing start_timestamp in TimestampRange".to_string(),
-                    })?
-                    .try_into()
-                    .map_err(|err| LogMetadataError::Internal {
-                        message: format!("invalid start_timestamp: {}", err),
-                    })?;
-
-                let end_timestamp = range
-                    .end_timestamp
-                    .ok_or_else(|| LogMetadataError::Internal {
-                        message: "missing end_timestamp in TimestampRange".to_string(),
-                    })?
-                    .try_into()
-                    .map_err(|err| LogMetadataError::Internal {
-                        message: format!("invalid end_timestamp: {}", err),
-                    })?;
-
-                Ok(LogLocationRequest::TimestampRange(
-                    start_timestamp,
-                    end_timestamp,
-                ))
-            }
-        }
-    }
-}
-
-impl From<LogLocationRequest> for pb::get_log_location_request::Location {
-    fn from(value: LogLocationRequest) -> Self {
-        use pb::get_log_location_request::Location;
-
-        match value {
-            LogLocationRequest::Offset(offset) => Location::Offset(offset),
-            LogLocationRequest::TimestampRange(start_ts, end_ts) => {
-                Location::TimestampRange(pb::TimestampRange {
-                    start_timestamp: Some(start_ts.into()),
-                    end_timestamp: Some(end_ts.into()),
-                })
-            }
-        }
     }
 }
 

@@ -50,10 +50,7 @@ message GetLogLocationRequest {
   string topic = 1;
   optional PartitionValue partition = 2;
   GetLogLocationOptions options = 3;
-  oneof location {
-      uint64 offset = 4;
-      TimestampRange timestamp_range = 5;
-  }
+  uint64 offset = 4;
 }
 
 message GetLogLocationOptions {

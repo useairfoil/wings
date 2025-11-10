@@ -114,8 +114,8 @@ pub struct GetLogLocationRequest {
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The location request.
-    pub location: LogLocationRequest,
+    /// The offset requested.
+    pub offset: u64,
     /// The options for the request.
     pub options: GetLogLocationOptions,
 }
@@ -128,14 +128,6 @@ pub struct GetLogLocationOptions {
     pub min_rows: usize,
     /// The (soft) maximum number of rows to retrieve.
     pub max_rows: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LogLocationRequest {
-    /// Request the location of the logs starting at the specified offset.
-    Offset(u64),
-    /// Request the location of the logs within the specified timestamp range.
-    TimestampRange(SystemTime, SystemTime),
 }
 
 /// Location of a specific log.

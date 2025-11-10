@@ -30,8 +30,8 @@ use crate::{
 
 use super::{
     CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation, GetLogLocationOptions,
-    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-    LogLocationRequest, LogMetadata, LogMetadataError, LogOffset, PartitionMetadata, Result,
+    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
+    LogMetadataError, LogOffset, PartitionMetadata, Result,
     timestamp::compare_batch_request_timestamps,
 };
 
@@ -149,7 +149,7 @@ impl LogMetadata for InMemoryLogMetadata {
 
                 match topic_state.get_log_location(
                     &partition_key,
-                    &request.location,
+                    request.offset,
                     &request.options,
                     &mut locations,
                 )? {
@@ -310,7 +310,7 @@ impl TopicLogState {
     fn get_log_location(
         &self,
         partition_key: &PartitionKey,
-        location: &LogLocationRequest,
+        offset: u64,
         options: &GetLogLocationOptions,
         locations: &mut Vec<LogLocation>,
     ) -> Result<GetLogLocationResult> {
@@ -318,7 +318,7 @@ impl TopicLogState {
             return Ok(GetLogLocationResult::Done);
         };
 
-        partition_state.get_log_location(location, options, locations)
+        partition_state.get_log_location(offset, options, locations)
     }
 }
 
@@ -402,22 +402,6 @@ impl PartitionLogState {
 
     fn get_log_location(
         &self,
-        location: &LogLocationRequest,
-        options: &GetLogLocationOptions,
-        locations: &mut Vec<LogLocation>,
-    ) -> Result<GetLogLocationResult> {
-        match location {
-            LogLocationRequest::Offset(offset) => {
-                self.get_log_location_by_offset(*offset, options, locations)
-            }
-            LogLocationRequest::TimestampRange(start_ts, end_ts) => {
-                self.get_log_location_by_timestamp_range(*start_ts, *end_ts, options, locations)
-            }
-        }
-    }
-
-    fn get_log_location_by_offset(
-        &self,
         offset: u64,
         options: &GetLogLocationOptions,
         locations: &mut Vec<LogLocation>,
@@ -474,44 +458,6 @@ impl PartitionLogState {
         }
 
         Ok(GetLogLocationResult::Done)
-    }
-
-    fn get_log_location_by_timestamp_range(
-        &self,
-        start_timestamp: SystemTime,
-        end_timestamp: SystemTime,
-        options: &GetLogLocationOptions,
-        locations: &mut Vec<LogLocation>,
-    ) -> Result<GetLogLocationResult> {
-        if self.timestamp_index.is_empty() {
-            return Ok(GetLogLocationResult::Done);
-        }
-
-        let start_offset = self
-            .timestamp_index
-            .range(start_timestamp..)
-            .next()
-            .map(|(_, &offset)| offset)
-            .unwrap_or(0);
-
-        let end_offset = self
-            .timestamp_index
-            .range(..=end_timestamp)
-            .next_back()
-            .map(|(_, &offset)| offset)
-            .unwrap_or(self.next_offset.offset.saturating_sub(1));
-
-        let rows = (end_offset - start_offset + 1) as usize;
-        let min_rows = rows;
-        let max_rows = options.max_rows.max(rows);
-
-        let options = GetLogLocationOptions {
-            min_rows,
-            max_rows,
-            ..options.clone()
-        };
-
-        self.get_log_location_by_offset(start_offset, &options, locations)
     }
 }
 
