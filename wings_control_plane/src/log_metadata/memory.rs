@@ -29,9 +29,10 @@ use crate::{
 };
 
 use super::{
-    CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation, GetLogLocationOptions,
-    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
-    LogMetadataError, LogOffset, PartitionMetadata, Result,
+    CommitPageRequest, CommitPageResponse, CommittedBatch, CompleteTaskRequest,
+    CompleteTaskResponse, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
+    ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata, LogMetadataError,
+    LogOffset, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result,
     timestamp::compare_batch_request_timestamps,
 };
 
@@ -255,6 +256,14 @@ impl LogMetadata for InMemoryLogMetadata {
             partitions,
             next_page_token,
         })
+    }
+
+    async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
+        todo!();
+    }
+
+    async fn complete_task(&self, _request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
+        todo!();
     }
 }
 

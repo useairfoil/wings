@@ -12,6 +12,10 @@ service LogMetadataService {
   rpc GetLogLocation(GetLogLocationRequest) returns (GetLogLocationResponse);
 
   rpc ListPartitions(ListPartitionsRequest) returns (ListPartitionsResponse);
+
+  rpc RequestTask(RequestTaskRequest) returns (RequestTaskResponse);
+
+  rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
 }
 
 message CommitFolioRequest {
@@ -143,4 +147,47 @@ message PartitionValue {
     bytes bytes_value = 11;
     bool bool_value = 12;
   }
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_IN_PROGRESS = 2;
+  TASK_STATUS_COMPLETED = 3;
+  TASK_STATUS_FAILED = 4;
+}
+
+message CompactionTask {
+  string namespace = 1;
+  string topic = 2;
+  optional PartitionValue partition = 3;
+}
+
+message Task {
+  string task_id = 1;
+  TaskStatus status = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+
+  oneof task {
+    CompactionTask compaction_task = 5;
+  }
+}
+
+message RequestTaskRequest {
+  string worker_id = 1;
+}
+
+message RequestTaskResponse {
+  optional Task task = 1;
+}
+
+message CompleteTaskRequest {
+  string task_id = 1;
+  TaskStatus status = 2;
+  optional string error_message = 3;
+}
+
+message CompleteTaskResponse {
+  bool success = 1;
 }

@@ -7,15 +7,16 @@ use snafu::{ResultExt, ensure};
 use crate::{
     log_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse,
-        CommittedBatch, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
-        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset,
-        PartitionMetadata, RejectedBatchInfo,
+        CommittedBatch, CompactionTask, CompleteTaskRequest, CompleteTaskResponse, FolioLocation,
+        GetLogLocationOptions, GetLogLocationRequest, ListPartitionsRequest,
+        ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset, PartitionMetadata,
+        RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskMetadata, TaskStatus,
         error::{
             InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
             InvalidTimestampSnafu,
         },
     },
-    resources::{PartitionValue, TopicName},
+    resources::{NamespaceName, PartitionValue, TopicName},
 };
 
 use super::pb;
@@ -605,5 +606,220 @@ impl From<&PartitionValue> for pb::PartitionValue {
         };
 
         pb::PartitionValue { value: Some(value) }
+    }
+}
+
+/*
+ *  ███████████   █████████    █████████  █████   ████
+ * ░█░░░███░░░█  ███░░░░░███  ███░░░░░███░░███   ███░
+ * ░   ░███  ░  ░███    ░███ ░███    ░░░  ░███  ███
+ *     ░███     ░███████████ ░░█████████  ░███████
+ *     ░███     ░███░░░░░███  ░░░░░░░░███ ░███░░███
+ *     ░███     ░███    ░███  ███    ░███ ░███ ░░███
+ *     █████    █████   █████░░█████████  █████ ░░████
+ */
+
+impl TryFrom<pb::TaskStatus> for TaskStatus {
+    type Error = LogMetadataError;
+
+    fn try_from(status: pb::TaskStatus) -> Result<Self, Self::Error> {
+        match status {
+            pb::TaskStatus::Unspecified => Err(LogMetadataError::Internal {
+                message: "unspecified task status received".to_string(),
+            }),
+            pb::TaskStatus::Pending => Ok(TaskStatus::Pending),
+            pb::TaskStatus::InProgress => Ok(TaskStatus::InProgress),
+            pb::TaskStatus::Completed => Ok(TaskStatus::Completed),
+            pb::TaskStatus::Failed => Ok(TaskStatus::Failed),
+        }
+    }
+}
+
+impl From<TaskStatus> for pb::TaskStatus {
+    fn from(status: TaskStatus) -> Self {
+        match status {
+            TaskStatus::Pending => pb::TaskStatus::Pending,
+            TaskStatus::InProgress => pb::TaskStatus::InProgress,
+            TaskStatus::Completed => pb::TaskStatus::Completed,
+            TaskStatus::Failed => pb::TaskStatus::Failed,
+        }
+    }
+}
+
+impl From<CompactionTask> for pb::CompactionTask {
+    fn from(task: CompactionTask) -> Self {
+        pb::CompactionTask {
+            namespace: task.namespace.to_string(),
+            topic: task.topic_name.to_string(),
+            partition: task.partition_value.as_ref().map(Into::into),
+        }
+    }
+}
+
+impl TryFrom<pb::CompactionTask> for CompactionTask {
+    type Error = LogMetadataError;
+
+    fn try_from(task: pb::CompactionTask) -> Result<Self, Self::Error> {
+        let namespace =
+            NamespaceName::parse(&task.namespace).context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })?;
+
+        let topic_name = TopicName::parse(&task.topic)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+        let partition_value = task.partition.map(TryFrom::try_from).transpose()?;
+
+        Ok(CompactionTask {
+            namespace,
+            topic_name,
+            partition_value,
+        })
+    }
+}
+
+impl TryFrom<pb::Task> for Task {
+    type Error = LogMetadataError;
+
+    fn try_from(task: pb::Task) -> Result<Self, Self::Error> {
+        let metadata = {
+            let task_id = task.task_id.clone();
+            let status = task.status().try_into()?;
+
+            let created_at = task
+                .created_at
+                .ok_or_else(|| LogMetadataError::Internal {
+                    message: "missing created_at in Task proto".to_string(),
+                })?
+                .try_into()
+                .map_err(Arc::new)
+                .context(InvalidTimestampSnafu {})?;
+
+            let updated_at = task
+                .updated_at
+                .ok_or_else(|| LogMetadataError::Internal {
+                    message: "missing updated_at in Task proto".to_string(),
+                })?
+                .try_into()
+                .map_err(Arc::new)
+                .context(InvalidTimestampSnafu {})?;
+
+            TaskMetadata {
+                task_id,
+                status,
+                created_at,
+                updated_at,
+            }
+        };
+
+        let inner_task = task.task.ok_or_else(|| LogMetadataError::Internal {
+            message: "missing task in Task proto".to_string(),
+        })?;
+
+        match inner_task {
+            pb::task::Task::CompactionTask(compaction) => {
+                let task = compaction.try_into()?;
+                Ok(Task::Compaction { metadata, task })
+            }
+        }
+    }
+}
+
+impl From<Task> for pb::Task {
+    fn from(task: Task) -> Self {
+        let meta = match task {
+            Task::Compaction { metadata, .. } => metadata,
+        };
+
+        let status: pb::TaskStatus = meta.status.into();
+
+        let task = match task {
+            Task::Compaction { task, .. } => pb::task::Task::CompactionTask(task.into()),
+        };
+
+        pb::Task {
+            task_id: meta.task_id,
+            status: status as i32,
+            created_at: Some(meta.created_at.into()),
+            updated_at: Some(meta.updated_at.into()),
+            task: Some(task),
+        }
+    }
+}
+
+impl TryFrom<pb::RequestTaskRequest> for RequestTaskRequest {
+    type Error = LogMetadataError;
+
+    fn try_from(request: pb::RequestTaskRequest) -> Result<Self, Self::Error> {
+        Ok(RequestTaskRequest {
+            worker_id: request.worker_id,
+        })
+    }
+}
+
+impl From<RequestTaskRequest> for pb::RequestTaskRequest {
+    fn from(request: RequestTaskRequest) -> Self {
+        pb::RequestTaskRequest {
+            worker_id: request.worker_id,
+        }
+    }
+}
+
+impl TryFrom<pb::RequestTaskResponse> for RequestTaskResponse {
+    type Error = LogMetadataError;
+
+    fn try_from(response: pb::RequestTaskResponse) -> Result<Self, Self::Error> {
+        let task = response.task.map(TryFrom::try_from).transpose()?;
+        Ok(RequestTaskResponse { task })
+    }
+}
+
+impl From<RequestTaskResponse> for pb::RequestTaskResponse {
+    fn from(response: RequestTaskResponse) -> Self {
+        pb::RequestTaskResponse {
+            task: response.task.map(Into::into),
+        }
+    }
+}
+
+impl TryFrom<pb::CompleteTaskRequest> for CompleteTaskRequest {
+    type Error = LogMetadataError;
+
+    fn try_from(request: pb::CompleteTaskRequest) -> Result<Self, Self::Error> {
+        let status = request.status().try_into()?;
+        Ok(CompleteTaskRequest {
+            task_id: request.task_id,
+            status,
+            error_message: request.error_message,
+        })
+    }
+}
+
+impl From<CompleteTaskRequest> for pb::CompleteTaskRequest {
+    fn from(request: CompleteTaskRequest) -> Self {
+        let status: pb::TaskStatus = request.status.into();
+        pb::CompleteTaskRequest {
+            task_id: request.task_id,
+            status: status as i32,
+            error_message: request.error_message,
+        }
+    }
+}
+
+impl TryFrom<pb::CompleteTaskResponse> for CompleteTaskResponse {
+    type Error = LogMetadataError;
+
+    fn try_from(response: pb::CompleteTaskResponse) -> Result<Self, Self::Error> {
+        Ok(CompleteTaskResponse {
+            success: response.success,
+        })
+    }
+}
+
+impl From<CompleteTaskResponse> for pb::CompleteTaskResponse {
+    fn from(response: CompleteTaskResponse) -> Self {
+        pb::CompleteTaskResponse {
+            success: response.success,
+        }
     }
 }

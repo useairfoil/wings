@@ -34,6 +34,12 @@ pub trait LogMetadata: Send + Sync {
         &self,
         request: ListPartitionsRequest,
     ) -> Result<ListPartitionsResponse>;
+
+    /// Request a task to be assigned to a worker.
+    async fn request_task(&self, request: RequestTaskRequest) -> Result<RequestTaskResponse>;
+
+    /// Complete a task with the given status.
+    async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse>;
 }
 
 /// The offset of a log together with its timestamp.
@@ -172,6 +178,84 @@ pub struct PartitionMetadata {
     pub partition_value: Option<PartitionValue>,
     /// The end offset of the log.
     pub end_offset: LogOffset,
+}
+
+/// The status of a task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskStatus {
+    /// Task is pending to be assigned.
+    Pending,
+    /// Task is currently being processed.
+    InProgress,
+    /// Task has been completed successfully.
+    Completed,
+    /// Task has failed.
+    Failed,
+}
+
+/// A task that can be assigned to a worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskMetadata {
+    /// The unique identifier of the task.
+    pub task_id: String,
+    /// The current status of the task.
+    pub status: TaskStatus,
+    /// The time when the task was created.
+    pub created_at: SystemTime,
+    /// The time when the task was last updated.
+    pub updated_at: SystemTime,
+}
+
+/// A compaction task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionTask {
+    /// The namespace of the topic to compact.
+    pub namespace: NamespaceName,
+    /// The topic name to compact.
+    pub topic_name: TopicName,
+    /// The partition value to compact, if any.
+    pub partition_value: Option<PartitionValue>,
+}
+
+/// A task that can be assigned to a worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Task {
+    Compaction {
+        metadata: TaskMetadata,
+        task: CompactionTask,
+    },
+}
+
+/// Request to assign a task to a worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestTaskRequest {
+    /// The identifier of the worker requesting the task.
+    pub worker_id: String,
+}
+
+/// Response containing the assigned task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestTaskResponse {
+    /// The assigned task, if any.
+    pub task: Option<Task>,
+}
+
+/// Request to complete a task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteTaskRequest {
+    /// The identifier of the task to complete.
+    pub task_id: String,
+    /// The new status of the task.
+    pub status: TaskStatus,
+    /// Optional error message if the task failed.
+    pub error_message: Option<String>,
+}
+
+/// Response indicating whether the task completion was successful.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteTaskResponse {
+    /// Whether the task completion was successful.
+    pub success: bool,
 }
 
 impl LogOffset {

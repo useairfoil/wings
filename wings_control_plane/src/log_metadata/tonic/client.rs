@@ -6,8 +6,9 @@ use http_body::Body;
 
 use crate::{
     log_metadata::{
-        CommitPageRequest, CommitPageResponse, GetLogLocationRequest, ListPartitionsRequest,
-        ListPartitionsResponse, LogLocation, LogMetadata, LogMetadataError, Result,
+        CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
+        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
+        LogMetadata, LogMetadataError, RequestTaskRequest, RequestTaskResponse, Result,
     },
     resources::NamespaceName,
 };
@@ -93,6 +94,36 @@ where
             .client
             .clone()
             .list_partitions(request)
+            .await
+            .map_err(status_to_log_metadata_error)?
+            .into_inner()
+            .try_into()?;
+
+        Ok(response)
+    }
+
+    async fn request_task(&self, request: RequestTaskRequest) -> Result<RequestTaskResponse> {
+        let request: pb::RequestTaskRequest = request.into();
+
+        let response = self
+            .client
+            .clone()
+            .request_task(request)
+            .await
+            .map_err(status_to_log_metadata_error)?
+            .into_inner()
+            .try_into()?;
+
+        Ok(response)
+    }
+
+    async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
+        let request: pb::CompleteTaskRequest = request.into();
+
+        let response = self
+            .client
+            .clone()
+            .complete_task(request)
             .await
             .map_err(status_to_log_metadata_error)?
             .into_inner()

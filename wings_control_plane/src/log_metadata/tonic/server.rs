@@ -5,8 +5,8 @@ use tonic::{Request, Response, Status, async_trait};
 
 use crate::{
     log_metadata::{
-        GetLogLocationRequest, ListPartitionsRequest, LogMetadata, LogMetadataError,
-        error::InvalidResourceNameSnafu,
+        CompleteTaskRequest, GetLogLocationRequest, ListPartitionsRequest, LogMetadata,
+        LogMetadataError, RequestTaskRequest, error::InvalidResourceNameSnafu,
     },
     resources::{NamespaceName, name::resource_error_to_status},
 };
@@ -97,6 +97,44 @@ impl TonicService for LogMetadataServer {
         let response = self
             .inner
             .list_partitions(request)
+            .await
+            .map_err(log_metadata_error_to_status)?
+            .into();
+
+        Ok(Response::new(response))
+    }
+
+    async fn request_task(
+        &self,
+        request: Request<pb::RequestTaskRequest>,
+    ) -> Result<Response<pb::RequestTaskResponse>, Status> {
+        let request: RequestTaskRequest = request
+            .into_inner()
+            .try_into()
+            .map_err(log_metadata_error_to_status)?;
+
+        let response = self
+            .inner
+            .request_task(request)
+            .await
+            .map_err(log_metadata_error_to_status)?
+            .into();
+
+        Ok(Response::new(response))
+    }
+
+    async fn complete_task(
+        &self,
+        request: Request<pb::CompleteTaskRequest>,
+    ) -> Result<Response<pb::CompleteTaskResponse>, Status> {
+        let request: CompleteTaskRequest = request
+            .into_inner()
+            .try_into()
+            .map_err(log_metadata_error_to_status)?;
+
+        let response = self
+            .inner
+            .complete_task(request)
             .await
             .map_err(log_metadata_error_to_status)?
             .into();
