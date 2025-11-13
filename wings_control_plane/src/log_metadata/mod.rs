@@ -209,12 +209,14 @@ pub struct TaskMetadata {
 /// A compaction task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionTask {
-    /// The namespace of the topic to compact.
-    pub namespace: NamespaceName,
     /// The topic name to compact.
     pub topic_name: TopicName,
     /// The partition value to compact, if any.
     pub partition_value: Option<PartitionValue>,
+    /// The start offset of the compaction range.
+    pub start_offset: u64,
+    /// The end offset of the compaction range.
+    pub end_offset: u64,
 }
 
 /// A task that can be assigned to a worker.
@@ -228,10 +230,7 @@ pub enum Task {
 
 /// Request to assign a task to a worker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RequestTaskRequest {
-    /// The identifier of the worker requesting the task.
-    pub worker_id: String,
-}
+pub struct RequestTaskRequest {}
 
 /// Response containing the assigned task.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -364,5 +363,13 @@ impl fmt::Debug for AcceptedBatchInfo {
             .field("end_offset", &self.end_offset)
             .field("timestamp", &timestamp)
             .finish()
+    }
+}
+
+impl Task {
+    pub fn task_id(&self) -> &str {
+        match self {
+            Task::Compaction { metadata, .. } => &metadata.task_id,
+        }
     }
 }

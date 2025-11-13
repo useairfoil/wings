@@ -5,10 +5,11 @@
 
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    fmt::Display,
     ops::Bound,
-    sync::Arc,
-    time::SystemTime,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime},
 };
 
 use async_trait::async_trait;
@@ -17,7 +18,7 @@ use tokio::{
     sync::{Notify, futures::OwnedNotified},
     time::Instant,
 };
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use crate::{
     cluster_metadata::{ClusterMetadata, cache::TopicCache},
@@ -28,18 +29,27 @@ use crate::{
     resources::{NamespaceName, PartitionValue, TopicName},
 };
 
+const COMPACTION_THRESHOLD: u64 = 64 * 1024 * 1024; // 64 MiB for testing
+
 use super::{
-    CommitPageRequest, CommitPageResponse, CommittedBatch, CompleteTaskRequest,
+    CommitPageRequest, CommitPageResponse, CommittedBatch, CompactionTask, CompleteTaskRequest,
     CompleteTaskResponse, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
     ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata, LogMetadataError,
-    LogOffset, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result,
-    timestamp::compare_batch_request_timestamps,
+    LogOffset, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result, Task,
+    TaskMetadata, TaskStatus, error::InternalSnafu, timestamp::compare_batch_request_timestamps,
 };
 
 #[derive(Clone)]
 pub struct InMemoryLogMetadata {
     /// Maps topic names to their log state
     topics: Arc<DashMap<TopicName, TopicLogState>>,
+    /// Shared task manager for tracking tasks
+    ///
+    /// Since the mutex is sometimes held in the commit path, this may cause
+    /// increased latency when requesting tasks.
+    /// Since this is an in-memory implementation for development, it's
+    /// not important.
+    task_manager: Arc<Mutex<TaskManager>>,
     topic_cache: TopicCache,
 }
 
@@ -56,10 +66,39 @@ struct PartitionKey {
     partition_value: Option<PartitionValue>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TaskDefinitionMetadata {
+    pub task_id: String,
+    pub created_at: SystemTime,
+    pub updated_at: SystemTime,
+}
+
+/// Task definition
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TaskDefinition {
+    Compaction(TaskDefinitionMetadata, CompactionTask),
+}
+
+/// Task manager for tracking tasks in different states
+#[derive(Debug, Default)]
+struct TaskManager {
+    /// Tasks that have been queued but not assigned yet
+    queued: VecDeque<TaskDefinition>,
+    /// Tasks that are currently in progress
+    in_progress: HashMap<String, Task>,
+    /// Notify when a task is added.
+    notify: Arc<Notify>,
+}
+
 #[derive(Debug, Clone)]
 struct PartitionLogState {
+    key: PartitionKey,
     /// Next offset to be assigned
     next_offset: LogOffset,
+    /// Current estimated size of the partition data, in bytes.
+    current_estimated_size: u64,
+    /// First dirty data offset (oldest data that hasn't been compacted)
+    first_dirty_offset: LogOffset,
     /// Maps start offset to page information for lookup.
     pages: BTreeMap<u64, PageInfo>,
     /// Maps timestamp to the first offset containing that timestamp.
@@ -94,6 +133,7 @@ impl InMemoryLogMetadata {
         let topic_cache = TopicCache::new(cluster_meta);
         Self {
             topics: Default::default(),
+            task_manager: Default::default(),
             topic_cache,
         }
     }
@@ -112,25 +152,45 @@ impl LogMetadata for InMemoryLogMetadata {
         // Assign the same timestamp to all batches across pages.
         let now_ts = SystemTime::now();
 
-        let committed_pages = pages
-            .iter()
-            .map(|page| {
-                // This should have been checked already by the caller.
-                assert_eq!(page.topic_name.parent(), &namespace);
+        let mut committed_pages = Vec::new();
+        let mut tasks = Vec::new();
 
-                let partition_key =
-                    PartitionKey::new(page.topic_name.clone(), page.partition_value.clone());
+        for page in pages {
+            // This should have been checked already by the caller.
+            assert_eq!(page.topic_name.parent(), &namespace);
 
-                let mut topic_state =
-                    self.topics
-                        .entry(page.topic_name.clone())
-                        .or_insert_with(|| TopicLogState {
-                            partitions: BTreeMap::new(),
-                        });
+            let partition_key =
+                PartitionKey::new(page.topic_name.clone(), page.partition_value.clone());
 
-                topic_state.commit_page(partition_key, page, file_ref.clone(), now_ts)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            let mut topic_state = self
+                .topics
+                .entry(page.topic_name.clone())
+                .or_insert_with(|| TopicLogState {
+                    partitions: BTreeMap::new(),
+                });
+
+            let (committed_page, maybe_task) =
+                topic_state.commit_page(partition_key, page, file_ref.clone(), now_ts)?;
+
+            committed_pages.push(committed_page);
+
+            if let Some(task) = maybe_task {
+                tasks.push(task);
+            }
+        }
+
+        if !tasks.is_empty() {
+            let mut task_manager = self.task_manager.lock().map_err(|_| {
+                InternalSnafu {
+                    message: "task manager lock is poisoned".to_string(),
+                }
+                .build()
+            })?;
+
+            for task in tasks {
+                task_manager.queue_task(task);
+            }
+        }
 
         Ok(committed_pages)
     }
@@ -196,8 +256,6 @@ impl LogMetadata for InMemoryLogMetadata {
 
         let page_size = request.page_size.unwrap_or(100);
 
-        println!("ListPartitionsRequest: {:?}", request);
-
         let partition_value = if let Some(data_type) = topic.partition_field_data_type() {
             if let Some(page_token) = request.page_token.as_ref() {
                 let pv =
@@ -259,7 +317,41 @@ impl LogMetadata for InMemoryLogMetadata {
     }
 
     async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
-        todo!();
+        debug!("Received task request");
+
+        let timeout = tokio::time::sleep(Duration::from_secs(1));
+        tokio::pin!(timeout);
+
+        loop {
+            let waiter = {
+                let mut task_manager = self.task_manager.lock().map_err(|_| {
+                    InternalSnafu {
+                        message: "failed to acquire poisoned lock".to_string(),
+                    }
+                    .build()
+                })?;
+
+                if let Some(task) = task_manager.next_task() {
+                    info!(task_id = task.task_id(), "Assigned task to worker");
+                    return Ok(RequestTaskResponse { task: task.into() });
+                }
+
+                task_manager.notify.clone().notified_owned()
+            };
+
+            debug!("No task available. Waiting.");
+
+            tokio::select! {
+                _ = waiter => {
+                    continue;
+                }
+                _ = &mut timeout => {
+                    break;
+                }
+            }
+        }
+
+        Ok(RequestTaskResponse { task: None })
     }
 
     async fn complete_task(&self, _request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
@@ -302,12 +394,15 @@ impl TopicLogState {
         page: &CommitPageRequest,
         file_ref: String,
         now_ts: SystemTime,
-    ) -> Result<CommitPageResponse> {
+    ) -> Result<(CommitPageResponse, Option<TaskDefinition>)> {
         let partition_state = self
             .partitions
             .entry(partition_key.clone())
             .or_insert_with(|| PartitionLogState {
+                key: partition_key,
                 next_offset: LogOffset::default(),
+                current_estimated_size: 0,
+                first_dirty_offset: LogOffset::default(),
                 pages: BTreeMap::new(),
                 timestamp_index: BTreeMap::new(),
                 notify: Arc::new(Notify::new()),
@@ -337,7 +432,7 @@ impl PartitionLogState {
         page: &CommitPageRequest,
         file_ref: String,
         now_ts: SystemTime,
-    ) -> Result<CommitPageResponse> {
+    ) -> Result<(CommitPageResponse, Option<TaskDefinition>)> {
         let start_offset = self.next_offset;
 
         let mut batches = Vec::new();
@@ -371,6 +466,8 @@ impl PartitionLogState {
             }
         }
 
+        let mut task_request = None;
+
         // Update state only if we accepted any data.
         if current_offset != start_offset {
             current_offset = current_offset.with_timestamp(now_ts);
@@ -399,14 +496,36 @@ impl PartitionLogState {
                 .insert(start_offset.timestamp, start_offset.offset);
 
             self.next_offset = current_offset;
+            self.current_estimated_size += page.batch_size_bytes;
+
+            // Check if we should signal to the caller to trigger compaction
+            if self.current_estimated_size > COMPACTION_THRESHOLD {
+                let start_offset = self.first_dirty_offset;
+
+                info!(
+                    topic = %self.key.topic_name,
+                    pv = ?self.key.partition_value,
+                    start_offset = start_offset.offset,
+                    end_offset = end_offset.offset,
+                    "compaction triggered"
+                );
+
+                task_request = self.new_compaction_task(&start_offset, &end_offset).into();
+
+                self.current_estimated_size = 0;
+                self.first_dirty_offset = self.next_offset;
+            }
+
             self.notify.notify_waiters();
         }
 
-        Ok(CommitPageResponse {
+        let response = CommitPageResponse {
             topic_name: page.topic_name.clone(),
             partition_value: page.partition_value.clone(),
             batches,
-        })
+        };
+
+        Ok((response, task_request))
     }
 
     fn get_log_location(
@@ -468,6 +587,45 @@ impl PartitionLogState {
 
         Ok(GetLogLocationResult::Done)
     }
+
+    pub fn new_compaction_task(
+        &self,
+        start_offset: &LogOffset,
+        end_offset: &LogOffset,
+    ) -> TaskDefinition {
+        let now = SystemTime::now();
+        let metadata = TaskDefinitionMetadata {
+            task_id: format!("compaction@{}@{}", self.key, start_offset.offset),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let task = CompactionTask {
+            topic_name: self.key.topic_name.clone(),
+            partition_value: self.key.partition_value.clone(),
+            start_offset: start_offset.offset,
+            end_offset: end_offset.offset,
+        };
+
+        TaskDefinition::Compaction(metadata, task)
+    }
+}
+
+impl TaskManager {
+    pub fn queue_task(&mut self, task: TaskDefinition) {
+        debug!(task_id = task.task_id(), "added task to manager");
+        self.queued.push_back(task);
+        self.notify.notify_waiters();
+    }
+
+    pub fn next_task(&mut self) -> Option<Task> {
+        let task = self.queued.pop_front()?.into_task(TaskStatus::InProgress);
+
+        self.in_progress
+            .insert(task.task_id().to_string(), task.clone());
+
+        Some(task)
+    }
 }
 
 impl PartitionKey {
@@ -495,6 +653,37 @@ impl Ord for PartitionKey {
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Less,
             (Some(_), None) => Ordering::Greater,
+        }
+    }
+}
+
+impl Display for PartitionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.partition_value {
+            None => write!(f, "{}", self.topic_name),
+            Some(ref value) => write!(f, "{}-{}", self.topic_name, value),
+        }
+    }
+}
+
+impl TaskDefinition {
+    pub fn task_id(&self) -> &str {
+        match self {
+            TaskDefinition::Compaction(meta, _) => &meta.task_id,
+        }
+    }
+
+    pub fn into_task(self, status: TaskStatus) -> Task {
+        match self {
+            TaskDefinition::Compaction(metadata, task) => {
+                let metadata = TaskMetadata {
+                    task_id: metadata.task_id,
+                    created_at: metadata.created_at,
+                    updated_at: metadata.updated_at,
+                    status,
+                };
+                Task::Compaction { metadata, task }
+            }
         }
     }
 }

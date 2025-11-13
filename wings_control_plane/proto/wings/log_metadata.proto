@@ -158,9 +158,10 @@ enum TaskStatus {
 }
 
 message CompactionTask {
-  string namespace = 1;
-  string topic = 2;
-  optional PartitionValue partition = 3;
+  string topic = 1;
+  optional PartitionValue partition = 2;
+  uint64 start_offset = 3;
+  uint64 end_offset = 4;
 }
 
 message Task {
@@ -174,9 +175,7 @@ message Task {
   }
 }
 
-message RequestTaskRequest {
-  string worker_id = 1;
-}
+message RequestTaskRequest {}
 
 message RequestTaskResponse {
   optional Task task = 1;

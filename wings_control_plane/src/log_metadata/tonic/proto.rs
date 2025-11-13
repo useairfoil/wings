@@ -16,7 +16,7 @@ use crate::{
             InvalidTimestampSnafu,
         },
     },
-    resources::{NamespaceName, PartitionValue, TopicName},
+    resources::{PartitionValue, TopicName},
 };
 
 use super::pb;
@@ -649,9 +649,10 @@ impl From<TaskStatus> for pb::TaskStatus {
 impl From<CompactionTask> for pb::CompactionTask {
     fn from(task: CompactionTask) -> Self {
         pb::CompactionTask {
-            namespace: task.namespace.to_string(),
             topic: task.topic_name.to_string(),
             partition: task.partition_value.as_ref().map(Into::into),
+            start_offset: task.start_offset,
+            end_offset: task.end_offset,
         }
     }
 }
@@ -660,20 +661,16 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
     type Error = LogMetadataError;
 
     fn try_from(task: pb::CompactionTask) -> Result<Self, Self::Error> {
-        let namespace =
-            NamespaceName::parse(&task.namespace).context(InvalidResourceNameSnafu {
-                resource: "namespace",
-            })?;
-
         let topic_name = TopicName::parse(&task.topic)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
         let partition_value = task.partition.map(TryFrom::try_from).transpose()?;
 
         Ok(CompactionTask {
-            namespace,
             topic_name,
             partition_value,
+            start_offset: task.start_offset,
+            end_offset: task.end_offset,
         })
     }
 }
@@ -750,18 +747,14 @@ impl From<Task> for pb::Task {
 impl TryFrom<pb::RequestTaskRequest> for RequestTaskRequest {
     type Error = LogMetadataError;
 
-    fn try_from(request: pb::RequestTaskRequest) -> Result<Self, Self::Error> {
-        Ok(RequestTaskRequest {
-            worker_id: request.worker_id,
-        })
+    fn try_from(_request: pb::RequestTaskRequest) -> Result<Self, Self::Error> {
+        Ok(RequestTaskRequest {})
     }
 }
 
 impl From<RequestTaskRequest> for pb::RequestTaskRequest {
-    fn from(request: RequestTaskRequest) -> Self {
-        pb::RequestTaskRequest {
-            worker_id: request.worker_id,
-        }
+    fn from(_request: RequestTaskRequest) -> Self {
+        pb::RequestTaskRequest {}
     }
 }
 

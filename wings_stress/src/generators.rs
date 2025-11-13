@@ -42,7 +42,7 @@ impl RequestGenerator {
 
     pub fn create_request(&mut self) -> WriteRequest {
         // random batch size
-        let batch_size = 42;
+        let batch_size = 420;
         self.inner.new_batch(batch_size)
     }
 }
