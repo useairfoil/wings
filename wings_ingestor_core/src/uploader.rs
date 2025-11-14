@@ -4,6 +4,7 @@ use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
 use wings_control_plane::{
     log_metadata::{CommitBatchRequest, CommitPageRequest},
+    paths::format_folio_path,
     resources::{NamespaceName, NamespaceRef},
 };
 use wings_object_store::ObjectStoreFactory;
@@ -58,7 +59,7 @@ impl FolioUploader {
 
     pub fn new_folio_id(&self, namespace: &NamespaceName) -> String {
         let folio_id = self.id_generator.generate_id();
-        format!("{}/folio/{}", namespace, folio_id)
+        format_folio_path(namespace, &folio_id)
     }
 
     pub async fn upload_folio(

@@ -38,6 +38,12 @@ impl Namespace {
             frozen_object_store_config: options.frozen_object_store_config,
         }
     }
+
+    pub fn realize_frozen_object_store_config(&self) -> SecretName {
+        self.frozen_object_store_config
+            .clone()
+            .unwrap_or_else(|| self.default_object_store_config.clone())
+    }
 }
 
 /// Options for creating a namespace.

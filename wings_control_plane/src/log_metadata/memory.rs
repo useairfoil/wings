@@ -354,8 +354,23 @@ impl LogMetadata for InMemoryLogMetadata {
         Ok(RequestTaskResponse { task: None })
     }
 
-    async fn complete_task(&self, _request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
-        todo!();
+    async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
+        let mut task_manager = self.task_manager.lock().map_err(|_| {
+            InternalSnafu {
+                message: "failed to acquire poisoned lock".to_string(),
+            }
+            .build()
+        })?;
+
+        let Some(task) = task_manager.complete_task(&request.task_id) else {
+            return Err(LogMetadataError::TaskNotFound {
+                task_id: request.task_id,
+            });
+        };
+
+        info!(task_id = task.task_id(), "Task completed by worker");
+
+        Ok(CompleteTaskResponse { success: true })
     }
 }
 
@@ -625,6 +640,10 @@ impl TaskManager {
             .insert(task.task_id().to_string(), task.clone());
 
         Some(task)
+    }
+
+    pub fn complete_task(&mut self, task_id: &str) -> Option<Task> {
+        self.in_progress.remove(task_id)
     }
 }
 

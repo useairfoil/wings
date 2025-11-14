@@ -4885,6 +4885,7 @@ dependencies = [
  "wings-object-store",
  "wings-observability",
  "wings-server-core",
+ "wings-worker",
 ]
 
 [[package]]
@@ -5095,6 +5096,33 @@ dependencies = [
  "wings-ingestor-core",
  "wings-ingestor-http",
  "wings-object-store",
+ "wings-server-core",
+]
+
+[[package]]
+name = "wings-worker"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-json",
+ "arrow-schema",
+ "async-stream",
+ "async-trait",
+ "datafusion",
+ "futures",
+ "object_store",
+ "opentelemetry_sdk",
+ "parquet",
+ "pin-project",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "wings-control-plane",
+ "wings-object-store",
+ "wings-observability",
  "wings-server-core",
 ]
 

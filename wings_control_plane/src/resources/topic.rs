@@ -36,14 +36,6 @@ impl Topic {
         Arc::new(Schema::new(self.fields.clone()))
     }
 
-    /*
-    pub fn schema_with_offset_column(&self) -> SchemaRef {
-        let mut builder = SchemaBuilder::from(&self.fields);
-        builder.push(Field::new(OFFSET_COLUMN_NAME, DataType::UInt64, false));
-        Arc::new(builder.finish())
-    }
-    */
-
     /// Returns the topic's schema without the partition field.
     ///
     /// Since partition fields are usually not stored in the physical Parquet

@@ -229,7 +229,7 @@ pub enum Task {
 }
 
 /// Request to assign a task to a worker.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RequestTaskRequest {}
 
 /// Response containing the assigned task.
@@ -370,6 +370,16 @@ impl Task {
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
+        }
+    }
+}
+
+impl CompleteTaskRequest {
+    pub fn new_completed(task_id: String) -> Self {
+        Self {
+            task_id,
+            status: TaskStatus::Completed,
+            error_message: None,
         }
     }
 }

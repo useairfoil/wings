@@ -50,6 +50,8 @@ pub enum LogMetadataError {
     InvalidDuration {
         source: Arc<prost_types::DurationError>,
     },
+    #[snafu(display("task not found: {task_id}"))]
+    TaskNotFound { task_id: String },
 }
 
 pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;

@@ -17,9 +17,10 @@ use wings_control_plane::{
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
-use wings_object_store::{ObjectStoreFactory, TemporaryFileSystemFactory};
+use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
 use wings_server_core::query::NamespaceProviderFactory;
+use wings_worker::{WorkerPool, WorkerPoolOptions, run_worker_pool};
 
 use crate::error::{
     InvalidServerUrlSnafu, IoSnafu, ObjectStoreSnafu, Result, TonicReflectionSnafu,
@@ -67,13 +68,31 @@ impl DevArgs {
             object_store_factory.root_path().display()
         );
 
+        let namespace_provider_factory = NamespaceProviderFactory::new(
+            cluster_metadata.clone(),
+            log_metadata.clone(),
+            metrics_exporter.clone(),
+            object_store_factory.clone(),
+        );
+
         let ingestor = BatchIngestor::new(object_store_factory.clone(), log_metadata.clone());
+        let worker_pool = {
+            let topic_cache = TopicCache::new(cluster_metadata.clone());
+            let namespace_cache = NamespaceCache::new(cluster_metadata.clone());
+            WorkerPool::new(
+                topic_cache,
+                namespace_cache,
+                log_metadata.clone(),
+                object_store_factory.clone(),
+                namespace_provider_factory.clone(),
+                WorkerPoolOptions::default(),
+            )
+        };
 
         let grpc_server_fut = run_grpc_server(
             cluster_metadata.clone(),
             log_metadata,
-            object_store_factory,
-            metrics_exporter,
+            namespace_provider_factory,
             ingestor.client(),
             metadata_address,
             ct.clone(),
@@ -86,7 +105,8 @@ impl DevArgs {
             ct.clone(),
         );
 
-        let ingestor_fut = run_background_ingestor(ingestor, ct);
+        let ingestor_fut = run_background_ingestor(ingestor, ct.clone());
+        let worker_pool_fut = run_worker_pool(worker_pool, ct);
 
         tokio::select! {
             res = grpc_server_fut => {
@@ -97,6 +117,9 @@ impl DevArgs {
             },
             res = ingestor_fut => {
                 info!("Background ingestor exited with {:?}", res);
+            },
+            res = worker_pool_fut => {
+                info!("Worker pool exited with {:?}", res);
             },
         }
 
@@ -127,8 +150,7 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
 async fn run_grpc_server(
     cluster_meta: Arc<InMemoryClusterMetadata>,
     log_meta: Arc<InMemoryLogMetadata>,
-    object_store_factory: Arc<dyn ObjectStoreFactory>,
-    metrics_exporter: MetricsExporter,
+    namespace_provider_factory: NamespaceProviderFactory,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
@@ -143,13 +165,6 @@ async fn run_grpc_server(
         .register_encoded_file_descriptor_set(WingsFlightSqlServer::file_descriptor_set())
         .build_v1()
         .context(TonicReflectionSnafu {})?;
-
-    let namespace_provider_factory = NamespaceProviderFactory::new(
-        cluster_meta.clone(),
-        log_meta.clone(),
-        metrics_exporter,
-        object_store_factory,
-    );
 
     let topic_cache = TopicCache::new(cluster_meta.clone());
     let namespace_cache = NamespaceCache::new(cluster_meta.clone());
