@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use futures::TryStreamExt;
 use object_store::{PutMode, PutOptions, PutPayload, path::Path};
-use parquet::{arrow::ArrowWriter, file::properties::WriterProperties, format::KeyValue};
+use parquet::{
+    arrow::ArrowWriter,
+    file::{metadata::KeyValue, properties::WriterProperties},
+};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -194,11 +197,12 @@ impl Worker {
             return Ok(());
         }
 
+        let parquet_metadata = writer.finish().context(ParquetSnafu {})?;
         let output_bytes = writer.into_inner().context(ParquetSnafu {})?;
 
         let object_store = self
             .object_store_factory
-            .create_object_store(namespace_ref.realize_frozen_object_store_config())
+            .create_object_store(namespace_ref.default_object_store_config.clone())
             .await
             .context(ObjectStoreSnafu {})?;
 

@@ -22,7 +22,7 @@
 use arrow::{
     array::RecordBatch,
     datatypes::{Schema, SchemaRef},
-    ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions},
+    ipc::writer::{CompressionContext, DictionaryTracker, IpcDataGenerator, IpcWriteOptions},
 };
 use arrow_flight::{FlightData, FlightDescriptor, SchemaAsIpc, flight_descriptor::DescriptorType};
 use snafu::ResultExt;
@@ -72,6 +72,7 @@ struct FlightIpcEncoder {
     options: IpcWriteOptions,
     data_gen: IpcDataGenerator,
     dictionary_tracker: DictionaryTracker,
+    compression_context: CompressionContext,
 }
 
 impl FlightIpcEncoder {
@@ -80,6 +81,7 @@ impl FlightIpcEncoder {
             options,
             data_gen: IpcDataGenerator::default(),
             dictionary_tracker: DictionaryTracker::new(error_on_replacement),
+            compression_context: CompressionContext::default(),
         }
     }
 
@@ -93,7 +95,12 @@ impl FlightIpcEncoder {
     fn encode_batch(&mut self, batch: &RecordBatch) -> Result<(Vec<FlightData>, FlightData)> {
         let (encoded_dictionaries, encoded_batch) = self
             .data_gen
-            .encoded_batch(batch, &mut self.dictionary_tracker, &self.options)
+            .encode(
+                batch,
+                &mut self.dictionary_tracker,
+                &self.options,
+                &mut self.compression_context,
+            )
             .context(ArrowSnafu {})?;
 
         let flight_dictionaries = encoded_dictionaries.into_iter().map(Into::into).collect();

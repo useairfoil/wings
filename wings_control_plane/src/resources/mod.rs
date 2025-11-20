@@ -6,7 +6,10 @@ mod tenant;
 mod topic;
 
 pub use self::name::{ResourceError, ResourceResult, validate_resource_id};
-pub use self::namespace::{Namespace, NamespaceName, NamespaceOptions, NamespaceRef};
+pub use self::namespace::{
+    DataLakeConfig, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,
+    NamespaceRef,
+};
 pub use self::partition::{PartitionValue, PartitionValueError, PartitionValueParseError};
 pub use self::secret::SecretName;
 pub use self::tenant::{Tenant, TenantName, TenantRef};

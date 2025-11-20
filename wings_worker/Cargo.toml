@@ -16,7 +16,9 @@ arrow-json.workspace = true
 arrow-schema.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
+bytes.workspace = true
 datafusion.workspace = true
+deltalake-core.workspace = true
 futures.workspace = true
 object_store.workspace = true
 opentelemetry_sdk.workspace = true
@@ -28,6 +30,7 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+uuid = "1.18.1"
 wings-control-plane = { path = "../wings_control_plane" }
 wings-object-store = { path = "../wings_object_store" }
 wings-observability = { path = "../wings_observability" }

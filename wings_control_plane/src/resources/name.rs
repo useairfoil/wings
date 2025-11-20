@@ -37,10 +37,10 @@ pub fn validate_resource_id(id: &str) -> ResourceResult<()> {
     let mut chars = id.chars();
 
     // First character must be a lowercase letter
-    if let Some(first_char) = chars.next() {
-        if !first_char.is_ascii_lowercase() {
-            return Err(ResourceError::InvalidResourceId { id: id.to_string() });
-        }
+    if let Some(first_char) = chars.next()
+        && !first_char.is_ascii_lowercase()
+    {
+        return Err(ResourceError::InvalidResourceId { id: id.to_string() });
     }
 
     // Remaining characters must be lowercase letters, numbers, hyphens, or underscores

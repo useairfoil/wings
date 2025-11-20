@@ -150,11 +150,24 @@ message Namespace {
   uint64 flush_interval_millis = 3;
 
   // The default object store configuration for the namespace.
+  //
+  // This is an opaque string used to create the object store client.
   string default_object_store_config = 4;
 
-  // If specified, use this configuration for frozen data.
-  optional string frozen_object_store_config = 5;
+  // Configuration for the datalake storage
+  oneof data_lake_config {
+      IcebergInMemoryCatalog iceberg_in_memory_catalog = 5;
+      IcebergRestCatalog iceberg_rest_catalog = 6;
+  };
 }
+
+// In-memory iceberg catalog.
+//
+// This catalog will use the same object store as the namespace.
+message IcebergInMemoryCatalog {}
+
+// Iceberg REST catalog
+message IcebergRestCatalog {}
 
 message CreateTopicRequest {
   // The namespace that owns the topic.

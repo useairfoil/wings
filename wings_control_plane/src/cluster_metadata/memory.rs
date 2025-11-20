@@ -308,17 +308,17 @@ impl ClusterMetadataStore {
             });
         }
 
-        if let Some(key_index) = options.partition_key {
-            if key_index >= options.fields.len() {
-                return Err(ClusterMetadataError::InvalidArgument {
-                    resource: "topic",
-                    message: format!(
-                        "partition key index {} is out of bounds for fields (length: {})",
-                        key_index,
-                        options.fields.len()
-                    ),
-                });
-            }
+        if let Some(key_index) = options.partition_key
+            && key_index >= options.fields.len()
+        {
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "topic",
+                message: format!(
+                    "partition key index {} is out of bounds for fields (length: {})",
+                    key_index,
+                    options.fields.len()
+                ),
+            });
         }
 
         let namespace_id = name.parent().id().to_string();

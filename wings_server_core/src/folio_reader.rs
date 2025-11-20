@@ -4,7 +4,7 @@ use datafusion::{
     common::Result,
     datasource::{
         listing::PartitionedFile,
-        physical_plan::{FileMeta, ParquetFileMetrics, ParquetFileReaderFactory},
+        physical_plan::{ParquetFileMetrics, ParquetFileReaderFactory},
     },
     error::DataFusionError,
     physical_plan::metrics::ExecutionPlanMetricsSet,
@@ -49,18 +49,19 @@ impl ParquetFileReaderFactory for FolioParquetFileReaderFactory {
     fn create_reader(
         &self,
         partition_index: usize,
-        file_meta: FileMeta,
+        partitioned_file: PartitionedFile,
         _metadata_size_hint: Option<usize>,
         metrics: &ExecutionPlanMetricsSet,
     ) -> Result<Box<dyn AsyncFileReader + Send>> {
-        if file_meta.location() != &self.location.path() {
+        let file_location = partitioned_file.object_meta.location;
+        if file_location != self.location.path() {
             return Err(DataFusionError::Internal(
                 "reader file_meta and folio location mismatch".to_string(),
             ));
         }
 
         let file_metrics =
-            ParquetFileMetrics::new(partition_index, file_meta.location().as_ref(), metrics);
+            ParquetFileMetrics::new(partition_index, file_location.as_ref(), metrics);
 
         let store = Arc::clone(&self.store);
         let inner = ParquetObjectReader::new(store, self.location.path().clone())

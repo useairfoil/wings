@@ -21,8 +21,17 @@ pub struct Namespace {
     pub flush_interval: Duration,
     /// The default object store configuration for the namespace.
     pub default_object_store_config: SecretName,
-    /// If specified, use this configuration to store data for long term storage.
-    pub frozen_object_store_config: Option<SecretName>,
+    /// DataLake configuration.
+    pub data_lake_config: DataLakeConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IcebergRestCatalogConfig {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataLakeConfig {
+    IcebergInMemoryCatalog,
+    IcebergRestCatalog(IcebergRestCatalogConfig),
 }
 
 pub type NamespaceRef = Arc<Namespace>;
@@ -35,14 +44,8 @@ impl Namespace {
             flush_size: options.flush_size,
             flush_interval: options.flush_interval,
             default_object_store_config: options.default_object_store_config,
-            frozen_object_store_config: options.frozen_object_store_config,
+            data_lake_config: options.data_lake_config,
         }
-    }
-
-    pub fn realize_frozen_object_store_config(&self) -> SecretName {
-        self.frozen_object_store_config
-            .clone()
-            .unwrap_or_else(|| self.default_object_store_config.clone())
     }
 }
 
@@ -55,8 +58,8 @@ pub struct NamespaceOptions {
     pub flush_interval: Duration,
     /// The default object store configuration for the namespace.
     pub default_object_store_config: SecretName,
-    /// If specified, use this configuration to store data for long term storage.
-    pub frozen_object_store_config: Option<SecretName>,
+    /// DataLake configuration.
+    pub data_lake_config: DataLakeConfig,
 }
 
 impl NamespaceOptions {
@@ -66,7 +69,7 @@ impl NamespaceOptions {
             flush_size: ByteSize::mb(8),
             flush_interval: Duration::from_millis(250),
             default_object_store_config,
-            frozen_object_store_config: None,
+            data_lake_config: DataLakeConfig::IcebergInMemoryCatalog,
         }
     }
 
@@ -91,12 +94,9 @@ impl NamespaceOptions {
         self
     }
 
-    /// Change the frozen object store configuration for the namespace.
-    pub fn with_frozen_object_store_config(
-        mut self,
-        frozen_object_store_config: Option<SecretName>,
-    ) -> Self {
-        self.frozen_object_store_config = frozen_object_store_config;
+    /// Change the data lake configuration.
+    pub fn with_data_lake_config(mut self, data_lake_config: DataLakeConfig) -> Self {
+        self.data_lake_config = data_lake_config;
         self
     }
 }
@@ -126,9 +126,6 @@ mod tests {
             namespace.default_object_store_config,
             options.default_object_store_config
         );
-        assert_eq!(
-            namespace.frozen_object_store_config,
-            options.frozen_object_store_config
-        );
+        assert_eq!(namespace.data_lake_config, options.data_lake_config);
     }
 }

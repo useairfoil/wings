@@ -7,13 +7,13 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=proto");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(CLUSTER_METADATA_DESCRIPTOR_FILE))
         .compile_protos(&["proto/wings/cluster_metadata.proto"], &["proto/"])?;
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(LOG_METADATA_DESCRIPTOR_FILE))

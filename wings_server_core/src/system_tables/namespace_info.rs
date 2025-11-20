@@ -9,7 +9,10 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::NamespaceName};
+use wings_control_plane::{
+    cluster_metadata::ClusterMetadata,
+    resources::{DataLakeConfig, NamespaceName},
+};
 
 use super::provider::SystemTable;
 
@@ -52,11 +55,14 @@ impl SystemTable for NamespaceInfoTable {
             UInt64Array::from(vec![namespace.flush_interval.as_millis() as u64]);
         let default_object_store_config_arr =
             StringArray::from(vec![namespace.default_object_store_config.to_string()]);
-        let frozen_object_store_config_arr = StringArray::from(vec![
-            namespace
-                .frozen_object_store_config
-                .map(|config| config.to_string()),
-        ]);
+        let data_lake_type_arr = {
+            let data_lake_type = match namespace.data_lake_config {
+                DataLakeConfig::IcebergInMemoryCatalog => "iceberg_memory_catalog",
+                DataLakeConfig::IcebergRestCatalog(_) => "iceberg_rest_catalog",
+            };
+
+            StringArray::from(vec![data_lake_type.to_string()])
+        };
 
         let batch = RecordBatch::try_new(
             self.schema.clone(),
@@ -66,7 +72,7 @@ impl SystemTable for NamespaceInfoTable {
                 Arc::new(flush_size_bytes_arr),
                 Arc::new(flush_interval_ms_arr),
                 Arc::new(default_object_store_config_arr),
-                Arc::new(frozen_object_store_config_arr),
+                Arc::new(data_lake_type_arr),
             ],
         )?;
 
@@ -89,7 +95,7 @@ fn namespace_info_schema() -> SchemaRef {
         Field::new("flush_size_bytes", DataType::UInt64, false),
         Field::new("flush_interval_ms", DataType::UInt64, false),
         Field::new("default_object_store_config", DataType::Utf8, false),
-        Field::new("frozen_object_store_config", DataType::Utf8, true),
+        Field::new("data_lake_type", DataType::Utf8, true),
     ];
 
     Arc::new(Schema::new(fields))

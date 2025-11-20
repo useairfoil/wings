@@ -16,11 +16,11 @@ use crate::{
     cluster_metadata::{
         ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest,
         ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
-        error::InvalidResourceNameSnafu,
+        error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic,
-        TopicName, TopicOptions,
+        DataLakeConfig, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,
+        SecretName, Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -124,9 +124,7 @@ impl From<Namespace> for pb::Namespace {
             flush_size_bytes: namespace.flush_size.as_u64(),
             flush_interval_millis: namespace.flush_interval.as_millis() as u64,
             default_object_store_config: namespace.default_object_store_config.name(),
-            frozen_object_store_config: namespace
-                .frozen_object_store_config
-                .map(|config| config.name()),
+            data_lake_config: Some(namespace.data_lake_config.into()),
         }
     }
 }
@@ -142,20 +140,35 @@ impl TryFrom<pb::Namespace> for Namespace {
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
         let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
             .context(InvalidResourceNameSnafu { resource: "secret" })?;
-        let frozen_object_store_config = namespace
-            .frozen_object_store_config
-            .map(|config| {
-                SecretName::parse(&config).context(InvalidResourceNameSnafu { resource: "secret" })
-            })
-            .transpose()?;
+        let data_lake_config = namespace
+            .data_lake_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing data_lake_config field in Namespace proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()?;
 
         Ok(Self {
             name,
             flush_size,
             flush_interval,
             default_object_store_config,
-            frozen_object_store_config,
+            data_lake_config,
         })
+    }
+}
+
+impl From<NamespaceOptions> for pb::Namespace {
+    fn from(options: NamespaceOptions) -> Self {
+        Self {
+            name: String::new(),
+            flush_size_bytes: options.flush_size.as_u64(),
+            flush_interval_millis: options.flush_interval.as_millis() as u64,
+            default_object_store_config: options.default_object_store_config.to_string(),
+            data_lake_config: Some(options.data_lake_config.into()),
+        }
     }
 }
 
@@ -169,33 +182,22 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
             .context(InvalidResourceNameSnafu { resource: "secret" })?;
 
-        let frozen_object_store_config = namespace
-            .frozen_object_store_config
-            .map(|config| {
-                SecretName::parse(&config).context(InvalidResourceNameSnafu { resource: "secret" })
-            })
-            .transpose()?;
+        let data_lake_config = namespace
+            .data_lake_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing data_lake_config field in Namespace proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()?;
 
         Ok(Self {
             flush_size,
             flush_interval,
             default_object_store_config,
-            frozen_object_store_config,
+            data_lake_config,
         })
-    }
-}
-
-impl From<NamespaceOptions> for pb::Namespace {
-    fn from(options: NamespaceOptions) -> Self {
-        Self {
-            name: String::new(),
-            flush_size_bytes: options.flush_size.as_u64(),
-            flush_interval_millis: options.flush_interval.as_millis() as u64,
-            default_object_store_config: options.default_object_store_config.to_string(),
-            frozen_object_store_config: options
-                .frozen_object_store_config
-                .map(|config| config.to_string()),
-        }
     }
 }
 
@@ -257,6 +259,48 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
                 Some(response.next_page_token)
             },
         })
+    }
+}
+
+impl From<DataLakeConfig> for pb::namespace::DataLakeConfig {
+    fn from(config: DataLakeConfig) -> Self {
+        match config {
+            DataLakeConfig::IcebergInMemoryCatalog => {
+                pb::namespace::DataLakeConfig::IcebergInMemoryCatalog(pb::IcebergInMemoryCatalog {})
+            }
+            DataLakeConfig::IcebergRestCatalog(catalog) => {
+                pb::namespace::DataLakeConfig::IcebergRestCatalog(catalog.into())
+            }
+        }
+    }
+}
+
+impl TryFrom<pb::namespace::DataLakeConfig> for DataLakeConfig {
+    type Error = ClusterMetadataError;
+
+    fn try_from(config: pb::namespace::DataLakeConfig) -> Result<Self, Self::Error> {
+        use pb::namespace::DataLakeConfig::*;
+        match config {
+            IcebergInMemoryCatalog(_) => Ok(DataLakeConfig::IcebergInMemoryCatalog),
+            IcebergRestCatalog(catalog) => {
+                let inner = catalog.try_into()?;
+                Ok(DataLakeConfig::IcebergRestCatalog(inner))
+            }
+        }
+    }
+}
+
+impl From<IcebergRestCatalogConfig> for pb::IcebergRestCatalog {
+    fn from(_catalog: IcebergRestCatalogConfig) -> Self {
+        pb::IcebergRestCatalog {}
+    }
+}
+
+impl TryFrom<pb::IcebergRestCatalog> for IcebergRestCatalogConfig {
+    type Error = ClusterMetadataError;
+
+    fn try_from(_config: pb::IcebergRestCatalog) -> Result<Self, Self::Error> {
+        Ok(IcebergRestCatalogConfig {})
     }
 }
 
@@ -442,7 +486,7 @@ mod tests {
             pb_namespace.default_object_store_config,
             "secrets/test-secret"
         );
-        assert_eq!(pb_namespace.frozen_object_store_config, None);
+        assert!(pb_namespace.data_lake_config.is_some());
 
         // Protobuf to domain
         let converted_namespace = Namespace::try_from(pb_namespace).unwrap();
@@ -549,7 +593,7 @@ mod tests {
             flush_size_bytes: 1024,
             flush_interval_millis: 250,
             default_object_store_config: "secrets/test".to_string(),
-            frozen_object_store_config: None,
+            data_lake_config: Some(DataLakeConfig::IcebergInMemoryCatalog.into()),
         };
 
         let result = Namespace::try_from(pb_namespace);

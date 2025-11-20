@@ -6,7 +6,7 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=proto");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(false)
         .build_server(false)
         .file_descriptor_set_path(out_dir.join(FLIGHT_DESCRIPTOR_FILE))

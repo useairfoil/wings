@@ -24,6 +24,7 @@ flatbuffers.workspace = true
 futures.workspace = true
 http.workspace = true
 http-body.workspace = true
+iceberg.workspace = true
 moka.workspace = true
 object_store.workspace = true
 pin-project.workspace = true
@@ -36,8 +37,9 @@ snafu.workspace = true
 time.workspace = true
 tokio.workspace = true
 tonic.workspace = true
+tonic-prost.workspace = true
 tracing.workspace = true
 wings-observability = { path = "../wings_observability" }
 
 [build-dependencies]
-tonic-build.workspace = true
+tonic-prost-build.workspace = true

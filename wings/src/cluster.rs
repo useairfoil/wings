@@ -8,8 +8,8 @@ use wings_control_plane::{
         ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
     },
     resources::{
-        Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic,
-        TopicName, TopicOptions,
+        DataLakeConfig, Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName,
+        Topic, TopicName, TopicOptions,
     },
 };
 
@@ -339,8 +339,14 @@ fn print_namespace(namespace: &Namespace) {
         "  object store secret: {}",
         namespace.default_object_store_config
     );
-    if let Some(ref secret) = namespace.frozen_object_store_config {
-        println!("  frozen object store secret: {}", secret);
+
+    match namespace.data_lake_config {
+        DataLakeConfig::IcebergInMemoryCatalog => {
+            println!("  data lake: iceberg in-memory catalog");
+        }
+        DataLakeConfig::IcebergRestCatalog(ref _config) => {
+            println!("  data lake: iceberg rest catalog");
+        }
     }
 }
 

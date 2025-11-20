@@ -159,7 +159,7 @@ impl TableProvider for TopicTableProvider {
         match locations_exec.as_slice() {
             [] => Ok(Arc::new(EmptyExec::new(schema))),
             [exec] => Ok(exec.clone()),
-            _ => Ok(Arc::new(UnionExec::new(locations_exec))),
+            _ => Ok(UnionExec::try_new(locations_exec)?),
         }
     }
 }
