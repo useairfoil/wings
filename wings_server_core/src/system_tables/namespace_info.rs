@@ -54,7 +54,7 @@ impl SystemTable for NamespaceInfoTable {
         let flush_interval_ms_arr =
             UInt64Array::from(vec![namespace.flush_interval.as_millis() as u64]);
         let default_object_store_config_arr =
-            StringArray::from(vec![namespace.default_object_store_config.to_string()]);
+            StringArray::from(vec![namespace.default_object_store_credentials.to_string()]);
         let data_lake_type_arr = {
             let data_lake_type = match namespace.data_lake_config {
                 DataLakeConfig::IcebergInMemoryCatalog => "iceberg_memory_catalog",

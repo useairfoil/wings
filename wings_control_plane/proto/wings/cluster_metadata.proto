@@ -161,7 +161,7 @@ message Namespace {
   // The default object store configuration for the namespace.
   //
   // This is an opaque string used to create the object store client.
-  string default_object_store_config = 4;
+  string default_object_store_credential = 4;
 
   // Configuration for the datalake storage
   oneof data_lake_config {
@@ -302,19 +302,19 @@ message Credential {
   // Format: tenants/{tenant}/credentials/{credential}
   string name = 1;
 
-  // The credential configuration.
-  oneof credential {
-    AwsCredential aws = 2;
-    AzureCredential azure = 3;
-    GoogleCredential google = 4;
-    S3CompatibleCredential s3_compatible = 5;
+  // Object store configuration.
+  oneof object_store_config {
+    AwsConfiguration aws = 2;
+    AzureConfiguration azure = 3;
+    GoogleConfiguration google = 4;
+    S3CompatibleConfiguration s3_compatible = 5;
   }
 }
 
-message AwsCredential {}
+message AwsConfiguration {}
 
-message AzureCredential {}
+message AzureConfiguration {}
 
-message GoogleCredential {}
+message GoogleConfiguration {}
 
-message S3CompatibleCredential {}
+message S3CompatibleConfiguration {}

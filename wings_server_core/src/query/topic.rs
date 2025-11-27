@@ -136,8 +136,8 @@ impl TableProvider for TopicTableProvider {
 
         let object_store_url = self
             .namespace
-            .default_object_store_config
-            .to_object_store_url()?;
+            .default_object_store_credentials
+            .wings_object_store_url()?;
 
         let schema = self.schema();
         let file_schema = self.topic.schema_without_partition_field();

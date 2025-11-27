@@ -10,8 +10,8 @@ use tokio::sync::RwLock;
 use wings_observability::KeyValue;
 
 use crate::resources::{
-    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName,
-    Topic, TopicName, TopicOptions,
+    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions,
+    ObjectStoreConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 
 use super::{
@@ -437,7 +437,7 @@ impl ClusterMetadataStore {
     fn create_credential(
         &mut self,
         name: CredentialName,
-        credential: Credential,
+        configuration: ObjectStoreConfiguration,
         metrics: &ClusterMetadataMetrics,
     ) -> Result<Credential> {
         let credential_key = name.name();
@@ -449,23 +449,20 @@ impl ClusterMetadataStore {
             });
         }
 
-        // Update the credential with the correct name
-        let updated_credential = match credential {
-            Credential::AwsCredential(_) => Credential::aws(name.clone()),
-            Credential::AzureCredential(_) => Credential::azure(name.clone()),
-            Credential::GoogleCredential(_) => Credential::google(name.clone()),
-            Credential::S3CompatibleCredential(_) => Credential::s3_compatible(name.clone()),
+        let credential = Credential {
+            name: name.clone(),
+            object_store: configuration,
         };
 
         self.credentials
-            .insert(credential_key.clone(), updated_credential.clone());
+            .insert(credential_key.clone(), credential.clone());
 
         let tenant_id = name.parent().id().to_string();
         metrics
             .credentials_count
             .add(1, &[KeyValue::new("tenant", tenant_id)]);
 
-        Ok(updated_credential)
+        Ok(credential)
     }
 
     fn get_credential(&self, name: CredentialName) -> Result<Credential> {
@@ -634,10 +631,10 @@ impl ClusterMetadata for InMemoryClusterMetadata {
     async fn create_credential(
         &self,
         name: CredentialName,
-        credential: Credential,
+        configuration: ObjectStoreConfiguration,
     ) -> Result<Credential> {
         let mut store = self.store.write().await;
-        store.create_credential(name, credential, &self.metrics)
+        store.create_credential(name, configuration, &self.metrics)
     }
 
     async fn get_credential(&self, name: CredentialName) -> Result<Credential> {

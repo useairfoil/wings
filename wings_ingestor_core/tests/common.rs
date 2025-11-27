@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
     log_metadata::InMemoryLogMetadata,
-    resources::{Namespace, NamespaceName, NamespaceOptions, SecretName, TenantName},
+    resources::{CredentialName, Namespace, NamespaceName, NamespaceOptions, TenantName},
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
@@ -17,7 +17,7 @@ pub fn create_batch_ingestor() -> (
     CancellationToken,
 ) {
     let cluster_meta: Arc<_> = InMemoryClusterMetadata::new().into();
-    let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new()
+    let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new(cluster_meta.clone())
         .expect("object store factory")
         .into();
     let log_meta: Arc<_> = InMemoryLogMetadata::new(cluster_meta.clone()).into();
@@ -41,12 +41,12 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
         .create_tenant(tenant_name.clone())
         .await
         .expect("create_tenant");
-    let namespace_name = NamespaceName::new_unchecked("test_ns", tenant_name);
+    let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name.clone());
+    let creds = CredentialName::new_unchecked("test-cred", tenant_name);
     let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),
-            NamespaceOptions::new(SecretName::new_unchecked("my-secret"))
-                .with_flush_interval(default_flush_interval()),
+            NamespaceOptions::new(creds).with_flush_interval(default_flush_interval()),
         )
         .await
         .expect("create_namespace");

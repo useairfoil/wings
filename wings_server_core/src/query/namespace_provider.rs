@@ -117,13 +117,13 @@ impl NamespaceProvider {
 
         let object_store = self
             .object_store_factory
-            .create_object_store(self.namespace.default_object_store_config.clone())
+            .create_object_store(self.namespace.default_object_store_credentials.clone())
             .await?;
 
         let object_store_url = self
             .namespace
-            .default_object_store_config
-            .to_object_store_url()?;
+            .default_object_store_credentials
+            .wings_object_store_url()?;
         ctx.register_object_store(object_store_url.as_ref(), object_store);
 
         Ok(ctx)

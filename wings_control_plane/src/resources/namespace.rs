@@ -2,9 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 
-use crate::resource_type;
-
-use super::{secret::SecretName, tenant::TenantName};
+use crate::{
+    resource_type,
+    resources::{CredentialName, TenantName},
+};
 
 resource_type!(Namespace, "namespaces", Tenant);
 
@@ -20,7 +21,7 @@ pub struct Namespace {
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
     /// The default object store configuration for the namespace.
-    pub default_object_store_config: SecretName,
+    pub default_object_store_credentials: CredentialName,
     /// DataLake configuration.
     pub data_lake_config: DataLakeConfig,
 }
@@ -43,7 +44,7 @@ impl Namespace {
             name,
             flush_size: options.flush_size,
             flush_interval: options.flush_interval,
-            default_object_store_config: options.default_object_store_config,
+            default_object_store_credentials: options.default_object_store_credential,
             data_lake_config: options.data_lake_config,
         }
     }
@@ -57,18 +58,18 @@ pub struct NamespaceOptions {
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
     /// The default object store configuration for the namespace.
-    pub default_object_store_config: SecretName,
+    pub default_object_store_credential: CredentialName,
     /// DataLake configuration.
     pub data_lake_config: DataLakeConfig,
 }
 
 impl NamespaceOptions {
     /// Create new namespace options with the given default object store config.
-    pub fn new(default_object_store_config: SecretName) -> Self {
+    pub fn new(default_object_store_credential: CredentialName) -> Self {
         Self {
             flush_size: ByteSize::mb(8),
             flush_interval: Duration::from_millis(250),
-            default_object_store_config,
+            default_object_store_credential,
             data_lake_config: DataLakeConfig::IcebergInMemoryCatalog,
         }
     }
@@ -88,9 +89,9 @@ impl NamespaceOptions {
     /// Change the default object store configuration for the namespace.
     pub fn with_default_object_store_config(
         mut self,
-        default_object_store_config: SecretName,
+        default_object_store_credential: CredentialName,
     ) -> Self {
-        self.default_object_store_config = default_object_store_config;
+        self.default_object_store_credential = default_object_store_credential;
         self
     }
 
@@ -104,13 +105,14 @@ impl NamespaceOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resources::{SecretName, TenantName};
+    use crate::resources::{CredentialName, TenantName};
 
     #[test]
     fn test_namespace_creation() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
-        let options = NamespaceOptions::new(SecretName::new("test-config").unwrap());
+        let options =
+            NamespaceOptions::new(CredentialName::new("test-config", tenant_name.clone()).unwrap());
         let namespace = Namespace::new(namespace_name.clone(), options.clone());
 
         assert_eq!(namespace.name, namespace_name);
@@ -123,8 +125,8 @@ mod tests {
         assert_eq!(namespace.flush_size, options.flush_size);
         assert_eq!(namespace.flush_interval, options.flush_interval);
         assert_eq!(
-            namespace.default_object_store_config,
-            options.default_object_store_config
+            namespace.default_object_store_credentials,
+            options.default_object_store_credential
         );
         assert_eq!(namespace.data_lake_config, options.data_lake_config);
     }

@@ -20,8 +20,9 @@ use crate::{
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        Credential, CredentialName, DataLakeConfig, IcebergRestCatalogConfig, Namespace,
-        NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic, TopicName,
+        AwsConfiguration, AzureConfiguration, Credential, CredentialName, DataLakeConfig,
+        GoogleConfiguration, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,
+        ObjectStoreConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName,
         TopicOptions,
     },
 };
@@ -125,7 +126,7 @@ impl From<Namespace> for pb::Namespace {
             name: namespace.name.name(),
             flush_size_bytes: namespace.flush_size.as_u64(),
             flush_interval_millis: namespace.flush_interval.as_millis() as u64,
-            default_object_store_config: namespace.default_object_store_config.name(),
+            default_object_store_credential: namespace.default_object_store_credentials.name(),
             data_lake_config: Some(namespace.data_lake_config.into()),
         }
     }
@@ -140,8 +141,12 @@ impl TryFrom<pb::Namespace> for Namespace {
         })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
-        let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
-            .context(InvalidResourceNameSnafu { resource: "secret" })?;
+        let default_object_store_credential = CredentialName::parse(
+            &namespace.default_object_store_credential,
+        )
+        .context(InvalidResourceNameSnafu {
+            resource: "credential",
+        })?;
         let data_lake_config = namespace
             .data_lake_config
             .ok_or_else(|| {
@@ -156,7 +161,7 @@ impl TryFrom<pb::Namespace> for Namespace {
             name,
             flush_size,
             flush_interval,
-            default_object_store_config,
+            default_object_store_credentials: default_object_store_credential,
             data_lake_config,
         })
     }
@@ -168,7 +173,7 @@ impl From<NamespaceOptions> for pb::Namespace {
             name: String::new(),
             flush_size_bytes: options.flush_size.as_u64(),
             flush_interval_millis: options.flush_interval.as_millis() as u64,
-            default_object_store_config: options.default_object_store_config.to_string(),
+            default_object_store_credential: options.default_object_store_credential.to_string(),
             data_lake_config: Some(options.data_lake_config.into()),
         }
     }
@@ -181,8 +186,12 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
 
-        let default_object_store_config = SecretName::parse(&namespace.default_object_store_config)
-            .context(InvalidResourceNameSnafu { resource: "secret" })?;
+        let default_object_store_credential = CredentialName::parse(
+            &namespace.default_object_store_credential,
+        )
+        .context(InvalidResourceNameSnafu {
+            resource: "credential",
+        })?;
 
         let data_lake_config = namespace
             .data_lake_config
@@ -197,7 +206,7 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         Ok(Self {
             flush_size,
             flush_interval,
-            default_object_store_config,
+            default_object_store_credential,
             data_lake_config,
         })
     }
@@ -450,32 +459,36 @@ fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
 }
 
 /*
- *  ██████   ██████  ████████ ████████ ███████ ██████   ██████  ██    ██ ███████ ████████ ███████
- * ██       ██    ██    ██       ██    ██      ██   ██ ██    ██ ██    ██ ██         ██    ██
- * ██       ██          ██       ██    █████   ██████  ██    ██ ██    ██ █████      ██    █████
- * ██        ██   ██    ██       ██    ██      ██   ██ ██    ██ ██    ██ ██         ██    ██
- * ███████   ██████    ██       ██    ███████ ██   ██  ██████   ██████  ███████    ██    ███████
+ *    █████████  ███████████   ██████████ ██████████    █████████
+ *   ███░░░░░███░░███░░░░░███ ░░███░░░░░█░░███░░░░███  ███░░░░░███
+ *  ███     ░░░  ░███    ░███  ░███  █ ░  ░███   ░░███░███    ░░░
+ * ░███          ░██████████   ░██████    ░███    ░███░░█████████
+ * ░███          ░███░░░░░███  ░███░░█    ░███    ░███ ░░░░░░░░███
+ * ░░███     ███ ░███    ░███  ░███ ░   █ ░███    ███  ███    ░███
+ *  ░░█████████  █████   █████ ██████████ ██████████  ░░█████████
+ *   ░░░░░░░░░  ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░    ░░░░░░░░░
  */
 
 impl From<Credential> for pb::Credential {
     fn from(credential: Credential) -> Self {
-        let name = credential.name().name();
-        let credential = match credential {
-            Credential::AwsCredential(_) => {
-                Some(pb::credential::Credential::Aws(pb::AwsCredential {}))
-            }
-            Credential::AzureCredential(_) => {
-                Some(pb::credential::Credential::Azure(pb::AzureCredential {}))
-            }
-            Credential::GoogleCredential(_) => {
-                Some(pb::credential::Credential::Google(pb::GoogleCredential {}))
-            }
-            Credential::S3CompatibleCredential(_) => Some(
-                pb::credential::Credential::S3Compatible(pb::S3CompatibleCredential {}),
-            ),
-        };
+        let name = credential.name.name();
+        let config = credential.object_store.into();
 
-        Self { name, credential }
+        Self {
+            name,
+            object_store_config: Some(config),
+        }
+    }
+}
+
+impl From<ObjectStoreConfiguration> for pb::Credential {
+    fn from(config: ObjectStoreConfiguration) -> Self {
+        let config = config.into();
+
+        Self {
+            name: String::default(),
+            object_store_config: Some(config),
+        }
     }
 }
 
@@ -487,18 +500,65 @@ impl TryFrom<pb::Credential> for Credential {
             resource: "credential",
         })?;
 
-        let credential = credential.credential.ok_or_else(|| {
-            InternalSnafu {
-                message: "missing credential field in Credential proto".to_string(),
-            }
-            .build()
-        })?;
+        let object_store = credential
+            .object_store_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing object_store_config field in Credential proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()?;
 
-        match credential {
-            pb::credential::Credential::Aws(_) => Ok(Credential::aws(name)),
-            pb::credential::Credential::Azure(_) => Ok(Credential::azure(name)),
-            pb::credential::Credential::Google(_) => Ok(Credential::google(name)),
-            pb::credential::Credential::S3Compatible(_) => Ok(Credential::s3_compatible(name)),
+        Ok(Self { name, object_store })
+    }
+}
+
+impl TryFrom<pb::Credential> for ObjectStoreConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(credential: pb::Credential) -> AdminResult<Self> {
+        credential
+            .object_store_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing object_store_config field in Credential proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()
+    }
+}
+
+impl From<ObjectStoreConfiguration> for pb::credential::ObjectStoreConfig {
+    fn from(config: ObjectStoreConfiguration) -> Self {
+        match config {
+            ObjectStoreConfiguration::Aws(_) => todo!(),
+            ObjectStoreConfiguration::Azure(_) => todo!(),
+            ObjectStoreConfiguration::Google(_) => todo!(),
+            ObjectStoreConfiguration::S3Compatible(_) => todo!(),
+        }
+    }
+}
+
+impl TryFrom<pb::credential::ObjectStoreConfig> for ObjectStoreConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(config: pb::credential::ObjectStoreConfig) -> AdminResult<Self> {
+        use pb::credential::ObjectStoreConfig;
+        match config {
+            ObjectStoreConfig::Aws(_) => {
+                Ok(ObjectStoreConfiguration::Aws(AwsConfiguration::default()))
+            }
+            ObjectStoreConfig::Azure(_) => Ok(ObjectStoreConfiguration::Azure(
+                AzureConfiguration::default(),
+            )),
+            ObjectStoreConfig::Google(_) => Ok(ObjectStoreConfiguration::Google(
+                GoogleConfiguration::default(),
+            )),
+            ObjectStoreConfig::S3Compatible(_) => Ok(ObjectStoreConfiguration::S3Compatible(
+                S3CompatibleConfiguration::default(),
+            )),
         }
     }
 }
@@ -586,8 +646,8 @@ mod tests {
     #[test]
     fn test_namespace_conversion() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let secret_name = SecretName::new("test-secret").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
+        let secret_name = CredentialName::new("test-secret", tenant_name).unwrap();
         let options = NamespaceOptions::new(secret_name.clone());
         let domain_namespace = Namespace::new(namespace_name.clone(), options);
 
@@ -600,8 +660,8 @@ mod tests {
         assert_eq!(pb_namespace.flush_size_bytes, ByteSize::mb(8).as_u64());
         assert_eq!(pb_namespace.flush_interval_millis, 250);
         assert_eq!(
-            pb_namespace.default_object_store_config,
-            "secrets/test-secret"
+            pb_namespace.default_object_store_credential,
+            "tenants/test-tenant/credentials/test-secret"
         );
         assert!(pb_namespace.data_lake_config.is_some());
 
@@ -709,7 +769,7 @@ mod tests {
             name: "invalid-format".to_string(),
             flush_size_bytes: 1024,
             flush_interval_millis: 250,
-            default_object_store_config: "secrets/test".to_string(),
+            default_object_store_credential: "tenants/test-tenant/credentials/test".to_string(),
             data_lake_config: Some(DataLakeConfig::IcebergInMemoryCatalog.into()),
         };
 

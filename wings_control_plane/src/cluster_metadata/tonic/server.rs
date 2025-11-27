@@ -9,8 +9,8 @@ use crate::{
         ListTenantsRequest, ListTopicsRequest, error::InvalidResourceNameSnafu,
     },
     resources::{
-        Credential, CredentialName, NamespaceName, NamespaceOptions, TenantName, TopicName,
-        TopicOptions, name::resource_error_to_status,
+        CredentialName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration, TenantName,
+        TopicName, TopicOptions, name::resource_error_to_status,
     },
 };
 
@@ -295,12 +295,13 @@ impl TonicService for ClusterMetadataServer {
             })
             .map_err(cluster_metadata_error_to_status)?;
 
-        let credential = Credential::try_from(request.credential.unwrap_or_default())
-            .map_err(cluster_metadata_error_to_status)?;
+        let object_store_config =
+            ObjectStoreConfiguration::try_from(request.credential.unwrap_or_default())
+                .map_err(cluster_metadata_error_to_status)?;
 
         let credential = self
             .inner
-            .create_credential(credential_name, credential)
+            .create_credential(credential_name, object_store_config)
             .await
             .map_err(cluster_metadata_error_to_status)?;
 

@@ -14,16 +14,16 @@ pub mod local;
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use wings_control_plane::resources::SecretName;
+use wings_control_plane::resources::CredentialName;
 
 pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 
-/// Factory trait for creating ObjectStore instances from secret configurations.
+/// Factory trait for creating ObjectStore instances from credential configurations.
 #[async_trait::async_trait]
 pub trait ObjectStoreFactory: Send + Sync {
-    /// Create an ObjectStore instance from the configuration referenced by the secret name.
+    /// Create an ObjectStore instance from the configuration referenced by the credential name.
     async fn create_object_store(
         &self,
-        secret_name: SecretName,
+        credential_name: CredentialName,
     ) -> Result<Arc<dyn ObjectStore>, object_store::Error>;
 }

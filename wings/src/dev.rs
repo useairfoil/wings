@@ -12,7 +12,9 @@ use wings_control_plane::{
         tonic::ClusterMetadataServer,
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
-    resources::{NamespaceName, NamespaceOptions, SecretName, TenantName},
+    resources::{
+        CredentialName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration, TenantName,
+    },
 };
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
@@ -57,8 +59,8 @@ impl DevArgs {
         info!("HTTP ingestor listening on {}", http_address);
 
         let _ct_guard = ct.child_token().drop_guard();
-        let object_store_factory =
-            TemporaryFileSystemFactory::new().context(ObjectStoreSnafu {})?;
+        let object_store_factory = TemporaryFileSystemFactory::new(cluster_metadata.clone())
+            .context(ObjectStoreSnafu {})?;
         let object_store_factory = Arc::new(object_store_factory);
 
         let log_metadata = Arc::new(InMemoryLogMetadata::new(cluster_metadata.clone()));
@@ -136,9 +138,17 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
         .await
         .expect("failed to create default tenant");
 
+    let default_credential = CredentialName::new_unchecked("default", default_tenant.clone());
+    cluster_meta
+        .create_credential(
+            default_credential.clone(),
+            ObjectStoreConfiguration::Aws(Default::default()),
+        )
+        .await
+        .expect("failed to create default aws s3 credentials");
+
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
-    let default_namespace_options =
-        NamespaceOptions::new(SecretName::new_unchecked("default-bucket"));
+    let default_namespace_options = NamespaceOptions::new(default_credential);
 
     cluster_meta
         .create_namespace(default_namespace.clone(), default_namespace_options)

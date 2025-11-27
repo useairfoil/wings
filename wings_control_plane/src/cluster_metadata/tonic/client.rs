@@ -11,8 +11,8 @@ use crate::{
         ListTopicsRequest, ListTopicsResponse, Result,
     },
     resources::{
-        Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName,
-        Topic, TopicName, TopicOptions,
+        Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions,
+        ObjectStoreConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -232,12 +232,12 @@ where
     async fn create_credential(
         &self,
         name: CredentialName,
-        credential: Credential,
+        object_store: ObjectStoreConfiguration,
     ) -> Result<Credential> {
         let request = pb::CreateCredentialRequest {
             parent: name.parent().to_string(),
             credential_id: name.id().to_string(),
-            credential: Some(credential.into()),
+            credential: Some(object_store.into()),
         };
 
         self.client

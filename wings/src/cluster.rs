@@ -8,8 +8,8 @@ use wings_control_plane::{
         ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
     },
     resources::{
-        DataLakeConfig, Namespace, NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName,
-        Topic, TopicName, TopicOptions,
+        CredentialName, DataLakeConfig, Namespace, NamespaceName, NamespaceOptions, Tenant,
+        TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -36,6 +36,9 @@ pub enum ClusterMetadataCommands {
     CreateNamespace {
         /// Namespace name
         namespace: String,
+        /// Object store credentials name
+        #[arg(long)]
+        credentials: String,
         /// Flush interval in milliseconds
         #[arg(long)]
         flush_millis: Option<u64>,
@@ -121,6 +124,7 @@ impl ClusterMetadataCommands {
             }
             ClusterMetadataCommands::CreateNamespace {
                 namespace,
+                credentials,
                 flush_millis,
                 flush_mib,
                 remote,
@@ -132,9 +136,12 @@ impl ClusterMetadataCommands {
                         resource: "namespace",
                     })?;
 
-                let secret_name = SecretName::new_unchecked("default-bucket");
+                let credential_name =
+                    CredentialName::parse(&credentials).context(InvalidResourceNameSnafu {
+                        resource: "credential",
+                    })?;
 
-                let mut options = NamespaceOptions::new(secret_name);
+                let mut options = NamespaceOptions::new(credential_name);
 
                 if let Some(millis) = flush_millis {
                     options.flush_interval = Duration::from_millis(millis);
@@ -336,8 +343,8 @@ fn print_namespace(namespace: &Namespace) {
     println!("  flush interval: {:?}", namespace.flush_interval);
     println!("  flush size: {}", namespace.flush_size);
     println!(
-        "  object store secret: {}",
-        namespace.default_object_store_config
+        "  object store credentials: {}",
+        namespace.default_object_store_credentials
     );
 
     match namespace.data_lake_config {

@@ -1,8 +1,8 @@
 //! Local file system object store factory implementation.
 //!
 //! This module provides a `LocalFileSystemFactory` that creates object stores
-//! backed by the local file system. Each secret name gets its own subdirectory
-//! within the configured root path.
+//! backed by the local file system. Each credential gets its own subdirectory
+//! within the configured root path using the format `<credential_type>-<tenant_id>-<credential_id>`.
 //!
 //! We also provide a `TemporaryFileSystemFactory` that creates the root directory
 //! in a temporary location that is cleaned up when the factory is dropped.
@@ -14,22 +14,27 @@ use std::sync::Arc;
 
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
-
-use wings_control_plane::resources::SecretName;
+use wings_control_plane::resources::ObjectStoreConfiguration;
+use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::CredentialName};
 
 use crate::ObjectStoreFactory;
 
 /// Factory for creating local file system object stores.
 ///
 /// This factory creates object store instances backed by the local file system.
-/// Each secret name is mapped to a subdirectory within the root path, providing
-/// isolation between different object store configurations.
+/// Each credential is mapped to a subdirectory within the root path using the format
+/// `<credential_type>-<tenant_id>-<credential_id>`, providing isolation between
+/// different object store configurations.
 pub struct LocalFileSystemFactory {
     root_path: PathBuf,
+    cluster_metadata: Arc<dyn ClusterMetadata>,
 }
 
 impl LocalFileSystemFactory {
-    pub fn new(root_path: impl AsRef<Path>) -> Result<Self, ObjectStoreError> {
+    pub fn new(
+        root_path: impl AsRef<Path>,
+        cluster_metadata: Arc<dyn ClusterMetadata>,
+    ) -> Result<Self, ObjectStoreError> {
         let canonical_path =
             std::fs::canonicalize(root_path.as_ref()).map_err(|e| ObjectStoreError::Generic {
                 store: "LocalFileSystem",
@@ -38,6 +43,7 @@ impl LocalFileSystemFactory {
 
         Ok(Self {
             root_path: canonical_path,
+            cluster_metadata,
         })
     }
 
@@ -50,9 +56,32 @@ impl LocalFileSystemFactory {
 impl ObjectStoreFactory for LocalFileSystemFactory {
     async fn create_object_store(
         &self,
-        secret_name: SecretName,
+        credential_name: CredentialName,
     ) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
-        let store_path = self.root_path.join(secret_name.id());
+        // Fetch the credential to determine its type
+        let credential = self
+            .cluster_metadata
+            .get_credential(credential_name.clone())
+            .await
+            .map_err(|e| ObjectStoreError::Generic {
+                store: "LocalFileSystem",
+                source: Box::new(e),
+            })?;
+
+        // Create store path using format: <credential_type>-<tenant_id>-<credential_id>
+        let credential_type = match credential.object_store {
+            ObjectStoreConfiguration::Aws(_) => "aws",
+            ObjectStoreConfiguration::Azure(_) => "azure",
+            ObjectStoreConfiguration::Google(_) => "google",
+            ObjectStoreConfiguration::S3Compatible(_) => "s3",
+        };
+
+        let store_path = self.root_path.join(format!(
+            "{}-{}-{}",
+            credential_type,
+            credential_name.parent.id(),
+            credential_name.id()
+        ));
 
         std::fs::create_dir_all(&store_path).map_err(|e| ObjectStoreError::Generic {
             store: "LocalFileSystem",
@@ -71,21 +100,22 @@ impl ObjectStoreFactory for LocalFileSystemFactory {
 /// that is automatically cleaned up when the factory is dropped. This is ideal
 /// for development, testing, and scenarios where you don't want to persist data.
 ///
-/// Each secret name is mapped to a subdirectory within the temporary directory,
-/// providing isolation between different object store configurations.
+/// Each credential is mapped to a subdirectory within the temporary directory
+/// using the format `<credential_type>-<tenant_id>-<credential_id>`, providing
+/// isolation between different object store configurations.
 pub struct TemporaryFileSystemFactory {
     _temp_dir: TempDir,
     local_factory: LocalFileSystemFactory,
 }
 
 impl TemporaryFileSystemFactory {
-    pub fn new() -> Result<Self, ObjectStoreError> {
+    pub fn new(cluster_metadata: Arc<dyn ClusterMetadata>) -> Result<Self, ObjectStoreError> {
         let temp_dir = TempDir::new().map_err(|e| ObjectStoreError::Generic {
             store: "TemporaryFileSystem",
             source: Box::new(e),
         })?;
 
-        let local_factory = LocalFileSystemFactory::new(temp_dir.path())?;
+        let local_factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata)?;
 
         Ok(Self {
             _temp_dir: temp_dir,
@@ -102,39 +132,55 @@ impl TemporaryFileSystemFactory {
 impl ObjectStoreFactory for TemporaryFileSystemFactory {
     async fn create_object_store(
         &self,
-        secret_name: SecretName,
+        credential_name: CredentialName,
     ) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
-        self.local_factory.create_object_store(secret_name).await
+        self.local_factory
+            .create_object_store(credential_name)
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use tempfile::TempDir;
-    use wings_control_plane::resources::SecretName;
+    use wings_control_plane::{
+        cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
+        resources::{Credential, CredentialName, TenantName},
+    };
 
     #[test]
     fn test_factory_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let factory = LocalFileSystemFactory::new(temp_dir.path()).unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
 
         assert_eq!(factory.root_path(), temp_dir.path().canonicalize().unwrap());
     }
 
     #[test]
     fn test_factory_creation_invalid_path() {
-        let result = LocalFileSystemFactory::new("/this/path/does/not/exist");
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let result = LocalFileSystemFactory::new("/this/path/does/not/exist", cluster_metadata);
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_create_object_store() {
         let temp_dir = TempDir::new().unwrap();
-        let factory = LocalFileSystemFactory::new(temp_dir.path()).unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        // Create a tenant and credential for testing
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        cluster_metadata
+            .create_tenant(tenant_name.clone())
+            .await
+            .unwrap();
 
-        let secret_name = SecretName::new("test-bucket").unwrap();
-        let store = factory.create_object_store(secret_name).await.unwrap();
+        let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
+
+        let credential_name = CredentialName::new("test-bucket", tenant_name).unwrap();
+        let store = factory.create_object_store(credential_name).await.unwrap();
 
         // Verify that the store is created successfully
         assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
@@ -143,13 +189,21 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_object_stores() {
         let temp_dir = TempDir::new().unwrap();
-        let factory = LocalFileSystemFactory::new(temp_dir.path()).unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        // Create a tenant and credentials for testing
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        cluster_metadata
+            .create_tenant(tenant_name.clone())
+            .await
+            .unwrap();
 
-        let secret1 = SecretName::new("bucket-1").unwrap();
-        let secret2 = SecretName::new("bucket-2").unwrap();
+        let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
 
-        let store1 = factory.create_object_store(secret1).await.unwrap();
-        let store2 = factory.create_object_store(secret2).await.unwrap();
+        let credential1 = CredentialName::new("bucket-1", tenant_name.clone()).unwrap();
+        let credential2 = CredentialName::new("bucket-2", tenant_name).unwrap();
+
+        let store1 = factory.create_object_store(credential1).await.unwrap();
+        let store2 = factory.create_object_store(credential2).await.unwrap();
 
         // Both stores should be created successfully and be different instances
         assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
@@ -157,7 +211,8 @@ mod tests {
 
     #[test]
     fn test_temporary_factory_creation() {
-        let factory = TemporaryFileSystemFactory::new().unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let factory = TemporaryFileSystemFactory::new(cluster_metadata).unwrap();
 
         // The root path should exist and be a valid directory
         assert!(factory.root_path().exists());
@@ -166,10 +221,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_create_object_store() {
-        let factory = TemporaryFileSystemFactory::new().unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        // Create a tenant and credential for testing
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        cluster_metadata
+            .create_tenant(tenant_name.clone())
+            .await
+            .unwrap();
 
-        let secret_name = SecretName::new("temp-bucket").unwrap();
-        let store = factory.create_object_store(secret_name).await.unwrap();
+        let factory = TemporaryFileSystemFactory::new(cluster_metadata).unwrap();
+
+        let credential_name = CredentialName::new("temp-bucket", tenant_name).unwrap();
+        let store = factory.create_object_store(credential_name).await.unwrap();
 
         // Verify that the store is created successfully
         assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
@@ -177,10 +240,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_cleanup() {
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+
         let root_path = {
-            let factory = TemporaryFileSystemFactory::new().unwrap();
-            let secret_name = SecretName::new("cleanup-test").unwrap();
-            let _store = factory.create_object_store(secret_name).await.unwrap();
+            let factory = TemporaryFileSystemFactory::new(cluster_metadata.clone()).unwrap();
+
+            // Create a tenant and credential for testing
+            let tenant_name = TenantName::new("test-tenant").unwrap();
+            cluster_metadata
+                .create_tenant(tenant_name.clone())
+                .await
+                .unwrap();
+
+            let credential_name = CredentialName::new("cleanup-test", tenant_name).unwrap();
+            let _store = factory.create_object_store(credential_name).await.unwrap();
 
             let path = factory.root_path().to_path_buf();
             assert!(path.exists());
@@ -196,20 +269,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_multiple_stores() {
-        let factory = TemporaryFileSystemFactory::new().unwrap();
+        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let factory = TemporaryFileSystemFactory::new(cluster_metadata.clone()).unwrap();
 
-        let secret1 = SecretName::new("temp-bucket-1").unwrap();
-        let secret2 = SecretName::new("temp-bucket-2").unwrap();
+        // Create a tenant and credentials for testing
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        cluster_metadata
+            .create_tenant(tenant_name.clone())
+            .await
+            .unwrap();
 
-        let store1 = factory.create_object_store(secret1).await.unwrap();
-        let store2 = factory.create_object_store(secret2).await.unwrap();
+        let credential1 = CredentialName::new("temp-bucket-1", tenant_name.clone()).unwrap();
+        let credential2 = CredentialName::new("temp-bucket-2", tenant_name).unwrap();
+
+        let store1 = factory.create_object_store(credential1).await.unwrap();
+        let store2 = factory.create_object_store(credential2).await.unwrap();
 
         // Both stores should be created successfully and be different instances
         assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
 
         // Both should use the same root temporary directory
         let root_path = factory.root_path();
-        assert!(root_path.join("temp-bucket-1").exists());
-        assert!(root_path.join("temp-bucket-2").exists());
+        assert!(root_path.join("s3-test-tenant-temp-bucket-1").exists());
+        assert!(root_path.join("s3-test-tenant-temp-bucket-2").exists());
     }
 }

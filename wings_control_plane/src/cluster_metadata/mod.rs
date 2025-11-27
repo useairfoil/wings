@@ -11,8 +11,8 @@ pub mod tonic;
 use async_trait::async_trait;
 
 use crate::resources::{
-    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName,
-    Topic, TopicName, TopicOptions,
+    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions,
+    ObjectStoreConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 
 pub use self::error::{ClusterMetadataError, Result};
@@ -84,7 +84,7 @@ pub trait ClusterMetadata: Send + Sync {
     async fn create_credential(
         &self,
         name: CredentialName,
-        credential: Credential,
+        configuration: ObjectStoreConfiguration,
     ) -> Result<Credential>;
 
     /// Return the specified credential.
