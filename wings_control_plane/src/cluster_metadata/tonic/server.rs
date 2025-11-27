@@ -5,12 +5,13 @@ use tonic::{Request, Response, Status, async_trait};
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListTenantsRequest,
-        ListTopicsRequest, error::InvalidResourceNameSnafu,
+        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest,
+        ListObjectStoreCredentialsRequest, ListTenantsRequest, ListTopicsRequest,
+        error::InvalidResourceNameSnafu,
     },
     resources::{
-        NamespaceName, NamespaceOptions, TenantName, TopicName, TopicOptions,
-        name::resource_error_to_status,
+        NamespaceName, NamespaceOptions, ObjectStoreCredential, ObjectStoreCredentialName,
+        TenantName, TopicName, TopicOptions, name::resource_error_to_status,
     },
 };
 
@@ -273,6 +274,94 @@ impl TonicService for ClusterMetadataServer {
 
         self.inner
             .delete_topic(topic_name, request.force)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(()))
+    }
+
+    async fn create_object_store_credential(
+        &self,
+        request: Request<pb::CreateObjectStoreCredentialRequest>,
+    ) -> Result<Response<pb::ObjectStoreCredential>, Status> {
+        let request = request.into_inner();
+
+        let tenant_name = TenantName::parse(&request.parent)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })
+            .map_err(cluster_metadata_error_to_status)?;
+
+        let credential_name =
+            ObjectStoreCredentialName::new(request.object_store_credential_id, tenant_name)
+                .context(InvalidResourceNameSnafu {
+                    resource: "object store credential",
+                })
+                .map_err(cluster_metadata_error_to_status)?;
+
+        let credential =
+            ObjectStoreCredential::try_from(request.object_store_credential.unwrap_or_default())
+                .map_err(cluster_metadata_error_to_status)?;
+
+        let credential = self
+            .inner
+            .create_object_store_credential(credential_name, credential)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(credential.into()))
+    }
+
+    async fn get_object_store_credential(
+        &self,
+        request: Request<pb::GetObjectStoreCredentialRequest>,
+    ) -> Result<Response<pb::ObjectStoreCredential>, Status> {
+        let request = request.into_inner();
+
+        let credential_name = ObjectStoreCredentialName::parse(&request.name)
+            .context(InvalidResourceNameSnafu {
+                resource: "object store credential",
+            })
+            .map_err(cluster_metadata_error_to_status)?;
+
+        let credential = self
+            .inner
+            .get_object_store_credential(credential_name)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(credential.into()))
+    }
+
+    async fn list_object_store_credentials(
+        &self,
+        request: Request<pb::ListObjectStoreCredentialsRequest>,
+    ) -> Result<Response<pb::ListObjectStoreCredentialsResponse>, Status> {
+        let request = request.into_inner();
+        let request = ListObjectStoreCredentialsRequest::try_from(request)
+            .map_err(cluster_metadata_error_to_status)?;
+
+        let response = self
+            .inner
+            .list_object_store_credentials(request)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(response.into()))
+    }
+
+    async fn delete_object_store_credential(
+        &self,
+        request: Request<pb::DeleteObjectStoreCredentialRequest>,
+    ) -> Result<Response<()>, Status> {
+        let request = request.into_inner();
+
+        let credential_name = ObjectStoreCredentialName::parse(&request.name)
+            .context(InvalidResourceNameSnafu {
+                resource: "object store credential",
+            })
+            .map_err(cluster_metadata_error_to_status)?;
+
+        self.inner
+            .delete_object_store_credential(credential_name)
             .await
             .map_err(cluster_metadata_error_to_status)?;
 

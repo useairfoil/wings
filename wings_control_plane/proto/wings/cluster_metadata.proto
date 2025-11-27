@@ -36,6 +36,15 @@ service ClusterMetadataService {
   rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {}
   // Delete a topic.
   rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new object store credential belonging to a tenant.
+  rpc CreateObjectStoreCredential(CreateObjectStoreCredentialRequest) returns (ObjectStoreCredential) {}
+  // Return the specified object store credential.
+  rpc GetObjectStoreCredential(GetObjectStoreCredentialRequest) returns (ObjectStoreCredential) {}
+  // List all object store credentials belonging to a tenant.
+  rpc ListObjectStoreCredentials(ListObjectStoreCredentialsRequest) returns (ListObjectStoreCredentialsResponse) {}
+  // Delete an object store credential.
+  rpc DeleteObjectStoreCredential(DeleteObjectStoreCredentialRequest) returns (google.protobuf.Empty) {}
 }
 
 message CreateTenantRequest {
@@ -235,3 +244,77 @@ message Topic {
   // The index of the field that is used to partition the topic.
   optional uint32 partition_key = 3;
 }
+
+message CreateObjectStoreCredentialRequest {
+  // The tenant that owns the object store credential.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The object store credential id.
+  string object_store_credential_id = 2;
+
+  // The object store credential metadata.
+  ObjectStoreCredential object_store_credential = 3;
+}
+
+message GetObjectStoreCredentialRequest {
+  // The object store credential name.
+  //
+  // Format: tenants/{tenant}/object-store-credentials/{credential}
+  string name = 1;
+}
+
+message ListObjectStoreCredentialsRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of object store credentials to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListObjectStoreCredentialsResponse {
+  // The object store credentials.
+  repeated ObjectStoreCredential object_store_credentials = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteObjectStoreCredentialRequest {
+  // The object store credential name.
+  //
+  // Format: tenants/{tenant}/object-store-credentials/{credential}
+  string name = 1;
+}
+
+message ObjectStoreCredential {
+  // The object store credential name.
+  //
+  // Format: tenants/{tenant}/object-store-credentials/{credential}
+  string name = 1;
+
+  // The credential configuration.
+  oneof credential {
+    AwsCredential aws = 2;
+    AzureCredential azure = 3;
+    GoogleCredential google = 4;
+    S3CompatibleCredential s3_compatible = 5;
+  }
+}
+
+message AwsCredential {}
+
+message AzureCredential {}
+
+message GoogleCredential {}
+
+message S3CompatibleCredential {}

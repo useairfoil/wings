@@ -7,11 +7,12 @@ use http_body::Body;
 use crate::{
     cluster_metadata::{
         ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-        ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
+        ListObjectStoreCredentialsRequest, ListObjectStoreCredentialsResponse, ListTenantsRequest,
+        ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
     },
     resources::{
-        Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName, Topic, TopicName,
-        TopicOptions,
+        Namespace, NamespaceName, NamespaceOptions, ObjectStoreCredential,
+        ObjectStoreCredentialName, Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -224,6 +225,74 @@ where
             .delete_topic(request)
             .await
             .map_err(|status| status_to_cluster_metadata_error("topic", status))?;
+
+        Ok(())
+    }
+
+    async fn create_object_store_credential(
+        &self,
+        name: ObjectStoreCredentialName,
+        credential: ObjectStoreCredential,
+    ) -> Result<ObjectStoreCredential> {
+        let request = pb::CreateObjectStoreCredentialRequest {
+            parent: name.parent().to_string(),
+            object_store_credential_id: name.id().to_string(),
+            object_store_credential: Some(credential.into()),
+        };
+
+        self.client
+            .clone()
+            .create_object_store_credential(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("object store credential", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn get_object_store_credential(
+        &self,
+        name: ObjectStoreCredentialName,
+    ) -> Result<ObjectStoreCredential> {
+        let request = pb::GetObjectStoreCredentialRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .get_object_store_credential(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("object store credential", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn list_object_store_credentials(
+        &self,
+        request: ListObjectStoreCredentialsRequest,
+    ) -> Result<ListObjectStoreCredentialsResponse> {
+        let request = pb::ListObjectStoreCredentialsRequest::from(request);
+
+        self.client
+            .clone()
+            .list_object_store_credentials(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("object store credential", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn delete_object_store_credential(&self, name: ObjectStoreCredentialName) -> Result<()> {
+        let request = pb::DeleteObjectStoreCredentialRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .delete_object_store_credential(request)
+            .await
+            .map_err(|status| {
+                status_to_cluster_metadata_error("object store credential", status)
+            })?;
 
         Ok(())
     }

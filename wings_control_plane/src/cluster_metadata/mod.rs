@@ -11,7 +11,8 @@ pub mod tonic;
 use async_trait::async_trait;
 
 use crate::resources::{
-    Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName, Topic, TopicName, TopicOptions,
+    Namespace, NamespaceName, NamespaceOptions, ObjectStoreCredential, ObjectStoreCredentialName,
+    Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 
 pub use self::error::{ClusterMetadataError, Result};
@@ -76,6 +77,30 @@ pub trait ClusterMetadata: Send + Sync {
     /// This operation may take a long time to complete as it involves deleting
     /// data from object storage.
     async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()>;
+
+    // Object store credential operations
+
+    /// Create a new object store credential belonging to a tenant.
+    async fn create_object_store_credential(
+        &self,
+        name: ObjectStoreCredentialName,
+        credential: ObjectStoreCredential,
+    ) -> Result<ObjectStoreCredential>;
+
+    /// Return the specified object store credential.
+    async fn get_object_store_credential(
+        &self,
+        name: ObjectStoreCredentialName,
+    ) -> Result<ObjectStoreCredential>;
+
+    /// List all object store credentials belonging to a tenant.
+    async fn list_object_store_credentials(
+        &self,
+        request: ListObjectStoreCredentialsRequest,
+    ) -> Result<ListObjectStoreCredentialsResponse>;
+
+    /// Delete an object store credential.
+    async fn delete_object_store_credential(&self, name: ObjectStoreCredentialName) -> Result<()>;
 }
 
 /// Request to list tenants.
@@ -166,6 +191,38 @@ impl ListTopicsRequest {
 pub struct ListTopicsResponse {
     /// The topics.
     pub topics: Vec<Topic>,
+    /// The continuation token.
+    pub next_page_token: Option<String>,
+}
+
+/// Request to list object store credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListObjectStoreCredentialsRequest {
+    /// The parent tenant.
+    pub parent: TenantName,
+    /// The number of object store credentials to return.
+    /// Default: 100, Maximum: 1000.
+    pub page_size: Option<i32>,
+    /// The continuation token.
+    pub page_token: Option<String>,
+}
+
+impl ListObjectStoreCredentialsRequest {
+    /// Create a new request for the given parent tenant.
+    pub fn new(parent: TenantName) -> Self {
+        Self {
+            parent,
+            page_size: Some(100),
+            page_token: None,
+        }
+    }
+}
+
+/// Response from listing object store credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListObjectStoreCredentialsResponse {
+    /// The object store credentials.
+    pub object_store_credentials: Vec<ObjectStoreCredential>,
     /// The continuation token.
     pub next_page_token: Option<String>,
 }
