@@ -139,6 +139,7 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
     let default_namespace_options =
         NamespaceOptions::new(SecretName::new_unchecked("default-bucket"));
+
     cluster_meta
         .create_namespace(default_namespace.clone(), default_namespace_options)
         .await

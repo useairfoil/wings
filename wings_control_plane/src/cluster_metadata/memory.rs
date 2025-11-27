@@ -10,15 +10,14 @@ use tokio::sync::RwLock;
 use wings_observability::KeyValue;
 
 use crate::resources::{
-    Namespace, NamespaceName, NamespaceOptions, ObjectStoreCredential, ObjectStoreCredentialName,
-    Tenant, TenantName, Topic, TopicName, TopicOptions,
+    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions, Tenant, TenantName,
+    Topic, TopicName, TopicOptions,
 };
 
 use super::{
-    ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-    ListObjectStoreCredentialsRequest, ListObjectStoreCredentialsResponse, ListTenantsRequest,
-    ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
-    metrics::ClusterMetadataMetrics,
+    ClusterMetadata, ClusterMetadataError, ListCredentialsRequest, ListCredentialsResponse,
+    ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest, ListTenantsResponse,
+    ListTopicsRequest, ListTopicsResponse, Result, metrics::ClusterMetadataMetrics,
 };
 
 #[derive(Debug, Default)]
@@ -29,8 +28,8 @@ struct ClusterMetadataStore {
     namespaces: HashMap<String, Namespace>,
     /// Map of topic name to topic data.
     topics: HashMap<String, Topic>,
-    /// Map of object store credential name to credential data.
-    object_store_credentials: HashMap<String, ObjectStoreCredential>,
+    /// Map of credential name to credential data.
+    credentials: HashMap<String, Credential>,
 }
 
 /// In-memory implementation of the cluster metadata service.
@@ -435,63 +434,53 @@ impl ClusterMetadataStore {
         Ok(())
     }
 
-    fn create_object_store_credential(
+    fn create_credential(
         &mut self,
-        name: ObjectStoreCredentialName,
-        credential: ObjectStoreCredential,
+        name: CredentialName,
+        credential: Credential,
         metrics: &ClusterMetadataMetrics,
-    ) -> Result<ObjectStoreCredential> {
+    ) -> Result<Credential> {
         let credential_key = name.name();
 
-        if self.object_store_credentials.contains_key(&credential_key) {
+        if self.credentials.contains_key(&credential_key) {
             return Err(ClusterMetadataError::AlreadyExists {
-                resource: "object store credential",
+                resource: "credential",
                 message: name.id().to_string(),
             });
         }
 
         // Update the credential with the correct name
         let updated_credential = match credential {
-            ObjectStoreCredential::AwsCredential(_) => ObjectStoreCredential::aws(name.clone()),
-            ObjectStoreCredential::AzureCredential(_) => ObjectStoreCredential::azure(name.clone()),
-            ObjectStoreCredential::GoogleCredential(_) => {
-                ObjectStoreCredential::google(name.clone())
-            }
-            ObjectStoreCredential::S3CompatibleCredential(_) => {
-                ObjectStoreCredential::s3_compatible(name.clone())
-            }
+            Credential::AwsCredential(_) => Credential::aws(name.clone()),
+            Credential::AzureCredential(_) => Credential::azure(name.clone()),
+            Credential::GoogleCredential(_) => Credential::google(name.clone()),
+            Credential::S3CompatibleCredential(_) => Credential::s3_compatible(name.clone()),
         };
 
-        self.object_store_credentials
+        self.credentials
             .insert(credential_key.clone(), updated_credential.clone());
 
         let tenant_id = name.parent().id().to_string();
         metrics
-            .object_store_credentials_count
+            .credentials_count
             .add(1, &[KeyValue::new("tenant", tenant_id)]);
 
         Ok(updated_credential)
     }
 
-    fn get_object_store_credential(
-        &self,
-        name: ObjectStoreCredentialName,
-    ) -> Result<ObjectStoreCredential> {
+    fn get_credential(&self, name: CredentialName) -> Result<Credential> {
         let credential_key = name.name();
 
-        self.object_store_credentials
+        self.credentials
             .get(&credential_key)
             .cloned()
             .ok_or_else(|| ClusterMetadataError::NotFound {
-                resource: "object store credential",
+                resource: "credential",
                 message: name.id().to_string(),
             })
     }
 
-    fn list_object_store_credentials(
-        &self,
-        request: ListObjectStoreCredentialsRequest,
-    ) -> Result<ListObjectStoreCredentialsResponse> {
+    fn list_credentials(&self, request: ListCredentialsRequest) -> Result<ListCredentialsResponse> {
         let tenant_id = request.parent.id();
 
         if !self.tenants.contains_key(tenant_id) {
@@ -505,10 +494,10 @@ impl ClusterMetadataStore {
         let page_token = request.page_token.as_deref().unwrap_or("");
 
         let mut credential_keys: Vec<_> = self
-            .object_store_credentials
+            .credentials
             .keys()
             .filter(|key| {
-                if let Ok(credential_name) = ObjectStoreCredentialName::parse(key) {
+                if let Ok(credential_name) = CredentialName::parse(key) {
                     credential_name.parent().id() == tenant_id
                 } else {
                     false
@@ -530,9 +519,9 @@ impl ClusterMetadataStore {
         let end_index = (start_index + page_size).min(credential_keys.len());
         let page_credential_keys = &credential_keys[start_index..end_index];
 
-        let object_store_credentials: Vec<ObjectStoreCredential> = page_credential_keys
+        let credentials: Vec<Credential> = page_credential_keys
             .iter()
-            .filter_map(|key| self.object_store_credentials.get(*key).cloned())
+            .filter_map(|key| self.credentials.get(*key).cloned())
             .collect();
 
         let next_page_token = if end_index < credential_keys.len() {
@@ -541,32 +530,32 @@ impl ClusterMetadataStore {
             None
         };
 
-        Ok(ListObjectStoreCredentialsResponse {
-            object_store_credentials,
+        Ok(ListCredentialsResponse {
+            credentials,
             next_page_token,
         })
     }
 
-    fn delete_object_store_credential(
+    fn delete_credential(
         &mut self,
-        name: ObjectStoreCredentialName,
+        name: CredentialName,
         metrics: &ClusterMetadataMetrics,
     ) -> Result<()> {
         let credential_key = name.name();
 
-        if !self.object_store_credentials.contains_key(&credential_key) {
+        if !self.credentials.contains_key(&credential_key) {
             return Err(ClusterMetadataError::NotFound {
-                resource: "object store credential",
+                resource: "credential",
                 message: name.id().to_string(),
             });
         }
 
         let tenant_id = name.parent().id().to_string();
 
-        self.object_store_credentials.remove(&credential_key);
+        self.credentials.remove(&credential_key);
 
         metrics
-            .object_store_credentials_count
+            .credentials_count
             .add(-1, &[KeyValue::new("tenant", tenant_id)]);
 
         Ok(())
@@ -642,34 +631,31 @@ impl ClusterMetadata for InMemoryClusterMetadata {
         store.delete_topic(name, &self.metrics)
     }
 
-    async fn create_object_store_credential(
+    async fn create_credential(
         &self,
-        name: ObjectStoreCredentialName,
-        credential: ObjectStoreCredential,
-    ) -> Result<ObjectStoreCredential> {
+        name: CredentialName,
+        credential: Credential,
+    ) -> Result<Credential> {
         let mut store = self.store.write().await;
-        store.create_object_store_credential(name, credential, &self.metrics)
+        store.create_credential(name, credential, &self.metrics)
     }
 
-    async fn get_object_store_credential(
-        &self,
-        name: ObjectStoreCredentialName,
-    ) -> Result<ObjectStoreCredential> {
+    async fn get_credential(&self, name: CredentialName) -> Result<Credential> {
         let store = self.store.read().await;
-        store.get_object_store_credential(name)
+        store.get_credential(name)
     }
 
-    async fn list_object_store_credentials(
+    async fn list_credentials(
         &self,
-        request: ListObjectStoreCredentialsRequest,
-    ) -> Result<ListObjectStoreCredentialsResponse> {
+        request: ListCredentialsRequest,
+    ) -> Result<ListCredentialsResponse> {
         let store = self.store.read().await;
-        store.list_object_store_credentials(request)
+        store.list_credentials(request)
     }
 
-    async fn delete_object_store_credential(&self, name: ObjectStoreCredentialName) -> Result<()> {
+    async fn delete_credential(&self, name: CredentialName) -> Result<()> {
         let mut store = self.store.write().await;
-        store.delete_object_store_credential(name, &self.metrics)
+        store.delete_credential(name, &self.metrics)
     }
 }
 

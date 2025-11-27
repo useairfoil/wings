@@ -4,14 +4,14 @@ use crate::resource_type;
 
 use super::tenant::TenantName;
 
-resource_type!(ObjectStoreCredential, "object-store-credentials", Tenant);
+resource_type!(Credential, "credentials", Tenant);
 
-/// Object store credential configuration.
+/// Credential configuration.
 ///
 /// Different cloud providers require different credential types.
-/// This enum represents the various supported object store credentials.
+/// This enum represents the various supported credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ObjectStoreCredential {
+pub enum Credential {
     /// AWS S3 credentials.
     AwsCredential(AwsCredential),
     /// Azure Blob Storage credentials.
@@ -25,52 +25,52 @@ pub enum ObjectStoreCredential {
 /// AWS S3 credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwsCredential {
-    pub name: ObjectStoreCredentialName,
+    pub name: CredentialName,
 }
 
 /// Azure Blob Storage credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AzureCredential {
-    pub name: ObjectStoreCredentialName,
+    pub name: CredentialName,
 }
 
 /// Google Cloud Storage credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoogleCredential {
-    pub name: ObjectStoreCredentialName,
+    pub name: CredentialName,
 }
 
 /// S3-compatible storage credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3CompatibleCredential {
-    pub name: ObjectStoreCredentialName,
+    pub name: CredentialName,
 }
 
-pub type ObjectStoreCredentialRef = Arc<ObjectStoreCredential>;
+pub type CredentialRef = Arc<Credential>;
 
-impl ObjectStoreCredential {
+impl Credential {
     /// Create a new AWS credential.
-    pub fn aws(name: ObjectStoreCredentialName) -> Self {
+    pub fn aws(name: CredentialName) -> Self {
         Self::AwsCredential(AwsCredential { name })
     }
 
     /// Create a new Azure credential.
-    pub fn azure(name: ObjectStoreCredentialName) -> Self {
+    pub fn azure(name: CredentialName) -> Self {
         Self::AzureCredential(AzureCredential { name })
     }
 
     /// Create a new Google credential.
-    pub fn google(name: ObjectStoreCredentialName) -> Self {
+    pub fn google(name: CredentialName) -> Self {
         Self::GoogleCredential(GoogleCredential { name })
     }
 
     /// Create a new S3-compatible credential.
-    pub fn s3_compatible(name: ObjectStoreCredentialName) -> Self {
+    pub fn s3_compatible(name: CredentialName) -> Self {
         Self::S3CompatibleCredential(S3CompatibleCredential { name })
     }
 
     /// Get the name of this credential.
-    pub fn name(&self) -> &ObjectStoreCredentialName {
+    pub fn name(&self) -> &CredentialName {
         match self {
             Self::AwsCredential(credential) => &credential.name,
             Self::AzureCredential(credential) => &credential.name,

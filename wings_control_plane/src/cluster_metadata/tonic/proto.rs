@@ -14,15 +14,15 @@ use snafu::ResultExt;
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-        ListObjectStoreCredentialsRequest, ListObjectStoreCredentialsResponse, ListTenantsRequest,
-        ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
+        ClusterMetadataError, ListCredentialsRequest, ListCredentialsResponse,
+        ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest, ListTenantsResponse,
+        ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        DataLakeConfig, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,
-        ObjectStoreCredential, ObjectStoreCredentialName, SecretName, Tenant, TenantName, Topic,
-        TopicName, TopicOptions,
+        Credential, CredentialName, DataLakeConfig, IcebergRestCatalogConfig, Namespace,
+        NamespaceName, NamespaceOptions, SecretName, Tenant, TenantName, Topic, TopicName,
+        TopicOptions,
     },
 };
 
@@ -457,64 +457,54 @@ fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
  * ███████   ██████    ██       ██    ███████ ██   ██  ██████   ██████  ███████    ██    ███████
  */
 
-impl From<ObjectStoreCredential> for pb::ObjectStoreCredential {
-    fn from(credential: ObjectStoreCredential) -> Self {
+impl From<Credential> for pb::Credential {
+    fn from(credential: Credential) -> Self {
         let name = credential.name().name();
         let credential = match credential {
-            ObjectStoreCredential::AwsCredential(_) => Some(
-                pb::object_store_credential::Credential::Aws(pb::AwsCredential {}),
-            ),
-            ObjectStoreCredential::AzureCredential(_) => Some(
-                pb::object_store_credential::Credential::Azure(pb::AzureCredential {}),
-            ),
-            ObjectStoreCredential::GoogleCredential(_) => Some(
-                pb::object_store_credential::Credential::Google(pb::GoogleCredential {}),
-            ),
-            ObjectStoreCredential::S3CompatibleCredential(_) => {
-                Some(pb::object_store_credential::Credential::S3Compatible(
-                    pb::S3CompatibleCredential {},
-                ))
+            Credential::AwsCredential(_) => {
+                Some(pb::credential::Credential::Aws(pb::AwsCredential {}))
             }
+            Credential::AzureCredential(_) => {
+                Some(pb::credential::Credential::Azure(pb::AzureCredential {}))
+            }
+            Credential::GoogleCredential(_) => {
+                Some(pb::credential::Credential::Google(pb::GoogleCredential {}))
+            }
+            Credential::S3CompatibleCredential(_) => Some(
+                pb::credential::Credential::S3Compatible(pb::S3CompatibleCredential {}),
+            ),
         };
 
         Self { name, credential }
     }
 }
 
-impl TryFrom<pb::ObjectStoreCredential> for ObjectStoreCredential {
+impl TryFrom<pb::Credential> for Credential {
     type Error = ClusterMetadataError;
 
-    fn try_from(credential: pb::ObjectStoreCredential) -> AdminResult<Self> {
-        let name = ObjectStoreCredentialName::parse(&credential.name).context(
-            InvalidResourceNameSnafu {
-                resource: "object store credential",
-            },
-        )?;
+    fn try_from(credential: pb::Credential) -> AdminResult<Self> {
+        let name = CredentialName::parse(&credential.name).context(InvalidResourceNameSnafu {
+            resource: "credential",
+        })?;
 
         let credential = credential.credential.ok_or_else(|| {
             InternalSnafu {
-                message: "missing credential field in ObjectStoreCredential proto".to_string(),
+                message: "missing credential field in Credential proto".to_string(),
             }
             .build()
         })?;
 
         match credential {
-            pb::object_store_credential::Credential::Aws(_) => Ok(ObjectStoreCredential::aws(name)),
-            pb::object_store_credential::Credential::Azure(_) => {
-                Ok(ObjectStoreCredential::azure(name))
-            }
-            pb::object_store_credential::Credential::Google(_) => {
-                Ok(ObjectStoreCredential::google(name))
-            }
-            pb::object_store_credential::Credential::S3Compatible(_) => {
-                Ok(ObjectStoreCredential::s3_compatible(name))
-            }
+            pb::credential::Credential::Aws(_) => Ok(Credential::aws(name)),
+            pb::credential::Credential::Azure(_) => Ok(Credential::azure(name)),
+            pb::credential::Credential::Google(_) => Ok(Credential::google(name)),
+            pb::credential::Credential::S3Compatible(_) => Ok(Credential::s3_compatible(name)),
         }
     }
 }
 
-impl From<ListObjectStoreCredentialsRequest> for pb::ListObjectStoreCredentialsRequest {
-    fn from(request: ListObjectStoreCredentialsRequest) -> Self {
+impl From<ListCredentialsRequest> for pb::ListCredentialsRequest {
+    fn from(request: ListCredentialsRequest) -> Self {
         Self {
             parent: request.parent.name(),
             page_size: request.page_size,
@@ -523,10 +513,10 @@ impl From<ListObjectStoreCredentialsRequest> for pb::ListObjectStoreCredentialsR
     }
 }
 
-impl TryFrom<pb::ListObjectStoreCredentialsRequest> for ListObjectStoreCredentialsRequest {
+impl TryFrom<pb::ListCredentialsRequest> for ListCredentialsRequest {
     type Error = ClusterMetadataError;
 
-    fn try_from(request: pb::ListObjectStoreCredentialsRequest) -> AdminResult<Self> {
+    fn try_from(request: pb::ListCredentialsRequest) -> AdminResult<Self> {
         let parent = TenantName::parse(&request.parent)
             .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
@@ -538,33 +528,33 @@ impl TryFrom<pb::ListObjectStoreCredentialsRequest> for ListObjectStoreCredentia
     }
 }
 
-impl From<ListObjectStoreCredentialsResponse> for pb::ListObjectStoreCredentialsResponse {
-    fn from(response: ListObjectStoreCredentialsResponse) -> Self {
-        let object_store_credentials = response
-            .object_store_credentials
+impl From<ListCredentialsResponse> for pb::ListCredentialsResponse {
+    fn from(response: ListCredentialsResponse) -> Self {
+        let credentials = response
+            .credentials
             .into_iter()
-            .map(pb::ObjectStoreCredential::from)
+            .map(pb::Credential::from)
             .collect();
 
         Self {
-            object_store_credentials,
+            credentials,
             next_page_token: response.next_page_token.unwrap_or_default(),
         }
     }
 }
 
-impl TryFrom<pb::ListObjectStoreCredentialsResponse> for ListObjectStoreCredentialsResponse {
+impl TryFrom<pb::ListCredentialsResponse> for ListCredentialsResponse {
     type Error = ClusterMetadataError;
 
-    fn try_from(response: pb::ListObjectStoreCredentialsResponse) -> AdminResult<Self> {
-        let object_store_credentials = response
-            .object_store_credentials
+    fn try_from(response: pb::ListCredentialsResponse) -> AdminResult<Self> {
+        let credentials = response
+            .credentials
             .into_iter()
-            .map(ObjectStoreCredential::try_from)
+            .map(Credential::try_from)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
-            object_store_credentials,
+            credentials,
             next_page_token: if response.next_page_token.is_empty() {
                 None
             } else {
