@@ -17,6 +17,8 @@ pub struct Topic {
     pub fields: Fields,
     /// The index of the field that is used to partition the topic.
     pub partition_key: Option<usize>,
+    /// The topic description.
+    pub description: Option<String>,
 }
 
 pub type TopicRef = Arc<Topic>;
@@ -28,6 +30,7 @@ impl Topic {
             name,
             fields: options.fields,
             partition_key: options.partition_key,
+            description: options.description,
         }
     }
 
@@ -66,6 +69,8 @@ pub struct TopicOptions {
     pub fields: Fields,
     /// The index of the field that is used to partition the topic.
     pub partition_key: Option<usize>,
+    /// The topic description.
+    pub description: Option<String>,
 }
 
 impl TopicOptions {
@@ -73,6 +78,7 @@ impl TopicOptions {
         Self {
             fields: fields.into(),
             partition_key: None,
+            description: None,
         }
     }
 
@@ -80,7 +86,13 @@ impl TopicOptions {
         Self {
             fields: fields.into(),
             partition_key,
+            description: None,
         }
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
     }
 }
 

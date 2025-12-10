@@ -237,8 +237,11 @@ message Topic {
   // The fields in the topic messages.
   bytes fields = 2;
 
+  // The topic description.
+  optional string description = 3;
+
   // The index of the field that is used to partition the topic.
-  optional uint32 partition_key = 3;
+  optional uint32 partition_key = 4;
 }
 
 message CreateObjectStoreRequest {

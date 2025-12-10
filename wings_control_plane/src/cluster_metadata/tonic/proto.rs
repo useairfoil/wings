@@ -278,6 +278,7 @@ impl From<Topic> for pb::Topic {
 
         Self {
             name: topic.name.name(),
+            description: topic.description,
             fields,
             partition_key,
         }
@@ -295,6 +296,7 @@ impl TryFrom<pb::Topic> for Topic {
 
         Ok(Self {
             name,
+            description: topic.description,
             fields,
             partition_key,
         })
@@ -311,6 +313,7 @@ impl TryFrom<pb::Topic> for TopicOptions {
         Ok(Self {
             fields,
             partition_key,
+            description: topic.description,
         })
     }
 }
@@ -321,6 +324,7 @@ impl From<TopicOptions> for pb::Topic {
             name: String::new(),
             fields: serialize_fields(&options.fields),
             partition_key: options.partition_key.map(|idx| idx as u32),
+            description: options.description,
         }
     }
 }
