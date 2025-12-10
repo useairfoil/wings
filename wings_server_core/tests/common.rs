@@ -8,8 +8,8 @@ use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
     log_metadata::InMemoryLogMetadata,
     resources::{
-        Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName, Topic, TopicName,
-        TopicOptions,
+        DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName,
+        Topic, TopicName, TopicOptions,
     },
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
@@ -57,11 +57,13 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
         .await
         .expect("create_tenant");
     let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name.clone());
-    let creds = ObjectStoreName::new_unchecked("test-cred", tenant_name);
+    let object_store_name = ObjectStoreName::new_unchecked("test-cred", tenant_name.clone());
+    let data_lake_name = DataLakeName::new_unchecked("test-data-lake", tenant_name);
     let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),
-            NamespaceOptions::new(creds).with_flush_interval(default_flush_interval()),
+            NamespaceOptions::new(object_store_name, data_lake_name)
+                .with_flush_interval(default_flush_interval()),
         )
         .await
         .expect("create_namespace");

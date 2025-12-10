@@ -147,8 +147,18 @@ mod tests {
     use tempfile::TempDir;
     use wings_control_plane::{
         cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
-        resources::{ObjectStoreName, TenantName},
+        resources::{AwsConfiguration, ObjectStoreName, TenantName},
     };
+
+    fn new_test_config() -> ObjectStoreConfiguration {
+        ObjectStoreConfiguration::Aws(AwsConfiguration {
+            bucket_name: "test-bucket".into(),
+            prefix: None,
+            access_key_id: Default::default(),
+            secret_access_key: Default::default(),
+            region: None,
+        })
+    }
 
     #[test]
     fn test_factory_creation() {
@@ -183,10 +193,7 @@ mod tests {
         // Create the object store in cluster metadata first
         let object_store_name = ObjectStoreName::new("test-bucket", tenant_name.clone()).unwrap();
         cluster_metadata
-            .create_object_store(
-                object_store_name.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store_name.clone(), new_test_config())
             .await
             .unwrap();
 
@@ -218,17 +225,11 @@ mod tests {
 
         // Create the object stores in cluster metadata first
         cluster_metadata
-            .create_object_store(
-                object_store1.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store1.clone(), new_test_config())
             .await
             .unwrap();
         cluster_metadata
-            .create_object_store(
-                object_store2.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store2.clone(), new_test_config())
             .await
             .unwrap();
 
@@ -264,10 +265,7 @@ mod tests {
         // Create the object store in cluster metadata first
         let object_store_name = ObjectStoreName::new("temp-bucket", tenant_name.clone()).unwrap();
         cluster_metadata
-            .create_object_store(
-                object_store_name.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store_name.clone(), new_test_config())
             .await
             .unwrap();
 
@@ -297,10 +295,7 @@ mod tests {
             let object_store_name =
                 ObjectStoreName::new("cleanup-test", tenant_name.clone()).unwrap();
             cluster_metadata
-                .create_object_store(
-                    object_store_name.clone(),
-                    ObjectStoreConfiguration::Aws(Default::default()),
-                )
+                .create_object_store(object_store_name.clone(), new_test_config())
                 .await
                 .unwrap();
             let _store = factory
@@ -337,17 +332,11 @@ mod tests {
 
         // Create the object stores in cluster metadata first
         cluster_metadata
-            .create_object_store(
-                object_store1.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store1.clone(), new_test_config())
             .await
             .unwrap();
         cluster_metadata
-            .create_object_store(
-                object_store2.clone(),
-                ObjectStoreConfiguration::Aws(Default::default()),
-            )
+            .create_object_store(object_store2.clone(), new_test_config())
             .await
             .unwrap();
 
