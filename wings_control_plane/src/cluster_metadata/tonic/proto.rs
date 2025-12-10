@@ -21,11 +21,10 @@ use crate::{
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        AwsConfiguration, AzureConfiguration, DataLake, DataLakeConfiguration, DataLakeConfig,
-        DataLakeName, GoogleConfiguration, IcebergConfiguration, IcebergRestCatalogConfig,
-        Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
-        ObjectStoreName, ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName,
-        Topic, TopicName, TopicOptions,
+        AwsConfiguration, AzureConfiguration, DataLake, DataLakeConfiguration, DataLakeName,
+        GoogleConfiguration, IcebergConfiguration, Namespace, NamespaceName, NamespaceOptions,
+        ObjectStore, ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration,
+        S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -128,8 +127,8 @@ impl From<Namespace> for pb::Namespace {
             name: namespace.name.name(),
             flush_size_bytes: namespace.flush_size.as_u64(),
             flush_interval_millis: namespace.flush_interval.as_millis() as u64,
-            default_object_store: namespace.default_object_store.name(),
-            data_lake_config: Some(namespace.data_lake_config.into()),
+            object_store: namespace.object_store.name(),
+            data_lake: namespace.data_lake.name(),
         }
     }
 }
@@ -143,26 +142,21 @@ impl TryFrom<pb::Namespace> for Namespace {
         })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
-        let default_object_store = ObjectStoreName::parse(&namespace.default_object_store)
-            .context(InvalidResourceNameSnafu {
+        let object_store =
+            ObjectStoreName::parse(&namespace.object_store).context(InvalidResourceNameSnafu {
                 resource: "object store",
             })?;
-        let data_lake_config = namespace
-            .data_lake_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing data_lake_config field in Namespace proto".to_string(),
-                }
-                .build()
-            })?
-            .try_into()?;
+        let data_lake =
+            DataLakeName::parse(&namespace.data_lake).context(InvalidResourceNameSnafu {
+                resource: "data lake",
+            })?;
 
         Ok(Self {
             name,
             flush_size,
             flush_interval,
-            default_object_store,
-            data_lake_config,
+            object_store,
+            data_lake,
         })
     }
 }
@@ -173,8 +167,8 @@ impl From<NamespaceOptions> for pb::Namespace {
             name: String::new(),
             flush_size_bytes: options.flush_size.as_u64(),
             flush_interval_millis: options.flush_interval.as_millis() as u64,
-            default_object_store: options.default_object_store.to_string(),
-            data_lake_config: Some(options.data_lake_config.into()),
+            object_store: options.object_store.to_string(),
+            data_lake: options.data_lake.to_string(),
         }
     }
 }
@@ -186,26 +180,21 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
 
-        let default_object_store = ObjectStoreName::parse(&namespace.default_object_store)
-            .context(InvalidResourceNameSnafu {
+        let object_store =
+            ObjectStoreName::parse(&namespace.object_store).context(InvalidResourceNameSnafu {
                 resource: "object store",
             })?;
 
-        let data_lake_config = namespace
-            .data_lake_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing data_lake_config field in Namespace proto".to_string(),
-                }
-                .build()
-            })?
-            .try_into()?;
+        let data_lake =
+            DataLakeName::parse(&namespace.data_lake).context(InvalidResourceNameSnafu {
+                resource: "data lake",
+            })?;
 
         Ok(Self {
             flush_size,
             flush_interval,
-            default_object_store,
-            data_lake_config,
+            object_store,
+            data_lake,
         })
     }
 }
@@ -268,48 +257,6 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
                 Some(response.next_page_token)
             },
         })
-    }
-}
-
-impl From<DataLakeConfig> for pb::namespace::DataLakeConfig {
-    fn from(config: DataLakeConfig) -> Self {
-        match config {
-            DataLakeConfig::IcebergInMemoryCatalog => {
-                pb::namespace::DataLakeConfig::IcebergInMemoryCatalog(pb::IcebergInMemoryCatalog {})
-            }
-            DataLakeConfig::IcebergRestCatalog(catalog) => {
-                pb::namespace::DataLakeConfig::IcebergRestCatalog(catalog.into())
-            }
-        }
-    }
-}
-
-impl TryFrom<pb::namespace::DataLakeConfig> for DataLakeConfig {
-    type Error = ClusterMetadataError;
-
-    fn try_from(config: pb::namespace::DataLakeConfig) -> Result<Self, Self::Error> {
-        use pb::namespace::DataLakeConfig::*;
-        match config {
-            IcebergInMemoryCatalog(_) => Ok(DataLakeConfig::IcebergInMemoryCatalog),
-            IcebergRestCatalog(catalog) => {
-                let inner = catalog.try_into()?;
-                Ok(DataLakeConfig::IcebergRestCatalog(inner))
-            }
-        }
-    }
-}
-
-impl From<IcebergRestCatalogConfig> for pb::IcebergRestCatalog {
-    fn from(_catalog: IcebergRestCatalogConfig) -> Self {
-        pb::IcebergRestCatalog {}
-    }
-}
-
-impl TryFrom<pb::IcebergRestCatalog> for IcebergRestCatalogConfig {
-    type Error = ClusterMetadataError;
-
-    fn try_from(_config: pb::IcebergRestCatalog) -> Result<Self, Self::Error> {
-        Ok(IcebergRestCatalogConfig {})
     }
 }
 

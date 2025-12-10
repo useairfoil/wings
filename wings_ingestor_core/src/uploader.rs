@@ -119,7 +119,7 @@ impl FolioUploader {
         file_ref: String,
         data: Bytes,
     ) -> Result<(), WriteBatchError> {
-        let object_store_name = &namespace.default_object_store;
+        let object_store_name = &namespace.object_store;
 
         let object_store = self
             .object_store_factory

@@ -4,7 +4,7 @@ use bytesize::ByteSize;
 
 use crate::{
     resource_type,
-    resources::{ObjectStoreName, TenantName},
+    resources::{DataLakeName, ObjectStoreName, TenantName},
 };
 
 resource_type!(Namespace, "namespaces", Tenant);
@@ -20,19 +20,10 @@ pub struct Namespace {
     pub flush_size: ByteSize,
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
-    /// The default object store configuration for the namespace.
-    pub default_object_store: ObjectStoreName,
+    /// The object store configuration for the namespace.
+    pub object_store: ObjectStoreName,
     /// DataLake configuration.
-    pub data_lake_config: DataLakeConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IcebergRestCatalogConfig {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DataLakeConfig {
-    IcebergInMemoryCatalog,
-    IcebergRestCatalog(IcebergRestCatalogConfig),
+    pub data_lake: DataLakeName,
 }
 
 pub type NamespaceRef = Arc<Namespace>;
@@ -44,8 +35,8 @@ impl Namespace {
             name,
             flush_size: options.flush_size,
             flush_interval: options.flush_interval,
-            default_object_store: options.default_object_store,
-            data_lake_config: options.data_lake_config,
+            object_store: options.object_store,
+            data_lake: options.data_lake,
         }
     }
 }
@@ -57,20 +48,20 @@ pub struct NamespaceOptions {
     pub flush_size: ByteSize,
     /// The maximum interval at which the current segment is flushed to object storage.
     pub flush_interval: Duration,
-    /// The default object store configuration for the namespace.
-    pub default_object_store: ObjectStoreName,
+    /// The object store configuration for the namespace.
+    pub object_store: ObjectStoreName,
     /// DataLake configuration.
-    pub data_lake_config: DataLakeConfig,
+    pub data_lake: DataLakeName,
 }
 
 impl NamespaceOptions {
-    /// Create new namespace options with the given default object store config.
-    pub fn new(default_object_store: ObjectStoreName) -> Self {
+    /// Create new namespace options with the given object store and data lake configurations.
+    pub fn new(object_store: ObjectStoreName, data_lake: DataLakeName) -> Self {
         Self {
             flush_size: ByteSize::mb(8),
             flush_interval: Duration::from_millis(250),
-            default_object_store,
-            data_lake_config: DataLakeConfig::IcebergInMemoryCatalog,
+            object_store,
+            data_lake,
         }
     }
 
@@ -91,13 +82,7 @@ impl NamespaceOptions {
         mut self,
         default_object_store: ObjectStoreName,
     ) -> Self {
-        self.default_object_store = default_object_store;
-        self
-    }
-
-    /// Change the data lake configuration.
-    pub fn with_data_lake_config(mut self, data_lake_config: DataLakeConfig) -> Self {
-        self.data_lake_config = data_lake_config;
+        self.object_store = default_object_store;
         self
     }
 }
@@ -112,7 +97,8 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
         let options = NamespaceOptions::new(
-            ObjectStoreName::new("test-config", tenant_name.clone()).unwrap(),
+            ObjectStoreName::new_unchecked("test-config", tenant_name.clone()),
+            DataLakeName::new_unchecked("test-lake", tenant_name.clone()),
         );
         let namespace = Namespace::new(namespace_name.clone(), options.clone());
 
@@ -125,7 +111,7 @@ mod tests {
         );
         assert_eq!(namespace.flush_size, options.flush_size);
         assert_eq!(namespace.flush_interval, options.flush_interval);
-        assert_eq!(namespace.default_object_store, options.default_object_store);
-        assert_eq!(namespace.data_lake_config, options.data_lake_config);
+        assert_eq!(namespace.object_store, options.object_store);
+        assert_eq!(namespace.data_lake, options.data_lake);
     }
 }

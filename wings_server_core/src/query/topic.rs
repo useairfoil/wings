@@ -134,10 +134,7 @@ impl TableProvider for TopicTableProvider {
 
         let locations = offset_location_stream.try_collect::<Vec<_>>().await?;
 
-        let object_store_url = self
-            .namespace
-            .default_object_store
-            .wings_object_store_url()?;
+        let object_store_url = self.namespace.object_store.wings_object_store_url()?;
 
         let schema = self.schema();
         let file_schema = self.topic.schema_without_partition_field();

@@ -8,7 +8,7 @@ use wings_control_plane::{
         ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
     },
     resources::{
-        DataLakeConfig, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
+        DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
         TenantName, Topic, TopicName, TopicOptions,
     },
 };
@@ -39,6 +39,9 @@ pub enum ClusterMetadataCommands {
         /// Object store name
         #[arg(long)]
         object_store: String,
+        /// Data lake name
+        #[arg(long)]
+        data_lake: String,
         /// Flush interval in milliseconds
         #[arg(long)]
         flush_millis: Option<u64>,
@@ -125,6 +128,7 @@ impl ClusterMetadataCommands {
             ClusterMetadataCommands::CreateNamespace {
                 namespace,
                 object_store,
+                data_lake,
                 flush_millis,
                 flush_mib,
                 remote,
@@ -141,7 +145,12 @@ impl ClusterMetadataCommands {
                         resource: "object store",
                     })?;
 
-                let mut options = NamespaceOptions::new(object_store_name);
+                let data_lake_name =
+                    DataLakeName::parse(&data_lake).context(InvalidResourceNameSnafu {
+                        resource: "data lake",
+                    })?;
+
+                let mut options = NamespaceOptions::new(object_store_name, data_lake_name);
 
                 if let Some(millis) = flush_millis {
                     options.flush_interval = Duration::from_millis(millis);
@@ -342,19 +351,8 @@ fn print_namespace(namespace: &Namespace) {
     println!("{}", namespace.name);
     println!("  flush interval: {:?}", namespace.flush_interval);
     println!("  flush size: {}", namespace.flush_size);
-    println!(
-        "  object store credentials: {}",
-        namespace.default_object_store
-    );
-
-    match namespace.data_lake_config {
-        DataLakeConfig::IcebergInMemoryCatalog => {
-            println!("  data lake: iceberg in-memory catalog");
-        }
-        DataLakeConfig::IcebergRestCatalog(ref _config) => {
-            println!("  data lake: iceberg rest catalog");
-        }
-    }
+    println!("  object store: {}", namespace.object_store);
+    println!("  data lake: {}", namespace.data_lake);
 }
 
 fn print_topic(topic: &Topic) {

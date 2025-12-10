@@ -13,7 +13,8 @@ use wings_control_plane::{
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
     resources::{
-        NamespaceName, NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
+        DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
+        ObjectStoreConfiguration, ObjectStoreName, TenantName,
     },
 };
 use wings_flight::WingsFlightSqlServer;
@@ -147,8 +148,17 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
         .await
         .expect("failed to create default aws s3 object store");
 
+    let data_lake_name = DataLakeName::new_unchecked("default", default_tenant.clone());
+    cluster_meta
+        .create_data_lake(
+            data_lake_name.clone(),
+            DataLakeConfiguration::Parquet(Default::default()),
+        )
+        .await
+        .expect("failed to create default data lake");
+
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
-    let default_namespace_options = NamespaceOptions::new(default_object_store);
+    let default_namespace_options = NamespaceOptions::new(default_object_store, data_lake_name);
 
     cluster_meta
         .create_namespace(default_namespace.clone(), default_namespace_options)
