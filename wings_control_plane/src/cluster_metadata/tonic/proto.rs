@@ -485,10 +485,18 @@ impl TryFrom<pb::ObjectStore> for ObjectStoreConfiguration {
 impl From<ObjectStoreConfiguration> for pb::object_store::ObjectStoreConfig {
     fn from(config: ObjectStoreConfiguration) -> Self {
         match config {
-            ObjectStoreConfiguration::Aws(_) => todo!(),
-            ObjectStoreConfiguration::Azure(_) => todo!(),
-            ObjectStoreConfiguration::Google(_) => todo!(),
-            ObjectStoreConfiguration::S3Compatible(_) => todo!(),
+            ObjectStoreConfiguration::Aws(aws) => {
+                pb::object_store::ObjectStoreConfig::Aws(aws.into())
+            }
+            ObjectStoreConfiguration::Azure(azure) => {
+                pb::object_store::ObjectStoreConfig::Azure(azure.into())
+            }
+            ObjectStoreConfiguration::Google(google) => {
+                pb::object_store::ObjectStoreConfig::Google(google.into())
+            }
+            ObjectStoreConfiguration::S3Compatible(s3) => {
+                pb::object_store::ObjectStoreConfig::S3Compatible(s3.into())
+            }
         }
     }
 }
@@ -499,18 +507,108 @@ impl TryFrom<pb::object_store::ObjectStoreConfig> for ObjectStoreConfiguration {
     fn try_from(config: pb::object_store::ObjectStoreConfig) -> AdminResult<Self> {
         use pb::object_store::ObjectStoreConfig;
         match config {
-            ObjectStoreConfig::Aws(_) => {
-                Ok(ObjectStoreConfiguration::Aws(AwsConfiguration::default()))
+            ObjectStoreConfig::Aws(aws) => Ok(ObjectStoreConfiguration::Aws(aws.into())),
+            ObjectStoreConfig::Azure(azure) => Ok(ObjectStoreConfiguration::Azure(azure.into())),
+            ObjectStoreConfig::Google(google) => {
+                Ok(ObjectStoreConfiguration::Google(google.into()))
             }
-            ObjectStoreConfig::Azure(_) => Ok(ObjectStoreConfiguration::Azure(
-                AzureConfiguration::default(),
-            )),
-            ObjectStoreConfig::Google(_) => Ok(ObjectStoreConfiguration::Google(
-                GoogleConfiguration::default(),
-            )),
-            ObjectStoreConfig::S3Compatible(_) => Ok(ObjectStoreConfiguration::S3Compatible(
-                S3CompatibleConfiguration::default(),
-            )),
+            ObjectStoreConfig::S3Compatible(s3) => {
+                Ok(ObjectStoreConfiguration::S3Compatible(s3.into()))
+            }
+        }
+    }
+}
+
+impl From<AwsConfiguration> for pb::AwsConfiguration {
+    fn from(c: AwsConfiguration) -> Self {
+        pb::AwsConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            access_key_id: c.access_key_id,
+            secret_access_key: c.secret_access_key,
+            region: c.region,
+        }
+    }
+}
+
+impl From<pb::AwsConfiguration> for AwsConfiguration {
+    fn from(c: pb::AwsConfiguration) -> Self {
+        AwsConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            access_key_id: c.access_key_id,
+            secret_access_key: c.secret_access_key,
+            region: c.region,
+        }
+    }
+}
+
+impl From<AzureConfiguration> for pb::AzureConfiguration {
+    fn from(c: AzureConfiguration) -> Self {
+        pb::AzureConfiguration {
+            container_name: c.container_name,
+            prefix: c.prefix,
+            storage_account_name: c.storage_account_name,
+            storage_account_key: c.storage_account_key,
+        }
+    }
+}
+
+impl From<pb::AzureConfiguration> for AzureConfiguration {
+    fn from(c: pb::AzureConfiguration) -> Self {
+        AzureConfiguration {
+            container_name: c.container_name,
+            prefix: c.prefix,
+            storage_account_name: c.storage_account_name,
+            storage_account_key: c.storage_account_key,
+        }
+    }
+}
+
+impl From<GoogleConfiguration> for pb::GoogleConfiguration {
+    fn from(c: GoogleConfiguration) -> Self {
+        pb::GoogleConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            service_account: c.service_account,
+            service_account_key: c.service_account_key,
+        }
+    }
+}
+
+impl From<pb::GoogleConfiguration> for GoogleConfiguration {
+    fn from(c: pb::GoogleConfiguration) -> Self {
+        GoogleConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            service_account: c.service_account,
+            service_account_key: c.service_account_key,
+        }
+    }
+}
+
+impl From<S3CompatibleConfiguration> for pb::S3CompatibleConfiguration {
+    fn from(c: S3CompatibleConfiguration) -> Self {
+        pb::S3CompatibleConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            access_key_id: c.access_key_id,
+            secret_access_key: c.secret_access_key,
+            endpoint: c.endpoint,
+            region: c.region,
+        }
+    }
+}
+
+impl From<pb::S3CompatibleConfiguration> for S3CompatibleConfiguration {
+    fn from(c: pb::S3CompatibleConfiguration) -> Self {
+        S3CompatibleConfiguration {
+            bucket_name: c.bucket_name,
+            prefix: c.prefix,
+            access_key_id: c.access_key_id,
+            secret_access_key: c.secret_access_key,
+            endpoint: c.endpoint,
+            region: c.region,
         }
     }
 }
@@ -787,10 +885,11 @@ mod tests {
 
     #[test]
     fn test_namespace_conversion() {
-        let tenant_name = TenantName::new("test-tenant").unwrap();
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
-        let object_store_name = ObjectStoreName::new("test-secret", tenant_name).unwrap();
-        let options = NamespaceOptions::new(object_store_name.clone());
+        let tenant_name = TenantName::new_unchecked("test-tenant");
+        let namespace_name = NamespaceName::new_unchecked("test-namespace", tenant_name.clone());
+        let object_store_name = ObjectStoreName::new_unchecked("test-secret", tenant_name.clone());
+        let data_lake_name = DataLakeName::new_unchecked("test-data-lake", tenant_name);
+        let options = NamespaceOptions::new(object_store_name.clone(), data_lake_name.clone());
         let domain_namespace = Namespace::new(namespace_name.clone(), options);
 
         // Domain to protobuf
@@ -802,10 +901,13 @@ mod tests {
         assert_eq!(pb_namespace.flush_size_bytes, ByteSize::mb(8).as_u64());
         assert_eq!(pb_namespace.flush_interval_millis, 250);
         assert_eq!(
-            pb_namespace.default_object_store,
+            pb_namespace.object_store,
             "tenants/test-tenant/object-stores/test-secret"
         );
-        assert!(pb_namespace.data_lake_config.is_some());
+        assert_eq!(
+            pb_namespace.data_lake,
+            "tenants/test-tenant/data-lakes/test-data-lake"
+        );
 
         // Protobuf to domain
         let converted_namespace = Namespace::try_from(pb_namespace).unwrap();
@@ -911,8 +1013,8 @@ mod tests {
             name: "invalid-format".to_string(),
             flush_size_bytes: 1024,
             flush_interval_millis: 250,
-            default_object_store: "tenants/test-tenant/object-stores/test".to_string(),
-            data_lake_config: Some(DataLakeConfig::IcebergInMemoryCatalog.into()),
+            object_store: "tenants/test-tenant/object-stores/test".to_string(),
+            data_lake: "tenants/test-tenant/data-lakes/test".to_string(),
         };
 
         let result = Namespace::try_from(pb_namespace);

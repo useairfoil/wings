@@ -6515,7 +6515,7 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "wings"
-version = "0.1.0-alpha.7"
+version = "0.1.0"
 dependencies = [
  "arrow 57.0.0",
  "arrow-flight",

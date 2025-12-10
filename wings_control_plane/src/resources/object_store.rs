@@ -32,20 +32,62 @@ pub enum ObjectStoreConfiguration {
 }
 
 /// AWS S3 object store configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct AwsConfiguration {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsConfiguration {
+    /// Bucket name.
+    pub bucket_name: String,
+    /// Bucket prefix.
+    pub prefix: Option<String>,
+    /// `AWS_ACCESS_KEY_ID`
+    pub access_key_id: String,
+    /// `AWS_SECRET_ACCESS_KEY`
+    pub secret_access_key: String,
+    /// `AWS_DEFAULT_REGION`
+    pub region: Option<String>,
+}
 
 /// Azure Blob Storage object store configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct AzureConfiguration {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AzureConfiguration {
+    /// Azure container name.
+    pub container_name: String,
+    /// Container prefix.
+    pub prefix: Option<String>,
+    /// `AZURE_STORAGE_ACCOUNT_NAME`
+    pub storage_account_name: String,
+    /// `AZURE_STORAGE_ACCOUNT_KEY`
+    pub storage_account_key: String,
+}
 
 /// Google Cloud Storage object store configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct GoogleConfiguration {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoogleConfiguration {
+    /// Bucket name.
+    pub bucket_name: String,
+    /// Bucket prefix.
+    pub prefix: Option<String>,
+    /// `GOOGLE_SERVICE_ACCOUNT`
+    pub service_account: String,
+    /// `GOOGLE_SERVICE_ACCOUNT_KEY`
+    pub service_account_key: String,
+}
 
 /// S3-compatible storage object store configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct S3CompatibleConfiguration {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct S3CompatibleConfiguration {
+    /// Bucket name.
+    pub bucket_name: String,
+    /// Bucket prefix.
+    pub prefix: Option<String>,
+    /// `AWS_ACCESS_KEY_ID`
+    pub access_key_id: String,
+    /// `AWS_SECRET_ACCESS_KEY`
+    pub secret_access_key: String,
+    /// `AWS_ENDPOINT`
+    pub endpoint: String,
+    /// `AWS_DEFAULT_REGION`
+    pub region: Option<String>,
+}
 
 pub type ObjectStoreRef = Arc<ObjectStore>;
 

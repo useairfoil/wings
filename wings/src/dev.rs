@@ -13,7 +13,7 @@ use wings_control_plane::{
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
     resources::{
-        DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
+        AwsConfiguration, DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
         ObjectStoreConfiguration, ObjectStoreName, TenantName,
     },
 };
@@ -140,10 +140,17 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
         .expect("failed to create default tenant");
 
     let default_object_store = ObjectStoreName::new_unchecked("default", default_tenant.clone());
+    let aws_config = AwsConfiguration {
+        bucket_name: "default".to_string(),
+        access_key_id: Default::default(),
+        secret_access_key: Default::default(),
+        prefix: None,
+        region: None,
+    };
     cluster_meta
         .create_object_store(
             default_object_store.clone(),
-            ObjectStoreConfiguration::Aws(Default::default()),
+            ObjectStoreConfiguration::Aws(aws_config),
         )
         .await
         .expect("failed to create default aws s3 object store");

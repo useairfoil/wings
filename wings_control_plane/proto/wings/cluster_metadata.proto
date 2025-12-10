@@ -310,13 +310,55 @@ message ObjectStore {
   }
 }
 
-message AwsConfiguration {}
+message AwsConfiguration {
+  // Bucket name.
+  string bucket_name = 1;
+  // Bucket prefix.
+  optional string prefix = 2;
+  /// `AWS_ACCESS_KEY_ID`
+  string access_key_id = 3;
+  /// `AWS_SECRET_ACCESS_KEY`
+  string secret_access_key = 4;
+  /// `AWS_DEFAULT_REGION`
+  optional string region = 5;
+}
 
-message AzureConfiguration {}
+message AzureConfiguration {
+  // Azure container name.
+  string container_name = 1;
+  // Container prefix.
+  optional string prefix = 2;
+  // `AZURE_STORAGE_ACCOUNT_NAME`
+  string storage_account_name = 3;
+  // `AZURE_STORAGE_ACCOUNT_KEY`
+  string storage_account_key = 4;
+}
 
-message GoogleConfiguration {}
+message GoogleConfiguration {
+  /// Bucket name.
+  string bucket_name = 1;
+  /// Bucket prefix.
+  optional string prefix = 2;
+  /// `GOOGLE_SERVICE_ACCOUNT`
+  string service_account = 3;
+  /// `GOOGLE_SERVICE_ACCOUNT_KEY`
+  string service_account_key = 4;
+}
 
-message S3CompatibleConfiguration {}
+message S3CompatibleConfiguration {
+  // Bucket name.
+  string bucket_name = 1;
+  // Bucket prefix.
+  optional string prefix = 2;
+  /// `AWS_ACCESS_KEY_ID`
+  string access_key_id = 3;
+  /// `AWS_SECRET_ACCESS_KEY`
+  string secret_access_key = 4;
+  /// `AWS_DEFAULT_REGION`
+  optional string region = 5;
+  /// `AWS_ENDPOINT`
+  string endpoint = 6;
+}
 
 message CreateDataLakeRequest {
   // The tenant that owns the data lake.
