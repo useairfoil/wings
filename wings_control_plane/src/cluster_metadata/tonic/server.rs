@@ -5,12 +5,13 @@ use tonic::{Request, Response, Status, async_trait};
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListObjectStoresRequest,
-        ListTenantsRequest, ListTopicsRequest, Result, error::InvalidResourceNameSnafu,
+        ClusterMetadata, ClusterMetadataError, ListDataLakesRequest, ListNamespacesRequest,
+        ListObjectStoresRequest, ListTenantsRequest, ListTopicsRequest, Result,
+        error::InvalidResourceNameSnafu,
     },
     resources::{
-        NamespaceName, NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
-        TopicName, TopicOptions, name::resource_error_to_status,
+        DataLakeName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName,
+        TenantName, TopicName, TopicOptions, name::resource_error_to_status,
     },
 };
 
@@ -360,6 +361,77 @@ impl TonicService for ClusterMetadataServer {
 
         self.inner
             .delete_object_store(object_store_name)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(()))
+    }
+
+    async fn create_data_lake(
+        &self,
+        request: Request<pb::CreateDataLakeRequest>,
+    ) -> Result<Response<pb::DataLake>, Status> {
+        let request = request.into_inner();
+
+        let (data_lake_name, data_lake_config) = request
+            .try_into()
+            .map_err(cluster_metadata_error_to_status)?;
+
+        let data_lake = self
+            .inner
+            .create_data_lake(data_lake_name, data_lake_config)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(data_lake.into()))
+    }
+
+    async fn get_data_lake(
+        &self,
+        request: Request<pb::GetDataLakeRequest>,
+    ) -> Result<Response<pb::DataLake>, Status> {
+        let request = request.into_inner();
+
+        let data_lake_name =
+            DataLakeName::try_from(request).map_err(cluster_metadata_error_to_status)?;
+
+        let data_lake = self
+            .inner
+            .get_data_lake(data_lake_name)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(data_lake.into()))
+    }
+
+    async fn list_data_lakes(
+        &self,
+        request: Request<pb::ListDataLakesRequest>,
+    ) -> Result<Response<pb::ListDataLakesResponse>, Status> {
+        let request = request.into_inner();
+        let request =
+            ListDataLakesRequest::try_from(request).map_err(cluster_metadata_error_to_status)?;
+
+        let response = self
+            .inner
+            .list_data_lakes(request)
+            .await
+            .map_err(cluster_metadata_error_to_status)?;
+
+        Ok(Response::new(response.into()))
+    }
+
+    async fn delete_data_lake(
+        &self,
+        request: Request<pb::DeleteDataLakeRequest>,
+    ) -> Result<Response<()>, Status> {
+        let request = request.into_inner();
+
+        let data_lake_name =
+            DataLakeName::try_from(request).map_err(cluster_metadata_error_to_status)?;
+
+        self.inner
+            .delete_data_lake(data_lake_name)
             .await
             .map_err(cluster_metadata_error_to_status)?;
 

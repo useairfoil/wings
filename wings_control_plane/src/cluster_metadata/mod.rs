@@ -11,8 +11,9 @@ pub mod tonic;
 use async_trait::async_trait;
 
 use crate::resources::{
-    Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
-    ObjectStoreName, Tenant, TenantName, Topic, TopicName, TopicOptions,
+    DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
+    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
+    TopicOptions,
 };
 
 pub use self::error::{ClusterMetadataError, Result};
@@ -98,6 +99,25 @@ pub trait ClusterMetadata: Send + Sync {
 
     /// Delete an object store.
     async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()>;
+
+    // Data lake operations
+
+    /// Create a new data lake belonging to a tenant.
+    async fn create_data_lake(
+        &self,
+        name: DataLakeName,
+        configuration: DataLakeConfiguration,
+    ) -> Result<DataLake>;
+
+    /// Return the specified data lake.
+    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake>;
+
+    /// List all data lakes belonging to a tenant.
+    async fn list_data_lakes(&self, request: ListDataLakesRequest)
+    -> Result<ListDataLakesResponse>;
+
+    /// Delete a data lake.
+    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()>;
 }
 
 /// Request to list tenants.
@@ -220,6 +240,38 @@ impl ListObjectStoresRequest {
 pub struct ListObjectStoresResponse {
     /// The object stores.
     pub object_stores: Vec<ObjectStore>,
+    /// The continuation token.
+    pub next_page_token: Option<String>,
+}
+
+/// Request to list data lakes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListDataLakesRequest {
+    /// The parent tenant.
+    pub parent: TenantName,
+    /// The number of data lakes to return.
+    /// Default: 100, Maximum: 1000.
+    pub page_size: Option<i32>,
+    /// The continuation token.
+    pub page_token: Option<String>,
+}
+
+impl ListDataLakesRequest {
+    /// Create a new request for the given parent tenant.
+    pub fn new(parent: TenantName) -> Self {
+        Self {
+            parent,
+            page_size: Some(100),
+            page_token: None,
+        }
+    }
+}
+
+/// Response from listing data lakes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListDataLakesResponse {
+    /// The data lakes.
+    pub data_lakes: Vec<DataLake>,
     /// The continuation token.
     pub next_page_token: Option<String>,
 }

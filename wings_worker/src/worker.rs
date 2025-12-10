@@ -197,7 +197,7 @@ impl Worker {
             return Ok(());
         }
 
-        let parquet_metadata = writer.finish().context(ParquetSnafu {})?;
+        let _parquet_metadata = writer.finish().context(ParquetSnafu {})?;
         let output_bytes = writer.into_inner().context(ParquetSnafu {})?;
 
         let object_store = self

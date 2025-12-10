@@ -1,3 +1,4 @@
+mod data_lake;
 pub(crate) mod name;
 mod namespace;
 mod object_store;
@@ -5,6 +6,10 @@ mod partition;
 mod tenant;
 mod topic;
 
+pub use self::data_lake::{
+    DataLake, DataLakeConfiguration, DataLakeName, DataLakeRef, IcebergConfiguration,
+    ParquetConfiguration,
+};
 pub use self::name::{ResourceError, ResourceResult, validate_resource_id};
 pub use self::namespace::{
     DataLakeConfig, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,

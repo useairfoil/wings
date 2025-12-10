@@ -1,11 +1,9 @@
 use std::net::AddrParseError;
 
 use axum::http::uri::InvalidUri;
-use datafusion::error::DataFusionError;
 use snafu::Snafu;
 use wings_control_plane::{
     cluster_metadata::ClusterMetadataError,
-    log_metadata::LogMetadataError,
     resources::{PartitionValueParseError, ResourceError},
 };
 use wings_observability::ObservabilityError;
@@ -24,12 +22,6 @@ pub enum CliError {
         operation: &'static str,
         #[snafu(source(from(ClusterMetadataError, Box::new)))]
         source: Box<ClusterMetadataError>,
-    },
-    #[snafu(display("Failed log metadata operation {operation}"))]
-    LogMetadata {
-        operation: &'static str,
-        #[snafu(source(from(LogMetadataError, Box::new)))]
-        source: Box<LogMetadataError>,
     },
     #[snafu(display("Invalid {name} argument: {message}"))]
     InvalidArgument { name: &'static str, message: String },
@@ -60,10 +52,6 @@ pub enum CliError {
         #[snafu(source(from(wings_client::ClientError, Box::new)))]
         source: Box<wings_client::ClientError>,
     },
-    #[snafu(display("JSON parse error"))]
-    JsonParse { source: serde_json::Error },
-    #[snafu(display("DataFusion error"))]
-    DataFusion { source: DataFusionError },
     #[snafu(display("Arrow error"))]
     Arrow { source: arrow::error::ArrowError },
     #[snafu(display("Flight error"))]

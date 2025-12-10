@@ -6,13 +6,15 @@ use http_body::Body;
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-        ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
-        ListTopicsRequest, ListTopicsResponse, Result,
+        ClusterMetadata, ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse,
+        ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
+        ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse, ListTopicsRequest,
+        ListTopicsResponse, Result,
     },
     resources::{
-        Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
-        ObjectStoreName, Tenant, TenantName, Topic, TopicName, TopicOptions,
+        DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
+        ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic,
+        TopicName, TopicOptions,
     },
 };
 
@@ -288,6 +290,69 @@ where
             .delete_object_store(request)
             .await
             .map_err(|status| status_to_cluster_metadata_error("object store", status))?;
+
+        Ok(())
+    }
+
+    async fn create_data_lake(
+        &self,
+        name: DataLakeName,
+        configuration: DataLakeConfiguration,
+    ) -> Result<DataLake> {
+        let request = pb::CreateDataLakeRequest {
+            parent: name.parent().to_string(),
+            data_lake_id: name.id().to_string(),
+            data_lake: Some(configuration.into()),
+        };
+
+        self.client
+            .clone()
+            .create_data_lake(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+        let request = pb::GetDataLakeRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .get_data_lake(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn list_data_lakes(
+        &self,
+        request: ListDataLakesRequest,
+    ) -> Result<ListDataLakesResponse> {
+        let request = pb::ListDataLakesRequest::from(request);
+
+        self.client
+            .clone()
+            .list_data_lakes(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .into_inner()
+            .try_into()
+    }
+
+    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
+        let request = pb::DeleteDataLakeRequest {
+            name: name.to_string(),
+        };
+
+        self.client
+            .clone()
+            .delete_data_lake(request)
+            .await
+            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?;
 
         Ok(())
     }

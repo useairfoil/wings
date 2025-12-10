@@ -45,6 +45,15 @@ service ClusterMetadataService {
   rpc ListObjectStores(ListObjectStoresRequest) returns (ListObjectStoresResponse) {}
   // Delete an object store.
   rpc DeleteObjectStore(DeleteObjectStoreRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new data lake belonging to a tenant.
+  rpc CreateDataLake(CreateDataLakeRequest) returns (DataLake) {}
+  // Return the specified data lake.
+  rpc GetDataLake(GetDataLakeRequest) returns (DataLake) {}
+  // List all data lakes belonging to a tenant.
+  rpc ListDataLakes(ListDataLakesRequest) returns (ListDataLakesResponse) {}
+  // Delete a data lake.
+  rpc DeleteDataLake(DeleteDataLakeRequest) returns (google.protobuf.Empty) {}
 }
 
 message CreateTenantRequest {
@@ -318,3 +327,71 @@ message AzureConfiguration {}
 message GoogleConfiguration {}
 
 message S3CompatibleConfiguration {}
+
+message CreateDataLakeRequest {
+  // The tenant that owns the data lake.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The data lake id.
+  string data_lake_id = 2;
+
+  // The data lake metadata.
+  DataLake data_lake = 3;
+}
+
+message GetDataLakeRequest {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+}
+
+message ListDataLakesRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of data lakes to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListDataLakesResponse {
+  // The data lakes.
+  repeated DataLake data_lakes = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteDataLakeRequest {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+}
+
+message DataLake {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+
+  // Data lake configuration.
+  oneof data_lake_config {
+    IcebergConfiguration iceberg = 2;
+    ParquetConfiguration parquet = 3;
+  }
+}
+
+message IcebergConfiguration {}
+
+message ParquetConfiguration {}

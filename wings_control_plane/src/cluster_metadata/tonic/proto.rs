@@ -14,15 +14,17 @@ use snafu::ResultExt;
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-        ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
-        ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
+        ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
+        ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
+        ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse,
+        Result as AdminResult,
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        AwsConfiguration, AzureConfiguration, DataLakeConfig, GoogleConfiguration,
-        IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions, ObjectStore,
-        ObjectStoreConfiguration, ObjectStoreName, S3CompatibleConfiguration, Tenant, TenantName,
+        AwsConfiguration, AzureConfiguration, DataLake, DataLakeConfiguration, DataLakeConfig,
+        DataLakeName, GoogleConfiguration, IcebergConfiguration, IcebergRestCatalogConfig,
+        Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
+        ObjectStoreName, ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName,
         Topic, TopicName, TopicOptions,
     },
 };
@@ -619,6 +621,196 @@ impl TryFrom<pb::ListObjectStoresResponse> for ListObjectStoresResponse {
             } else {
                 Some(response.next_page_token)
             },
+        })
+    }
+}
+
+/*
+ * ██████████     █████████   ███████████   █████████   █████         █████████   █████   ████ ██████████
+ * ░░███░░░░███   ███░░░░░███ ░█░░░███░░░█  ███░░░░░███ ░░███         ███░░░░░███ ░░███   ███░ ░░███░░░░░█
+ * ░███   ░░███ ░███    ░███ ░   ░███  ░  ░███    ░███  ░███        ░███    ░███  ░███  ███    ░███  █ ░
+ * ░███    ░███ ░███████████     ░███     ░███████████  ░███        ░███████████  ░███████     ░██████
+ * ░███    ░███ ░███░░░░░███     ░███     ░███░░░░░███  ░███        ░███░░░░░███  ░███░░███    ░███░░█
+ * ░███    ███  ░███    ░███     ░███     ░███    ░███  ░███      █ ░███    ░███  ░███ ░░███   ░███ ░   █
+ * ██████████   █████   █████    █████    █████   █████ ███████████ █████   █████ █████ ░░████ ██████████
+ * ░░░░░░░░░░   ░░░░░   ░░░░░    ░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░░ ░░░░░   ░░░░░ ░░░░░   ░░░░ ░░░░░░░░░░
+ */
+
+impl From<DataLake> for pb::DataLake {
+    fn from(data_lake: DataLake) -> Self {
+        let name = data_lake.name.name();
+        let config = data_lake.data_lake.into();
+
+        Self {
+            name,
+            data_lake_config: Some(config),
+        }
+    }
+}
+
+impl From<DataLakeConfiguration> for pb::DataLake {
+    fn from(config: DataLakeConfiguration) -> Self {
+        let config = config.into();
+
+        Self {
+            name: String::default(),
+            data_lake_config: Some(config),
+        }
+    }
+}
+
+impl TryFrom<pb::DataLake> for DataLake {
+    type Error = ClusterMetadataError;
+
+    fn try_from(data_lake: pb::DataLake) -> AdminResult<Self> {
+        let name = DataLakeName::parse(&data_lake.name).context(InvalidResourceNameSnafu {
+            resource: "data lake",
+        })?;
+        let data_lake_config = data_lake
+            .data_lake_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing data_lake_config field in DataLake proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()?;
+
+        Ok(Self {
+            name,
+            data_lake: data_lake_config,
+        })
+    }
+}
+
+impl From<DataLakeConfiguration> for pb::data_lake::DataLakeConfig {
+    fn from(config: DataLakeConfiguration) -> Self {
+        match config {
+            DataLakeConfiguration::Iceberg(_) => Self::Iceberg(pb::IcebergConfiguration {}),
+            DataLakeConfiguration::Parquet(_) => Self::Parquet(pb::ParquetConfiguration {}),
+        }
+    }
+}
+
+impl TryFrom<pb::data_lake::DataLakeConfig> for DataLakeConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(config: pb::data_lake::DataLakeConfig) -> AdminResult<Self> {
+        use pb::data_lake::DataLakeConfig;
+        match config {
+            DataLakeConfig::Iceberg(_) => Ok(DataLakeConfiguration::Iceberg(
+                IcebergConfiguration::default(),
+            )),
+            DataLakeConfig::Parquet(_) => Ok(DataLakeConfiguration::Parquet(
+                ParquetConfiguration::default(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<pb::CreateDataLakeRequest> for (DataLakeName, DataLakeConfiguration) {
+    type Error = ClusterMetadataError;
+
+    fn try_from(request: pb::CreateDataLakeRequest) -> AdminResult<Self> {
+        let tenant_name = TenantName::parse(&request.parent)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+        let data_lake_name = DataLakeName::new(request.data_lake_id, tenant_name).context(
+            InvalidResourceNameSnafu {
+                resource: "data lake",
+            },
+        )?;
+        let data_lake_config = request
+            .data_lake
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing data_lake field in CreateDataLakeRequest".to_string(),
+                }
+                .build()
+            })?
+            .data_lake_config
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing data_lake_config field in DataLake".to_string(),
+                }
+                .build()
+            })?
+            .try_into()?;
+
+        Ok((data_lake_name, data_lake_config))
+    }
+}
+
+impl TryFrom<pb::GetDataLakeRequest> for DataLakeName {
+    type Error = ClusterMetadataError;
+
+    fn try_from(request: pb::GetDataLakeRequest) -> AdminResult<Self> {
+        DataLakeName::parse(&request.name).context(InvalidResourceNameSnafu {
+            resource: "data lake",
+        })
+    }
+}
+
+impl From<ListDataLakesRequest> for pb::ListDataLakesRequest {
+    fn from(request: ListDataLakesRequest) -> Self {
+        Self {
+            parent: request.parent.to_string(),
+            page_size: request.page_size,
+            page_token: request.page_token,
+        }
+    }
+}
+
+impl TryFrom<pb::ListDataLakesRequest> for ListDataLakesRequest {
+    type Error = ClusterMetadataError;
+
+    fn try_from(request: pb::ListDataLakesRequest) -> AdminResult<Self> {
+        let parent = TenantName::parse(&request.parent)
+            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+
+        Ok(Self {
+            parent,
+            page_size: request.page_size,
+            page_token: request.page_token,
+        })
+    }
+}
+
+impl From<ListDataLakesResponse> for pb::ListDataLakesResponse {
+    fn from(response: ListDataLakesResponse) -> Self {
+        Self {
+            data_lakes: response.data_lakes.into_iter().map(Into::into).collect(),
+            next_page_token: response.next_page_token.unwrap_or_default(),
+        }
+    }
+}
+
+impl TryFrom<pb::ListDataLakesResponse> for ListDataLakesResponse {
+    type Error = ClusterMetadataError;
+
+    fn try_from(response: pb::ListDataLakesResponse) -> AdminResult<Self> {
+        let data_lakes = response
+            .data_lakes
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<AdminResult<Vec<_>>>()?;
+
+        Ok(Self {
+            data_lakes,
+            next_page_token: if response.next_page_token.is_empty() {
+                None
+            } else {
+                Some(response.next_page_token)
+            },
+        })
+    }
+}
+
+impl TryFrom<pb::DeleteDataLakeRequest> for DataLakeName {
+    type Error = ClusterMetadataError;
+
+    fn try_from(request: pb::DeleteDataLakeRequest) -> AdminResult<Self> {
+        DataLakeName::parse(&request.name).context(InvalidResourceNameSnafu {
+            resource: "data lake",
         })
     }
 }

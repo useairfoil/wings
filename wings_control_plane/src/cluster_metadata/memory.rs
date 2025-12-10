@@ -10,14 +10,16 @@ use tokio::sync::RwLock;
 use wings_observability::KeyValue;
 
 use crate::resources::{
-    Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
-    ObjectStoreName, Tenant, TenantName, Topic, TopicName, TopicOptions,
+    DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
+    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
+    TopicOptions,
 };
 
 use super::{
-    ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
-    ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
-    ListTopicsRequest, ListTopicsResponse, Result, metrics::ClusterMetadataMetrics,
+    ClusterMetadata, ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse,
+    ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
+    ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse, ListTopicsRequest,
+    ListTopicsResponse, Result, metrics::ClusterMetadataMetrics,
 };
 
 #[derive(Debug, Default)]
@@ -30,6 +32,8 @@ struct ClusterMetadataStore {
     topics: HashMap<String, Topic>,
     /// Map of object store name to object store data.
     object_stores: HashMap<String, ObjectStore>,
+    /// Map of data lake name to data lake data.
+    data_lakes: HashMap<String, DataLake>,
 }
 
 /// In-memory implementation of the cluster metadata service.
@@ -560,6 +564,130 @@ impl ClusterMetadataStore {
 
         Ok(())
     }
+
+    fn create_data_lake(
+        &mut self,
+        name: DataLakeName,
+        configuration: DataLakeConfiguration,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<DataLake> {
+        let data_lake_key = name.name();
+
+        if self.data_lakes.contains_key(&data_lake_key) {
+            return Err(ClusterMetadataError::AlreadyExists {
+                resource: "data lake",
+                message: name.id().to_string(),
+            });
+        }
+
+        let data_lake = DataLake {
+            name: name.clone(),
+            data_lake: configuration,
+        };
+
+        self.data_lakes
+            .insert(data_lake_key.clone(), data_lake.clone());
+
+        let tenant_id = name.parent().id().to_string();
+        metrics
+            .data_lakes_count
+            .add(1, &[KeyValue::new("tenant", tenant_id)]);
+
+        Ok(data_lake)
+    }
+
+    fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+        let data_lake_key = name.name();
+
+        self.data_lakes
+            .get(&data_lake_key)
+            .cloned()
+            .ok_or_else(|| ClusterMetadataError::NotFound {
+                resource: "data lake",
+                message: name.id().to_string(),
+            })
+    }
+
+    fn list_data_lakes(&self, request: ListDataLakesRequest) -> Result<ListDataLakesResponse> {
+        let tenant_id = request.parent.id();
+
+        if !self.tenants.contains_key(tenant_id) {
+            return Err(ClusterMetadataError::NotFound {
+                resource: "tenant",
+                message: tenant_id.to_string(),
+            });
+        }
+
+        let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
+        let page_token = request.page_token.as_deref().unwrap_or("");
+
+        let mut data_lake_keys: Vec<_> = self
+            .data_lakes
+            .keys()
+            .filter(|key| {
+                if let Ok(data_lake_name) = DataLakeName::parse(key) {
+                    data_lake_name.parent().id() == tenant_id
+                } else {
+                    false
+                }
+            })
+            .collect();
+        data_lake_keys.sort();
+
+        let start_index = if page_token.is_empty() {
+            0
+        } else {
+            data_lake_keys
+                .iter()
+                .position(|key| *key == page_token)
+                .map(|pos| pos + 1)
+                .unwrap_or(0)
+        };
+
+        let end_index = (start_index + page_size).min(data_lake_keys.len());
+        let page_data_lake_keys = &data_lake_keys[start_index..end_index];
+
+        let data_lakes: Vec<DataLake> = page_data_lake_keys
+            .iter()
+            .filter_map(|key| self.data_lakes.get(*key).cloned())
+            .collect();
+
+        let next_page_token = if end_index < data_lake_keys.len() {
+            Some(data_lake_keys[end_index - 1].clone())
+        } else {
+            None
+        };
+
+        Ok(ListDataLakesResponse {
+            data_lakes,
+            next_page_token,
+        })
+    }
+
+    fn delete_data_lake(
+        &mut self,
+        name: DataLakeName,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<()> {
+        let data_lake_key = name.name();
+
+        if !self.data_lakes.contains_key(&data_lake_key) {
+            return Err(ClusterMetadataError::NotFound {
+                resource: "data lake",
+                message: name.id().to_string(),
+            });
+        }
+
+        let tenant_id = name.parent().id().to_string();
+
+        self.data_lakes.remove(&data_lake_key);
+
+        metrics
+            .data_lakes_count
+            .add(-1, &[KeyValue::new("tenant", tenant_id)]);
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -656,6 +784,33 @@ impl ClusterMetadata for InMemoryClusterMetadata {
     async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
         let mut store = self.store.write().await;
         store.delete_object_store(name, &self.metrics)
+    }
+
+    async fn create_data_lake(
+        &self,
+        name: DataLakeName,
+        configuration: DataLakeConfiguration,
+    ) -> Result<DataLake> {
+        let mut store = self.store.write().await;
+        store.create_data_lake(name, configuration, &self.metrics)
+    }
+
+    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+        let store = self.store.read().await;
+        store.get_data_lake(name)
+    }
+
+    async fn list_data_lakes(
+        &self,
+        request: ListDataLakesRequest,
+    ) -> Result<ListDataLakesResponse> {
+        let store = self.store.read().await;
+        store.list_data_lakes(request)
+    }
+
+    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
+        let mut store = self.store.write().await;
+        store.delete_data_lake(name, &self.metrics)
     }
 }
 

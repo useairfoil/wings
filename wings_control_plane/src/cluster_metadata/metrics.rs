@@ -6,6 +6,7 @@ pub struct ClusterMetadataMetrics {
     pub namespaces_count: UpDownCounter<i64>,
     pub topics_count: UpDownCounter<i64>,
     pub object_stores_count: UpDownCounter<i64>,
+    pub data_lakes_count: UpDownCounter<i64>,
 }
 
 impl Default for ClusterMetadataMetrics {
@@ -28,6 +29,10 @@ impl Default for ClusterMetadataMetrics {
             object_stores_count: meter
                 .i64_up_down_counter("metadata.object_stores.count")
                 .with_description("the number of object stores")
+                .build(),
+            data_lakes_count: meter
+                .i64_up_down_counter("metadata.data_lakes.count")
+                .with_description("the number of data lakes")
                 .build(),
         }
     }
