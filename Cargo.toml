@@ -57,8 +57,7 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 http = "1.3.1"
 http-body = "1.0.1"
-# TODO: switch to crate once PR #1830 is merged
-iceberg = { git = "https://github.com/mbutrovich/iceberg-rust", rev = "6b8cb18a231b8a2" }
+iceberg = "0.7.0"
 moka = { version = "0.12.10", features = ["future"] }
 object_store = "0.12.2"
 opentelemetry = "0.31.0"

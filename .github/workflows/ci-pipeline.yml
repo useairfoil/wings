@@ -26,3 +26,13 @@ jobs:
       os: warp-ubuntu-latest-x64-2x
     secrets:
       cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+
+  build-image-linux-x86_64:
+    name: "Linux x86_64: Build"
+    uses: ./.github/workflows/build.yml
+    needs: [build-linux-x86_64]
+    with:
+      os: warp-ubuntu-latest-x64-2x
+      target: image
+    secrets:
+      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
