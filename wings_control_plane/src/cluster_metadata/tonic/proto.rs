@@ -14,16 +14,16 @@ use snafu::ResultExt;
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadataError, ListCredentialsRequest, ListCredentialsResponse,
-        ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest, ListTenantsResponse,
+        ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
+        ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
         ListTopicsRequest, ListTopicsResponse, Result as AdminResult,
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        AwsConfiguration, AzureConfiguration, Credential, CredentialName, DataLakeConfig,
-        GoogleConfiguration, IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions,
-        ObjectStoreConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName,
-        TopicOptions,
+        AwsConfiguration, AzureConfiguration, DataLakeConfig, GoogleConfiguration,
+        IcebergRestCatalogConfig, Namespace, NamespaceName, NamespaceOptions, ObjectStore,
+        ObjectStoreConfiguration, ObjectStoreName, S3CompatibleConfiguration, Tenant, TenantName,
+        Topic, TopicName, TopicOptions,
     },
 };
 
@@ -126,7 +126,7 @@ impl From<Namespace> for pb::Namespace {
             name: namespace.name.name(),
             flush_size_bytes: namespace.flush_size.as_u64(),
             flush_interval_millis: namespace.flush_interval.as_millis() as u64,
-            default_object_store_credential: namespace.default_object_store_credentials.name(),
+            default_object_store: namespace.default_object_store.name(),
             data_lake_config: Some(namespace.data_lake_config.into()),
         }
     }
@@ -141,12 +141,10 @@ impl TryFrom<pb::Namespace> for Namespace {
         })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
-        let default_object_store_credential = CredentialName::parse(
-            &namespace.default_object_store_credential,
-        )
-        .context(InvalidResourceNameSnafu {
-            resource: "credential",
-        })?;
+        let default_object_store = ObjectStoreName::parse(&namespace.default_object_store)
+            .context(InvalidResourceNameSnafu {
+                resource: "object store",
+            })?;
         let data_lake_config = namespace
             .data_lake_config
             .ok_or_else(|| {
@@ -161,7 +159,7 @@ impl TryFrom<pb::Namespace> for Namespace {
             name,
             flush_size,
             flush_interval,
-            default_object_store_credentials: default_object_store_credential,
+            default_object_store,
             data_lake_config,
         })
     }
@@ -173,7 +171,7 @@ impl From<NamespaceOptions> for pb::Namespace {
             name: String::new(),
             flush_size_bytes: options.flush_size.as_u64(),
             flush_interval_millis: options.flush_interval.as_millis() as u64,
-            default_object_store_credential: options.default_object_store_credential.to_string(),
+            default_object_store: options.default_object_store.to_string(),
             data_lake_config: Some(options.data_lake_config.into()),
         }
     }
@@ -186,12 +184,10 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
 
-        let default_object_store_credential = CredentialName::parse(
-            &namespace.default_object_store_credential,
-        )
-        .context(InvalidResourceNameSnafu {
-            resource: "credential",
-        })?;
+        let default_object_store = ObjectStoreName::parse(&namespace.default_object_store)
+            .context(InvalidResourceNameSnafu {
+                resource: "object store",
+            })?;
 
         let data_lake_config = namespace
             .data_lake_config
@@ -206,7 +202,7 @@ impl TryFrom<pb::Namespace> for NamespaceOptions {
         Ok(Self {
             flush_size,
             flush_interval,
-            default_object_store_credential,
+            default_object_store,
             data_lake_config,
         })
     }
@@ -459,20 +455,20 @@ fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
 }
 
 /*
- *    █████████  ███████████   ██████████ ██████████    █████████
- *   ███░░░░░███░░███░░░░░███ ░░███░░░░░█░░███░░░░███  ███░░░░░███
- *  ███     ░░░  ░███    ░███  ░███  █ ░  ░███   ░░███░███    ░░░
- * ░███          ░██████████   ░██████    ░███    ░███░░█████████
- * ░███          ░███░░░░░███  ░███░░█    ░███    ░███ ░░░░░░░░███
- * ░░███     ███ ░███    ░███  ░███ ░   █ ░███    ███  ███    ░███
- *  ░░█████████  █████   █████ ██████████ ██████████  ░░█████████
- *   ░░░░░░░░░  ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░    ░░░░░░░░░
+ *     ███████    ███████████        █████     █████████  ███████████    ███████    ███████████   ██████████
+ *   ███░░░░░███ ░░███░░░░░███      ░░███     ███░░░░░███░█░░░███░░░█  ███░░░░░███ ░░███░░░░░███ ░░███░░░░░█
+ *  ███     ░░███ ░███    ░███       ░███    ░███    ░░░ ░   ░███  ░  ███     ░░███ ░███    ░███  ░███  █ ░
+ * ░███      ░███ ░██████████        ░███    ░░█████████     ░███    ░███      ░███ ░██████████   ░██████
+ * ░███      ░███ ░███░░░░░███       ░███     ░░░░░░░░███    ░███    ░███      ░███ ░███░░░░░███  ░███░░█
+ * ░░███     ███  ░███    ░███ ███   ░███     ███    ░███    ░███    ░░███     ███  ░███    ░███  ░███ ░   █
+ *  ░░░███████░   ███████████ ░░████████     ░░█████████     █████    ░░░███████░   █████   █████ ██████████
+ *    ░░░░░░░    ░░░░░░░░░░░   ░░░░░░░░       ░░░░░░░░░     ░░░░░       ░░░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░
  */
 
-impl From<Credential> for pb::Credential {
-    fn from(credential: Credential) -> Self {
-        let name = credential.name.name();
-        let config = credential.object_store.into();
+impl From<ObjectStore> for pb::ObjectStore {
+    fn from(object_store: ObjectStore) -> Self {
+        let name = object_store.name.name();
+        let config = object_store.object_store.into();
 
         Self {
             name,
@@ -481,7 +477,7 @@ impl From<Credential> for pb::Credential {
     }
 }
 
-impl From<ObjectStoreConfiguration> for pb::Credential {
+impl From<ObjectStoreConfiguration> for pb::ObjectStore {
     fn from(config: ObjectStoreConfiguration) -> Self {
         let config = config.into();
 
@@ -492,37 +488,40 @@ impl From<ObjectStoreConfiguration> for pb::Credential {
     }
 }
 
-impl TryFrom<pb::Credential> for Credential {
+impl TryFrom<pb::ObjectStore> for ObjectStore {
     type Error = ClusterMetadataError;
 
-    fn try_from(credential: pb::Credential) -> AdminResult<Self> {
-        let name = CredentialName::parse(&credential.name).context(InvalidResourceNameSnafu {
-            resource: "credential",
-        })?;
-
-        let object_store = credential
+    fn try_from(object_store: pb::ObjectStore) -> AdminResult<Self> {
+        let name =
+            ObjectStoreName::parse(&object_store.name).context(InvalidResourceNameSnafu {
+                resource: "object store",
+            })?;
+        let object_store_config = object_store
             .object_store_config
             .ok_or_else(|| {
                 InternalSnafu {
-                    message: "missing object_store_config field in Credential proto".to_string(),
+                    message: "missing object_store_config field in ObjectStore proto".to_string(),
                 }
                 .build()
             })?
             .try_into()?;
 
-        Ok(Self { name, object_store })
+        Ok(Self {
+            name,
+            object_store: object_store_config,
+        })
     }
 }
 
-impl TryFrom<pb::Credential> for ObjectStoreConfiguration {
+impl TryFrom<pb::ObjectStore> for ObjectStoreConfiguration {
     type Error = ClusterMetadataError;
 
-    fn try_from(credential: pb::Credential) -> AdminResult<Self> {
-        credential
+    fn try_from(object_store: pb::ObjectStore) -> AdminResult<Self> {
+        object_store
             .object_store_config
             .ok_or_else(|| {
                 InternalSnafu {
-                    message: "missing object_store_config field in Credential proto".to_string(),
+                    message: "missing object_store_config field in ObjectStore proto".to_string(),
                 }
                 .build()
             })?
@@ -530,7 +529,7 @@ impl TryFrom<pb::Credential> for ObjectStoreConfiguration {
     }
 }
 
-impl From<ObjectStoreConfiguration> for pb::credential::ObjectStoreConfig {
+impl From<ObjectStoreConfiguration> for pb::object_store::ObjectStoreConfig {
     fn from(config: ObjectStoreConfiguration) -> Self {
         match config {
             ObjectStoreConfiguration::Aws(_) => todo!(),
@@ -541,11 +540,11 @@ impl From<ObjectStoreConfiguration> for pb::credential::ObjectStoreConfig {
     }
 }
 
-impl TryFrom<pb::credential::ObjectStoreConfig> for ObjectStoreConfiguration {
+impl TryFrom<pb::object_store::ObjectStoreConfig> for ObjectStoreConfiguration {
     type Error = ClusterMetadataError;
 
-    fn try_from(config: pb::credential::ObjectStoreConfig) -> AdminResult<Self> {
-        use pb::credential::ObjectStoreConfig;
+    fn try_from(config: pb::object_store::ObjectStoreConfig) -> AdminResult<Self> {
+        use pb::object_store::ObjectStoreConfig;
         match config {
             ObjectStoreConfig::Aws(_) => {
                 Ok(ObjectStoreConfiguration::Aws(AwsConfiguration::default()))
@@ -563,8 +562,8 @@ impl TryFrom<pb::credential::ObjectStoreConfig> for ObjectStoreConfiguration {
     }
 }
 
-impl From<ListCredentialsRequest> for pb::ListCredentialsRequest {
-    fn from(request: ListCredentialsRequest) -> Self {
+impl From<ListObjectStoresRequest> for pb::ListObjectStoresRequest {
+    fn from(request: ListObjectStoresRequest) -> Self {
         Self {
             parent: request.parent.name(),
             page_size: request.page_size,
@@ -573,10 +572,10 @@ impl From<ListCredentialsRequest> for pb::ListCredentialsRequest {
     }
 }
 
-impl TryFrom<pb::ListCredentialsRequest> for ListCredentialsRequest {
+impl TryFrom<pb::ListObjectStoresRequest> for ListObjectStoresRequest {
     type Error = ClusterMetadataError;
 
-    fn try_from(request: pb::ListCredentialsRequest) -> AdminResult<Self> {
+    fn try_from(request: pb::ListObjectStoresRequest) -> AdminResult<Self> {
         let parent = TenantName::parse(&request.parent)
             .context(InvalidResourceNameSnafu { resource: "tenant" })?;
 
@@ -588,33 +587,33 @@ impl TryFrom<pb::ListCredentialsRequest> for ListCredentialsRequest {
     }
 }
 
-impl From<ListCredentialsResponse> for pb::ListCredentialsResponse {
-    fn from(response: ListCredentialsResponse) -> Self {
-        let credentials = response
-            .credentials
+impl From<ListObjectStoresResponse> for pb::ListObjectStoresResponse {
+    fn from(response: ListObjectStoresResponse) -> Self {
+        let object_stores = response
+            .object_stores
             .into_iter()
-            .map(pb::Credential::from)
+            .map(pb::ObjectStore::from)
             .collect();
 
         Self {
-            credentials,
+            object_stores,
             next_page_token: response.next_page_token.unwrap_or_default(),
         }
     }
 }
 
-impl TryFrom<pb::ListCredentialsResponse> for ListCredentialsResponse {
+impl TryFrom<pb::ListObjectStoresResponse> for ListObjectStoresResponse {
     type Error = ClusterMetadataError;
 
-    fn try_from(response: pb::ListCredentialsResponse) -> AdminResult<Self> {
-        let credentials = response
-            .credentials
+    fn try_from(response: pb::ListObjectStoresResponse) -> AdminResult<Self> {
+        let object_stores = response
+            .object_stores
             .into_iter()
-            .map(Credential::try_from)
+            .map(ObjectStore::try_from)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
-            credentials,
+            object_stores,
             next_page_token: if response.next_page_token.is_empty() {
                 None
             } else {
@@ -647,8 +646,8 @@ mod tests {
     fn test_namespace_conversion() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name.clone()).unwrap();
-        let secret_name = CredentialName::new("test-secret", tenant_name).unwrap();
-        let options = NamespaceOptions::new(secret_name.clone());
+        let object_store_name = ObjectStoreName::new("test-secret", tenant_name).unwrap();
+        let options = NamespaceOptions::new(object_store_name.clone());
         let domain_namespace = Namespace::new(namespace_name.clone(), options);
 
         // Domain to protobuf
@@ -660,8 +659,8 @@ mod tests {
         assert_eq!(pb_namespace.flush_size_bytes, ByteSize::mb(8).as_u64());
         assert_eq!(pb_namespace.flush_interval_millis, 250);
         assert_eq!(
-            pb_namespace.default_object_store_credential,
-            "tenants/test-tenant/credentials/test-secret"
+            pb_namespace.default_object_store,
+            "tenants/test-tenant/object-stores/test-secret"
         );
         assert!(pb_namespace.data_lake_config.is_some());
 
@@ -769,7 +768,7 @@ mod tests {
             name: "invalid-format".to_string(),
             flush_size_bytes: 1024,
             flush_interval_millis: 250,
-            default_object_store_credential: "tenants/test-tenant/credentials/test".to_string(),
+            default_object_store: "tenants/test-tenant/object-stores/test".to_string(),
             data_lake_config: Some(DataLakeConfig::IcebergInMemoryCatalog.into()),
         };
 

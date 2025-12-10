@@ -13,7 +13,7 @@ use wings_control_plane::{
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
     resources::{
-        CredentialName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration, TenantName,
+        NamespaceName, NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
     },
 };
 use wings_flight::WingsFlightSqlServer;
@@ -138,17 +138,17 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
         .await
         .expect("failed to create default tenant");
 
-    let default_credential = CredentialName::new_unchecked("default", default_tenant.clone());
+    let default_object_store = ObjectStoreName::new_unchecked("default", default_tenant.clone());
     cluster_meta
-        .create_credential(
-            default_credential.clone(),
+        .create_object_store(
+            default_object_store.clone(),
             ObjectStoreConfiguration::Aws(Default::default()),
         )
         .await
-        .expect("failed to create default aws s3 credentials");
+        .expect("failed to create default aws s3 object store");
 
     let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
-    let default_namespace_options = NamespaceOptions::new(default_credential);
+    let default_namespace_options = NamespaceOptions::new(default_object_store);
 
     cluster_meta
         .create_namespace(default_namespace.clone(), default_namespace_options)

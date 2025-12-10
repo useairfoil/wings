@@ -15,7 +15,7 @@ use std::sync::Arc;
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
 use wings_control_plane::resources::ObjectStoreConfiguration;
-use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::CredentialName};
+use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::ObjectStoreName};
 
 use crate::ObjectStoreFactory;
 
@@ -56,20 +56,20 @@ impl LocalFileSystemFactory {
 impl ObjectStoreFactory for LocalFileSystemFactory {
     async fn create_object_store(
         &self,
-        credential_name: CredentialName,
+        object_store_name: ObjectStoreName,
     ) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
-        // Fetch the credential to determine its type
-        let credential = self
+        // Fetch the object store configuration to determine its type
+        let object_store = self
             .cluster_metadata
-            .get_credential(credential_name.clone())
+            .get_object_store(object_store_name.clone())
             .await
             .map_err(|e| ObjectStoreError::Generic {
                 store: "LocalFileSystem",
                 source: Box::new(e),
             })?;
 
-        // Create store path using format: <credential_type>-<tenant_id>-<credential_id>
-        let credential_type = match credential.object_store {
+        // Create store path using format: <object_store_type>-<tenant_id>-<object_store_id>
+        let object_store_type = match object_store.object_store {
             ObjectStoreConfiguration::Aws(_) => "aws",
             ObjectStoreConfiguration::Azure(_) => "azure",
             ObjectStoreConfiguration::Google(_) => "google",
@@ -78,9 +78,9 @@ impl ObjectStoreFactory for LocalFileSystemFactory {
 
         let store_path = self.root_path.join(format!(
             "{}-{}-{}",
-            credential_type,
-            credential_name.parent.id(),
-            credential_name.id()
+            object_store_type,
+            object_store_name.parent.id(),
+            object_store_name.id()
         ));
 
         std::fs::create_dir_all(&store_path).map_err(|e| ObjectStoreError::Generic {
@@ -132,10 +132,10 @@ impl TemporaryFileSystemFactory {
 impl ObjectStoreFactory for TemporaryFileSystemFactory {
     async fn create_object_store(
         &self,
-        credential_name: CredentialName,
+        object_store_name: ObjectStoreName,
     ) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
         self.local_factory
-            .create_object_store(credential_name)
+            .create_object_store(object_store_name)
             .await
     }
 }
@@ -147,7 +147,7 @@ mod tests {
     use tempfile::TempDir;
     use wings_control_plane::{
         cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
-        resources::{Credential, CredentialName, TenantName},
+        resources::{ObjectStoreName, TenantName},
     };
 
     #[test]
@@ -177,10 +177,23 @@ mod tests {
             .await
             .unwrap();
 
-        let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
+        let factory =
+            LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata.clone()).unwrap();
 
-        let credential_name = CredentialName::new("test-bucket", tenant_name).unwrap();
-        let store = factory.create_object_store(credential_name).await.unwrap();
+        // Create the object store in cluster metadata first
+        let object_store_name = ObjectStoreName::new("test-bucket", tenant_name.clone()).unwrap();
+        cluster_metadata
+            .create_object_store(
+                object_store_name.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+
+        let store = factory
+            .create_object_store(object_store_name)
+            .await
+            .unwrap();
 
         // Verify that the store is created successfully
         assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
@@ -197,13 +210,30 @@ mod tests {
             .await
             .unwrap();
 
-        let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
+        let factory =
+            LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata.clone()).unwrap();
 
-        let credential1 = CredentialName::new("bucket-1", tenant_name.clone()).unwrap();
-        let credential2 = CredentialName::new("bucket-2", tenant_name).unwrap();
+        let object_store1 = ObjectStoreName::new("bucket-1", tenant_name.clone()).unwrap();
+        let object_store2 = ObjectStoreName::new("bucket-2", tenant_name).unwrap();
 
-        let store1 = factory.create_object_store(credential1).await.unwrap();
-        let store2 = factory.create_object_store(credential2).await.unwrap();
+        // Create the object stores in cluster metadata first
+        cluster_metadata
+            .create_object_store(
+                object_store1.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+        cluster_metadata
+            .create_object_store(
+                object_store2.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+
+        let store1 = factory.create_object_store(object_store1).await.unwrap();
+        let store2 = factory.create_object_store(object_store2).await.unwrap();
 
         // Both stores should be created successfully and be different instances
         assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
@@ -229,10 +259,22 @@ mod tests {
             .await
             .unwrap();
 
-        let factory = TemporaryFileSystemFactory::new(cluster_metadata).unwrap();
+        let factory = TemporaryFileSystemFactory::new(cluster_metadata.clone()).unwrap();
 
-        let credential_name = CredentialName::new("temp-bucket", tenant_name).unwrap();
-        let store = factory.create_object_store(credential_name).await.unwrap();
+        // Create the object store in cluster metadata first
+        let object_store_name = ObjectStoreName::new("temp-bucket", tenant_name.clone()).unwrap();
+        cluster_metadata
+            .create_object_store(
+                object_store_name.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+
+        let store = factory
+            .create_object_store(object_store_name)
+            .await
+            .unwrap();
 
         // Verify that the store is created successfully
         assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
@@ -252,8 +294,19 @@ mod tests {
                 .await
                 .unwrap();
 
-            let credential_name = CredentialName::new("cleanup-test", tenant_name).unwrap();
-            let _store = factory.create_object_store(credential_name).await.unwrap();
+            let object_store_name =
+                ObjectStoreName::new("cleanup-test", tenant_name.clone()).unwrap();
+            cluster_metadata
+                .create_object_store(
+                    object_store_name.clone(),
+                    ObjectStoreConfiguration::Aws(Default::default()),
+                )
+                .await
+                .unwrap();
+            let _store = factory
+                .create_object_store(object_store_name)
+                .await
+                .unwrap();
 
             let path = factory.root_path().to_path_buf();
             assert!(path.exists());
@@ -279,18 +332,34 @@ mod tests {
             .await
             .unwrap();
 
-        let credential1 = CredentialName::new("temp-bucket-1", tenant_name.clone()).unwrap();
-        let credential2 = CredentialName::new("temp-bucket-2", tenant_name).unwrap();
+        let object_store1 = ObjectStoreName::new("temp-bucket-1", tenant_name.clone()).unwrap();
+        let object_store2 = ObjectStoreName::new("temp-bucket-2", tenant_name).unwrap();
 
-        let store1 = factory.create_object_store(credential1).await.unwrap();
-        let store2 = factory.create_object_store(credential2).await.unwrap();
+        // Create the object stores in cluster metadata first
+        cluster_metadata
+            .create_object_store(
+                object_store1.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+        cluster_metadata
+            .create_object_store(
+                object_store2.clone(),
+                ObjectStoreConfiguration::Aws(Default::default()),
+            )
+            .await
+            .unwrap();
+
+        let store1 = factory.create_object_store(object_store1).await.unwrap();
+        let store2 = factory.create_object_store(object_store2).await.unwrap();
 
         // Both stores should be created successfully and be different instances
         assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
 
         // Both should use the same root temporary directory
         let root_path = factory.root_path();
-        assert!(root_path.join("s3-test-tenant-temp-bucket-1").exists());
-        assert!(root_path.join("s3-test-tenant-temp-bucket-2").exists());
+        assert!(root_path.join("aws-test-tenant-temp-bucket-1").exists());
+        assert!(root_path.join("aws-test-tenant-temp-bucket-2").exists());
     }
 }

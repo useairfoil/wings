@@ -6,13 +6,13 @@ use http_body::Body;
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadata, ClusterMetadataError, ListCredentialsRequest, ListCredentialsResponse,
-        ListNamespacesRequest, ListNamespacesResponse, ListTenantsRequest, ListTenantsResponse,
+        ClusterMetadata, ClusterMetadataError, ListNamespacesRequest, ListNamespacesResponse,
+        ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
         ListTopicsRequest, ListTopicsResponse, Result,
     },
     resources::{
-        Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions,
-        ObjectStoreConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
+        Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
+        ObjectStoreName, Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -229,65 +229,65 @@ where
         Ok(())
     }
 
-    async fn create_credential(
+    async fn create_object_store(
         &self,
-        name: CredentialName,
+        name: ObjectStoreName,
         object_store: ObjectStoreConfiguration,
-    ) -> Result<Credential> {
-        let request = pb::CreateCredentialRequest {
+    ) -> Result<ObjectStore> {
+        let request = pb::CreateObjectStoreRequest {
             parent: name.parent().to_string(),
-            credential_id: name.id().to_string(),
-            credential: Some(object_store.into()),
+            object_store_id: name.id().to_string(),
+            object_store: Some(object_store.into()),
         };
 
         self.client
             .clone()
-            .create_credential(request)
+            .create_object_store(request)
             .await
-            .map_err(|status| status_to_cluster_metadata_error("credential", status))?
+            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
             .into_inner()
             .try_into()
     }
 
-    async fn get_credential(&self, name: CredentialName) -> Result<Credential> {
-        let request = pb::GetCredentialRequest {
+    async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
+        let request = pb::GetObjectStoreRequest {
             name: name.to_string(),
         };
 
         self.client
             .clone()
-            .get_credential(request)
+            .get_object_store(request)
             .await
-            .map_err(|status| status_to_cluster_metadata_error("credential", status))?
+            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
             .into_inner()
             .try_into()
     }
 
-    async fn list_credentials(
+    async fn list_object_stores(
         &self,
-        request: ListCredentialsRequest,
-    ) -> Result<ListCredentialsResponse> {
-        let request = pb::ListCredentialsRequest::from(request);
+        request: ListObjectStoresRequest,
+    ) -> Result<ListObjectStoresResponse> {
+        let request = pb::ListObjectStoresRequest::from(request);
 
         self.client
             .clone()
-            .list_credentials(request)
+            .list_object_stores(request)
             .await
-            .map_err(|status| status_to_cluster_metadata_error("credential", status))?
+            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
             .into_inner()
             .try_into()
     }
 
-    async fn delete_credential(&self, name: CredentialName) -> Result<()> {
-        let request = pb::DeleteCredentialRequest {
+    async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
+        let request = pb::DeleteObjectStoreRequest {
             name: name.to_string(),
         };
 
         self.client
             .clone()
-            .delete_credential(request)
+            .delete_object_store(request)
             .await
-            .map_err(|status| status_to_cluster_metadata_error("credential", status))?;
+            .map_err(|status| status_to_cluster_metadata_error("object store", status))?;
 
         Ok(())
     }

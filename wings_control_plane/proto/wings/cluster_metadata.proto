@@ -37,14 +37,14 @@ service ClusterMetadataService {
   // Delete a topic.
   rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty) {}
 
-  // Create a new credential belonging to a tenant.
-  rpc CreateCredential(CreateCredentialRequest) returns (Credential) {}
-  // Return the specified credential.
-  rpc GetCredential(GetCredentialRequest) returns (Credential) {}
-  // List all credentials belonging to a tenant.
-  rpc ListCredentials(ListCredentialsRequest) returns (ListCredentialsResponse) {}
-  // Delete a credential.
-  rpc DeleteCredential(DeleteCredentialRequest) returns (google.protobuf.Empty) {}
+  // Create a new object store belonging to a tenant.
+  rpc CreateObjectStore(CreateObjectStoreRequest) returns (ObjectStore) {}
+  // Return the specified object store.
+  rpc GetObjectStore(GetObjectStoreRequest) returns (ObjectStore) {}
+  // List all object stores belonging to a tenant.
+  rpc ListObjectStores(ListObjectStoresRequest) returns (ListObjectStoresResponse) {}
+  // Delete an object store.
+  rpc DeleteObjectStore(DeleteObjectStoreRequest) returns (google.protobuf.Empty) {}
 }
 
 message CreateTenantRequest {
@@ -161,7 +161,7 @@ message Namespace {
   // The default object store configuration for the namespace.
   //
   // This is an opaque string used to create the object store client.
-  string default_object_store_credential = 4;
+  string default_object_store = 4;
 
   // Configuration for the datalake storage
   oneof data_lake_config {
@@ -245,33 +245,33 @@ message Topic {
   optional uint32 partition_key = 3;
 }
 
-message CreateCredentialRequest {
-  // The tenant that owns the credential.
+message CreateObjectStoreRequest {
+  // The tenant that owns the object store.
   //
   // Format: tenants/{tenant}
   string parent = 1;
 
-  // The credential id.
-  string credential_id = 2;
+  // The object store id.
+  string object_store_id = 2;
 
-  // The credential metadata.
-  Credential credential = 3;
+  // The object store metadata.
+  ObjectStore object_store = 3;
 }
 
-message GetCredentialRequest {
-  // The credential name.
+message GetObjectStoreRequest {
+  // The object store name.
   //
-  // Format: tenants/{tenant}/credentials/{credential}
+  // Format: tenants/{tenant}/object-stores/{object-store}
   string name = 1;
 }
 
-message ListCredentialsRequest {
+message ListObjectStoresRequest {
   // The parent tenant.
   //
   // Format: tenants/{tenant}
   string parent = 1;
 
-  // The number of credentials to return.
+  // The number of object stores to return.
   //
   // Default: 100
   // Maximum: 1000.
@@ -281,25 +281,25 @@ message ListCredentialsRequest {
   optional string page_token = 3;
 }
 
-message ListCredentialsResponse {
-  // The credentials.
-  repeated Credential credentials = 1;
+message ListObjectStoresResponse {
+  // The object stores.
+  repeated ObjectStore object_stores = 1;
 
   // The continuation token.
   string next_page_token = 2;
 }
 
-message DeleteCredentialRequest {
-  // The credential name.
+message DeleteObjectStoreRequest {
+  // The object store name.
   //
-  // Format: tenants/{tenant}/credentials/{credential}
+  // Format: tenants/{tenant}/object-stores/{object-store}
   string name = 1;
 }
 
-message Credential {
-  // The credential name.
+message ObjectStore {
+  // The object store name.
   //
-  // Format: tenants/{tenant}/credentials/{credential}
+  // Format: tenants/{tenant}/object-stores/{object-store}
   string name = 1;
 
   // Object store configuration.

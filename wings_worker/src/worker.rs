@@ -202,7 +202,7 @@ impl Worker {
 
         let object_store = self
             .object_store_factory
-            .create_object_store(namespace_ref.default_object_store_credentials.clone())
+            .create_object_store(namespace_ref.default_object_store.clone())
             .await
             .context(ObjectStoreSnafu {})?;
 

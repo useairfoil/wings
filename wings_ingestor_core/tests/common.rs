@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
     log_metadata::InMemoryLogMetadata,
-    resources::{CredentialName, Namespace, NamespaceName, NamespaceOptions, TenantName},
+    resources::{Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName},
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
@@ -42,7 +42,7 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
         .await
         .expect("create_tenant");
     let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name.clone());
-    let creds = CredentialName::new_unchecked("test-cred", tenant_name);
+    let creds = ObjectStoreName::new_unchecked("test-cred", tenant_name);
     let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),

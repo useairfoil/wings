@@ -11,8 +11,8 @@ pub mod tonic;
 use async_trait::async_trait;
 
 use crate::resources::{
-    Credential, CredentialName, Namespace, NamespaceName, NamespaceOptions,
-    ObjectStoreConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
+    Namespace, NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration,
+    ObjectStoreName, Tenant, TenantName, Topic, TopicName, TopicOptions,
 };
 
 pub use self::error::{ClusterMetadataError, Result};
@@ -78,26 +78,26 @@ pub trait ClusterMetadata: Send + Sync {
     /// data from object storage.
     async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()>;
 
-    // Credential operations
+    // Object store operations
 
-    /// Create a new credential belonging to a tenant.
-    async fn create_credential(
+    /// Create a new object store belonging to a tenant.
+    async fn create_object_store(
         &self,
-        name: CredentialName,
+        name: ObjectStoreName,
         configuration: ObjectStoreConfiguration,
-    ) -> Result<Credential>;
+    ) -> Result<ObjectStore>;
 
-    /// Return the specified credential.
-    async fn get_credential(&self, name: CredentialName) -> Result<Credential>;
+    /// Return the specified object store.
+    async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore>;
 
-    /// List all credentials belonging to a tenant.
-    async fn list_credentials(
+    /// List all object stores belonging to a tenant.
+    async fn list_object_stores(
         &self,
-        request: ListCredentialsRequest,
-    ) -> Result<ListCredentialsResponse>;
+        request: ListObjectStoresRequest,
+    ) -> Result<ListObjectStoresResponse>;
 
-    /// Delete a credential.
-    async fn delete_credential(&self, name: CredentialName) -> Result<()>;
+    /// Delete an object store.
+    async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()>;
 }
 
 /// Request to list tenants.
@@ -192,19 +192,19 @@ pub struct ListTopicsResponse {
     pub next_page_token: Option<String>,
 }
 
-/// Request to list credentials.
+/// Request to list object stores.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListCredentialsRequest {
+pub struct ListObjectStoresRequest {
     /// The parent tenant.
     pub parent: TenantName,
-    /// The number of credentials to return.
+    /// The number of object stores to return.
     /// Default: 100, Maximum: 1000.
     pub page_size: Option<i32>,
     /// The continuation token.
     pub page_token: Option<String>,
 }
 
-impl ListCredentialsRequest {
+impl ListObjectStoresRequest {
     /// Create a new request for the given parent tenant.
     pub fn new(parent: TenantName) -> Self {
         Self {
@@ -215,11 +215,11 @@ impl ListCredentialsRequest {
     }
 }
 
-/// Response from listing credentials.
+/// Response from listing object stores.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListCredentialsResponse {
-    /// The credentials.
-    pub credentials: Vec<Credential>,
+pub struct ListObjectStoresResponse {
+    /// The object stores.
+    pub object_stores: Vec<ObjectStore>,
     /// The continuation token.
     pub next_page_token: Option<String>,
 }

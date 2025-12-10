@@ -5,7 +5,7 @@ pub struct ClusterMetadataMetrics {
     pub tenants_count: UpDownCounter<i64>,
     pub namespaces_count: UpDownCounter<i64>,
     pub topics_count: UpDownCounter<i64>,
-    pub credentials_count: UpDownCounter<i64>,
+    pub object_stores_count: UpDownCounter<i64>,
 }
 
 impl Default for ClusterMetadataMetrics {
@@ -25,9 +25,9 @@ impl Default for ClusterMetadataMetrics {
                 .i64_up_down_counter("metadata.topics.count")
                 .with_description("the number of topics")
                 .build(),
-            credentials_count: meter
-                .i64_up_down_counter("metadata.credentials.count")
-                .with_description("the number of credentials")
+            object_stores_count: meter
+                .i64_up_down_counter("metadata.object_stores.count")
+                .with_description("the number of object stores")
                 .build(),
         }
     }
