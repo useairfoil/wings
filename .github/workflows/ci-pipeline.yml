@@ -23,4 +23,4 @@ jobs:
     name: "Linux x86_64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest
+      os: warp-ubuntu-latest-x64-2x

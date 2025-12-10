@@ -13,7 +13,7 @@ jobs:
     name: "Linux x86_64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-latest
+      os: warp-ubuntu-latest-x64-2x
       target: image
       artifact_name: "docker-x86_64-linux.tar.gz"
 
@@ -21,7 +21,7 @@ jobs:
     name: "Linux aarch64: Build"
     uses: ./.github/workflows/build.yml
     with:
-      os: ubuntu-24.04-arm
+      os: warp-ubuntu-latest-arm64-2x
       target: image
       artifact_name: "docker-aarch64-linux.tar.gz"
 
