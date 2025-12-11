@@ -5,12 +5,12 @@ use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
     log_metadata::InMemoryLogMetadata,
+    object_store::TemporaryFileSystemFactory,
     resources::{
         DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName,
     },
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
-use wings_object_store::TemporaryFileSystemFactory;
 
 pub fn create_batch_ingestor() -> (
     JoinHandle<()>,

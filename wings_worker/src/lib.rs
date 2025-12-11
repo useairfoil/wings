@@ -6,8 +6,8 @@ use tracing::warn;
 use wings_control_plane::{
     cluster_metadata::cache::{NamespaceCache, TopicCache},
     log_metadata::LogMetadata,
+    object_store::ObjectStoreFactory,
 };
-use wings_object_store::ObjectStoreFactory;
 use wings_server_core::query::NamespaceProviderFactory;
 
 mod error;

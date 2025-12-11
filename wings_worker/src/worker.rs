@@ -15,9 +15,9 @@ use wings_control_plane::{
         CompactionTask, CompleteTaskRequest, LogMetadata, RequestTaskRequest, RequestTaskResponse,
         Task, TaskMetadata,
     },
+    object_store::ObjectStoreFactory,
     paths::format_parquet_path,
 };
-use wings_object_store::ObjectStoreFactory;
 use wings_server_core::query::{NamespaceProviderFactory, TopicTableProvider};
 
 use crate::error::{

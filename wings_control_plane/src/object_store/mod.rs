@@ -14,9 +14,10 @@ pub mod local;
 use std::sync::Arc;
 
 use object_store::ObjectStore;
-use wings_control_plane::resources::ObjectStoreName;
 
-pub use local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
+use crate::resources::ObjectStoreName;
+
+pub use self::local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 
 /// Factory trait for creating ObjectStore instances from object store configurations.
 #[async_trait::async_trait]

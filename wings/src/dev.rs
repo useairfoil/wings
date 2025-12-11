@@ -12,6 +12,7 @@ use wings_control_plane::{
         tonic::ClusterMetadataServer,
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
+    object_store::TemporaryFileSystemFactory,
     resources::{
         AwsConfiguration, DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
         ObjectStoreConfiguration, ObjectStoreName, TenantName,
@@ -20,7 +21,6 @@ use wings_control_plane::{
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
-use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
 use wings_server_core::query::NamespaceProviderFactory;
 use wings_worker::{WorkerPool, WorkerPoolOptions, run_worker_pool};

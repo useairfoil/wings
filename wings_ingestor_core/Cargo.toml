@@ -26,7 +26,6 @@ tokio-util.workspace = true
 tracing.workspace = true
 ulid = "1.2.1"
 wings-control-plane = { path = "../wings_control_plane" }
-wings-object-store = { path = "../wings_object_store" }
 wings-observability = { path = "../wings_observability" }
 
 [dev-dependencies]

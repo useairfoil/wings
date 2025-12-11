@@ -7,13 +7,13 @@ use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
     log_metadata::InMemoryLogMetadata,
+    object_store::TemporaryFileSystemFactory,
     resources::{
         DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName,
         Topic, TopicName, TopicOptions,
     },
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
-use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
 use wings_server_core::query::NamespaceProviderFactory;
 

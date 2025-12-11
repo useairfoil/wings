@@ -6728,7 +6728,6 @@ dependencies = [
  "wings-flight",
  "wings-ingestor-core",
  "wings-ingestor-http",
- "wings-object-store",
  "wings-observability",
  "wings-server-core",
  "wings-worker",
@@ -6781,6 +6780,7 @@ dependencies = [
  "prost-types",
  "serde",
  "snafu",
+ "tempfile",
  "time",
  "tokio",
  "tonic",
@@ -6839,7 +6839,6 @@ dependencies = [
  "tracing",
  "ulid",
  "wings-control-plane",
- "wings-object-store",
  "wings-observability",
 ]
 
@@ -6859,17 +6858,6 @@ dependencies = [
  "tower",
  "wings-control-plane",
  "wings-ingestor-core",
-]
-
-[[package]]
-name = "wings-object-store"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "object_store",
- "tempfile",
- "tokio",
- "wings-control-plane",
 ]
 
 [[package]]
@@ -6910,7 +6898,6 @@ dependencies = [
  "tracing",
  "wings-control-plane",
  "wings-ingestor-core",
- "wings-object-store",
  "wings-observability",
 ]
 
@@ -6944,7 +6931,6 @@ dependencies = [
  "wings-control-plane",
  "wings-ingestor-core",
  "wings-ingestor-http",
- "wings-object-store",
  "wings-server-core",
 ]
 
@@ -6973,7 +6959,6 @@ dependencies = [
  "tracing",
  "uuid",
  "wings-control-plane",
- "wings-object-store",
  "wings-observability",
  "wings-server-core",
 ]

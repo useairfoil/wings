@@ -12,12 +12,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::{
+    cluster_metadata::ClusterMetadata,
+    object_store::ObjectStoreFactory,
+    resources::{ObjectStoreConfiguration, ObjectStoreName},
+};
 use object_store::{Error as ObjectStoreError, ObjectStore, local::LocalFileSystem};
 use tempfile::TempDir;
-use wings_control_plane::resources::ObjectStoreConfiguration;
-use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::ObjectStoreName};
-
-use crate::ObjectStoreFactory;
 
 /// Factory for creating local file system object stores.
 ///
@@ -145,7 +146,8 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use tempfile::TempDir;
-    use wings_control_plane::{
+
+    use crate::{
         cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
         resources::{AwsConfiguration, ObjectStoreName, TenantName},
     };

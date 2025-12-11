@@ -11,9 +11,9 @@ use tracing::debug;
 use wings_control_plane::{
     cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
     log_metadata::LogMetadata,
+    object_store::ObjectStoreFactory,
     resources::{Namespace, NamespaceName, Topic},
 };
-use wings_object_store::ObjectStoreFactory;
 use wings_observability::MetricsExporter;
 
 use crate::{

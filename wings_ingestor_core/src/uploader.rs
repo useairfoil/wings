@@ -4,10 +4,10 @@ use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
 use wings_control_plane::{
     log_metadata::{CommitBatchRequest, CommitPageRequest},
+    object_store::ObjectStoreFactory,
     paths::format_folio_path,
     resources::{NamespaceName, NamespaceRef},
 };
-use wings_object_store::ObjectStoreFactory;
 
 use crate::{
     WriteBatchError,
