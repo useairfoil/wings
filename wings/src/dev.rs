@@ -86,6 +86,7 @@ impl DevArgs {
                 topic_cache,
                 namespace_cache,
                 log_metadata.clone(),
+                cluster_metadata.clone(),
                 object_store_factory.clone(),
                 namespace_provider_factory.clone(),
                 WorkerPoolOptions::default(),

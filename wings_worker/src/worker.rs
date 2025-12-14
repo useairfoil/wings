@@ -1,38 +1,33 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::TryStreamExt;
-use object_store::{PutMode, PutOptions, PutPayload, path::Path};
-use parquet::{
-    arrow::ArrowWriter,
-    file::{metadata::KeyValue, properties::WriterProperties},
-};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use wings_control_plane::{
-    cluster_metadata::cache::{NamespaceCache, TopicCache},
+    cluster_metadata::{
+        ClusterMetadata,
+        cache::{NamespaceCache, TopicCache},
+    },
+    data_lake::DataLakeFactory,
     log_metadata::{
         CompactionTask, CompleteTaskRequest, LogMetadata, RequestTaskRequest, RequestTaskResponse,
         Task, TaskMetadata,
     },
     object_store::ObjectStoreFactory,
-    paths::format_parquet_path,
 };
-use wings_server_core::query::{NamespaceProviderFactory, TopicTableProvider};
+use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::error::{
-    ClusterMetadataSnafu, DataFusionSnafu, LogMetadataSnafu, ObjectStoreSnafu, ParquetPathSnafu,
-    ParquetSnafu, Result,
+    ClusterMetadataSnafu, DataFusionSnafu, DataLakeSnafu, LogMetadataSnafu, Result,
 };
-
-const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct Worker {
     topic_cache: TopicCache,
     namespace_cache: NamespaceCache,
     log_meta: Arc<dyn LogMetadata>,
-    object_store_factory: Arc<dyn ObjectStoreFactory>,
+    data_lake_factory: DataLakeFactory,
     namespace_provider_factory: NamespaceProviderFactory,
 }
 
@@ -41,14 +36,16 @@ impl Worker {
         topic_cache: TopicCache,
         namespace_cache: NamespaceCache,
         log_meta: Arc<dyn LogMetadata>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         namespace_provider_factory: NamespaceProviderFactory,
     ) -> Self {
+        let data_lake_factory = DataLakeFactory::new(cluster_meta, object_store_factory).clone();
         Self {
             topic_cache,
             namespace_cache,
             log_meta,
-            object_store_factory,
+            data_lake_factory,
             namespace_provider_factory,
         }
     }
@@ -128,8 +125,6 @@ impl Worker {
                 operation: "get_namespace",
             })?;
 
-        let table_schema = TopicTableProvider::output_schema(topic_ref.schema());
-
         let provider = self
             .namespace_provider_factory
             .create_provider(namespace_name)
@@ -167,69 +162,51 @@ impl Worker {
 
         let df = ctx.sql(&query).await.context(DataFusionSnafu {})?;
 
+        let output_schema: Arc<_> = df.schema().as_arrow().clone().into();
+
         let mut stream = df.execute_stream().await.context(DataFusionSnafu {})?;
 
-        let mut writer = {
-            let partition_value = task.partition_value.as_ref().map(|v| v.to_string());
-            let kv_metadata = vec![
-                KeyValue::new("WINGS:topic-name".to_string(), task.topic_name.to_string()),
-                KeyValue::new("WINGS:partition-value".to_string(), partition_value),
-            ];
+        let data_lake = self
+            .data_lake_factory
+            .create_data_lake(namespace_ref.clone())
+            .await
+            .context(DataLakeSnafu {
+                operation: "create",
+            })?;
 
-            let write_properties = WriterProperties::builder()
-                .set_key_value_metadata(kv_metadata.into())
-                .build();
-
-            let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
-            ArrowWriter::try_new(buffer, table_schema.clone(), write_properties.into())
-                .context(ParquetSnafu {})?
-        };
+        let mut data_lake_writer = data_lake
+            .batch_writer(
+                topic_ref.clone(),
+                output_schema,
+                task.partition_value.clone(),
+                task.start_offset,
+                task.end_offset,
+            )
+            .await
+            .context(DataLakeSnafu {
+                operation: "create writer",
+            })?;
 
         while let Some(batch) = stream.try_next().await.context(DataFusionSnafu {})? {
             if ct.is_cancelled() {
                 return Ok(());
             }
 
-            writer.write(&batch).context(ParquetSnafu {})?;
+            data_lake_writer
+                .write_batch(batch)
+                .await
+                .context(DataLakeSnafu {
+                    operation: "write batch",
+                })?;
         }
 
         if ct.is_cancelled() {
             return Ok(());
         }
 
-        let _parquet_metadata = writer.finish().context(ParquetSnafu {})?;
-        let output_bytes = writer.into_inner().context(ParquetSnafu {})?;
-
-        let object_store = self
-            .object_store_factory
-            .create_object_store(namespace_ref.object_store.clone())
-            .await
-            .context(ObjectStoreSnafu {})?;
-
-        let file_ref: Path = format_parquet_path(&namespace_ref.name)
-            .with_offset_range(task.start_offset, task.end_offset)
-            .with_partition(topic_ref.partition_field(), task.partition_value.as_ref())
-            .build()
-            .context(ParquetPathSnafu {})?
-            .into();
-
-        debug!(
-            task_id = metadata.task_id,
-            file_ref = %file_ref,
-            "Uploading parquet file to storage"
-        );
-
-        object_store
-            .put_opts(
-                &file_ref,
-                PutPayload::from_bytes(output_bytes.into()),
-                PutOptions {
-                    mode: PutMode::Create,
-                    ..Default::default()
-                },
-            )
-            .await
-            .context(ObjectStoreSnafu {})?;
+        data_lake_writer.commit().await.context(DataLakeSnafu {
+            operation: "commit",
+        })?;
 
         // Later: update datalake catalog with this data.
         // Notice that multiple partitions may be compacted at the same time
@@ -245,7 +222,7 @@ impl Worker {
 
         info!(
             task_id = metadata.task_id,
-            file_ref = %file_ref,
+            // file_ref = %file_ref,
             "Compaction task completed"
         );
 

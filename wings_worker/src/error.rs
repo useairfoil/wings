@@ -1,8 +1,8 @@
 use datafusion::error::DataFusionError;
-use parquet::errors::ParquetError;
 use snafu::Snafu;
 use wings_control_plane::{
-    cluster_metadata::ClusterMetadataError, log_metadata::LogMetadataError, paths::ParquetPathError,
+    cluster_metadata::ClusterMetadataError, data_lake::DataLakeError,
+    log_metadata::LogMetadataError,
 };
 
 /// Errors that can occur in the worker pool.
@@ -23,14 +23,13 @@ pub enum WorkerError {
         source: ClusterMetadataError,
         operation: &'static str,
     },
+    #[snafu(display("Failed data lake operation: {}", operation))]
+    DataLake {
+        source: DataLakeError,
+        operation: &'static str,
+    },
     #[snafu(display("DataFusion error"))]
     DataFusion { source: DataFusionError },
-    #[snafu(display("Parquet error"))]
-    Parquet { source: ParquetError },
-    #[snafu(display("Object store error"))]
-    ObjectStore { source: object_store::Error },
-    #[snafu(display("Failed to build Parquet file path"))]
-    ParquetPath { source: ParquetPathError },
 }
 
 pub type Result<T, E = WorkerError> = std::result::Result<T, E>;

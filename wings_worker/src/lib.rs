@@ -4,7 +4,10 @@ use futures::{TryStreamExt, stream::FuturesUnordered};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use wings_control_plane::{
-    cluster_metadata::cache::{NamespaceCache, TopicCache},
+    cluster_metadata::{
+        ClusterMetadata,
+        cache::{NamespaceCache, TopicCache},
+    },
     log_metadata::LogMetadata,
     object_store::ObjectStoreFactory,
 };
@@ -40,6 +43,7 @@ impl WorkerPool {
         topic_cache: TopicCache,
         namespace_cache: NamespaceCache,
         log_meta: Arc<dyn LogMetadata>,
+        cluster_meta: Arc<dyn ClusterMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         namespace_provider_factory: NamespaceProviderFactory,
         options: WorkerPoolOptions,
@@ -48,6 +52,7 @@ impl WorkerPool {
             topic_cache,
             namespace_cache,
             log_meta,
+            cluster_meta,
             object_store_factory,
             namespace_provider_factory,
         );

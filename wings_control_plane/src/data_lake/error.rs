@@ -1,0 +1,22 @@
+use parquet::errors::ParquetError;
+use snafu::Snafu;
+
+use crate::{cluster_metadata::ClusterMetadataError, paths::ParquetPathError};
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum DataLakeError {
+    #[snafu(display("Cluster metadata error: {}", operation))]
+    ClusterMetadata {
+        operation: &'static str,
+        source: ClusterMetadataError,
+    },
+    #[snafu(display("Object store error"))]
+    ObjectStore { source: object_store::Error },
+    #[snafu(display("Parquet error"))]
+    Parquet { source: ParquetError },
+    #[snafu(display("Failed to create parquet file path"))]
+    ParquetPath { source: ParquetPathError },
+}
+
+pub type Result<T, E = DataLakeError> = std::result::Result<T, E>;
