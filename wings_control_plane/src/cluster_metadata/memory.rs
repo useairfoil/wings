@@ -180,6 +180,44 @@ impl ClusterMetadataStore {
         }
 
         let namespace = Namespace::new(name, options);
+
+        if namespace.object_store.parent() != namespace.name.parent() {
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "object_store",
+                message: format!(
+                    "Object store '{}' must be in the same tenant as the namespace",
+                    namespace.object_store.name()
+                ),
+            });
+        }
+
+        if !self
+            .object_stores
+            .contains_key(&namespace.object_store.name())
+        {
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "object_store",
+                message: format!("Object store '{}' not found", namespace.object_store.name()),
+            });
+        }
+
+        if namespace.data_lake.parent() != namespace.name.parent() {
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "data_lake",
+                message: format!(
+                    "Data lake '{}' must be in the same tenant as the namespace",
+                    namespace.data_lake.name()
+                ),
+            });
+        }
+
+        if !self.data_lakes.contains_key(&namespace.data_lake.name()) {
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "data_lake",
+                message: format!("Data lake '{}' not found", namespace.data_lake.name()),
+            });
+        }
+
         self.namespaces.insert(namespace_key, namespace.clone());
 
         metrics
