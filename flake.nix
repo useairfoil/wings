@@ -58,19 +58,12 @@
           version = "0.0.0";
         });
 
-        binary = craneLib.buildPackage (commonArgs // {
+        binaries = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
           pname = "wings";
           version = "0.0.0";
           doCheck = false;
-        });
-
-        stress = craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-          pname = "wings-stress";
-          version = "0.0.0";
-          doCheck = false;
-          cargoExtraArgs = "-p wings-stress";
+          cargoExtraArgs = "--all";
         });
 
         dockerImage = pkgs.dockerTools.buildImage {
@@ -79,7 +72,7 @@
           created = "now";
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
-            paths = [ binary stress ];
+            paths = [ binaries ];
             pathsToLink = [ "/bin" ];
           };
           config = {
@@ -151,8 +144,7 @@
       in
       {
         packages = {
-          default = binary;
-          stress = stress;
+          default = binaries;
           image = dockerArchive;
         };
 
@@ -163,11 +155,8 @@
               pkgs.stdenv.cc.cc
               pkgs.openssl
             ];
-            inputsFrom = [ binary ];
-            nativeBuildInputs = with pkgs; [
-              tcl
-              opentelemetry-collector
-            ];
+
+            inputsFrom = [ binaries ];
           };
           ci = pkgs.mkShell {
             buildInputs = [ publishDockerImage ];
