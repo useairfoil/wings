@@ -2,7 +2,7 @@ use std::{any::Any, fmt, sync::Arc};
 
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, RecordBatch, StringBuilder, UInt32Builder},
+        array::{ArrayRef, RecordBatch, StringBuilder, UInt32Builder, UInt64Builder},
         datatypes::{DataType, Field, Schema, SchemaRef},
     },
     error::{DataFusionError, Result},
@@ -53,6 +53,9 @@ impl TopicDiscoveryExec {
             Field::new("namespace", DataType::Utf8, false),
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
             Field::new("partition_key", DataType::UInt32, true),
+            Field::new("description", DataType::Utf8, true),
+            Field::new("compaction_freshness_ms", DataType::UInt64, true),
+            Field::new("compaction_ttl_ms", DataType::UInt64, true),
         ];
 
         Arc::new(Schema::new(fields))
@@ -146,18 +149,39 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch> {
     let mut namespace_arr = StringBuilder::with_capacity(topics.len(), 0);
     let mut topic_arr = StringBuilder::with_capacity(topics.len(), 0);
     let mut partition_key_arr = UInt32Builder::with_capacity(topics.len());
+    let mut description_arr = StringBuilder::with_capacity(topics.len(), 0);
+    let mut compaction_freshness_ms_arr = UInt64Builder::with_capacity(topics.len());
+    let mut compaction_ttl_ms_arr = UInt64Builder::with_capacity(topics.len());
 
     for topic in topics {
         let topic_name = topic.name.clone();
+
         topic_arr.append_value(topic_name.id.clone());
+
         let namespace_name = topic_name.parent();
         namespace_arr.append_value(namespace_name.id.clone());
+
         let tenant_name = namespace_name.parent();
         tenant_arr.append_value(tenant_name.id.clone());
+
         if let Some(partition_key) = topic.partition_key {
             partition_key_arr.append_value(partition_key as _);
         } else {
             partition_key_arr.append_null();
+        }
+
+        if let Some(description) = &topic.description {
+            description_arr.append_value(description);
+        } else {
+            description_arr.append_null();
+        }
+
+        compaction_freshness_ms_arr.append_value(topic.compaction.freshness.as_millis() as u64);
+
+        if let Some(compaction_ttl) = &topic.compaction.ttl {
+            compaction_ttl_ms_arr.append_value(compaction_ttl.as_millis() as u64);
+        } else {
+            compaction_ttl_ms_arr.append_null();
         }
     }
 
@@ -166,6 +190,9 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch> {
         Arc::new(namespace_arr.finish()),
         Arc::new(topic_arr.finish()),
         Arc::new(partition_key_arr.finish()),
+        Arc::new(description_arr.finish()),
+        Arc::new(compaction_freshness_ms_arr.finish()),
+        Arc::new(compaction_ttl_ms_arr.finish()),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)
