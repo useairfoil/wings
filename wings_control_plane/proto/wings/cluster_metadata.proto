@@ -242,6 +242,16 @@ message Topic {
 
   // The index of the field that is used to partition the topic.
   optional uint32 partition_key = 4;
+
+  // The topic compaction configuration.
+  CompactionConfiguration compaction = 5;
+}
+
+message CompactionConfiguration {
+  // How often to compact the topic, in seconds.
+  uint64 freshness_seconds = 1;
+  // How long to keep the topic data, in seconds.
+  optional uint64 ttl_seconds = 2;
 }
 
 message CreateObjectStoreRequest {

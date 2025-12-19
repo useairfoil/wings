@@ -77,12 +77,9 @@ impl NamespaceOptions {
         self
     }
 
-    /// Change the default object store configuration for the namespace.
-    pub fn with_default_object_store_config(
-        mut self,
-        default_object_store: ObjectStoreName,
-    ) -> Self {
-        self.object_store = default_object_store;
+    /// Change the object store configuration for the namespace.
+    pub fn with_object_store(mut self, object_store: ObjectStoreName) -> Self {
+        self.object_store = object_store;
         self
     }
 }

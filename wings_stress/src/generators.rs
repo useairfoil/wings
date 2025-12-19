@@ -179,6 +179,7 @@ impl TopicType {
                 fields: OrderRecordBatchGenerator::fields(),
                 partition_key: OrderRecordBatchGenerator::partition_key(),
                 description: "Orders".to_string().into(),
+                compaction: Default::default(),
             },
         }
     }

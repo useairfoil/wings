@@ -12,7 +12,7 @@ use wings_observability::KeyValue;
 use crate::resources::{
     DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
     ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
-    TopicOptions,
+    TopicOptions, validate_compaction,
 };
 
 use super::{
@@ -370,6 +370,15 @@ impl ClusterMetadataStore {
         let tenant_id = name.parent().parent().id().to_string();
 
         let topic = Topic::new(name, options);
+
+        if let Err(errors) = validate_compaction(&topic.compaction) {
+            let message = errors.join(", ");
+            return Err(ClusterMetadataError::InvalidArgument {
+                resource: "topic",
+                message: format!("compaction configuration is invalid: {message}"),
+            });
+        }
+
         self.topics.insert(topic_key, topic.clone());
 
         metrics.topics_count.add(

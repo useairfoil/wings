@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use datafusion::common::arrow::datatypes::{DataType, FieldRef, Fields, Schema, SchemaRef};
 
@@ -19,6 +19,16 @@ pub struct Topic {
     pub partition_key: Option<usize>,
     /// The topic description.
     pub description: Option<String>,
+    /// The topic compaction configuration.
+    pub compaction: CompactionConfiguration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionConfiguration {
+    /// How often to compact the topic.
+    pub freshness: Duration,
+    /// How long to keep the topic data.
+    pub ttl: Option<Duration>,
 }
 
 pub type TopicRef = Arc<Topic>;
@@ -31,6 +41,7 @@ impl Topic {
             fields: options.fields,
             partition_key: options.partition_key,
             description: options.description,
+            compaction: options.compaction,
         }
     }
 
@@ -71,6 +82,8 @@ pub struct TopicOptions {
     pub partition_key: Option<usize>,
     /// The topic description.
     pub description: Option<String>,
+    /// The topic compaction configuration.
+    pub compaction: CompactionConfiguration,
 }
 
 impl TopicOptions {
@@ -79,6 +92,7 @@ impl TopicOptions {
             fields: fields.into(),
             partition_key: None,
             description: None,
+            compaction: Default::default(),
         }
     }
 
@@ -87,12 +101,51 @@ impl TopicOptions {
             fields: fields.into(),
             partition_key,
             description: None,
+            compaction: Default::default(),
         }
     }
 
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
+    }
+
+    pub fn with_compaction(mut self, compaction: CompactionConfiguration) -> Self {
+        self.compaction = compaction;
+        self
+    }
+}
+
+impl Default for CompactionConfiguration {
+    fn default() -> Self {
+        Self {
+            freshness: Duration::from_mins(5),
+            ttl: None,
+        }
+    }
+}
+
+pub fn validate_compaction(compaction: &CompactionConfiguration) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+
+    if compaction.freshness < Duration::from_mins(1) {
+        errors.push("freshness must be at least 1 minute".to_string());
+    }
+
+    if let Some(ttl) = compaction.ttl {
+        if ttl < Duration::from_mins(1) {
+            errors.push("ttl must be at least 1 minute".to_string());
+        }
+
+        if ttl <= compaction.freshness {
+            errors.push("ttl must be greater than freshness".to_string());
+        }
+    }
+
+    if !errors.is_empty() {
+        Err(errors)
+    } else {
+        Ok(())
     }
 }
 

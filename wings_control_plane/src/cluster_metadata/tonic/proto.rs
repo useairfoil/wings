@@ -21,10 +21,11 @@ use crate::{
         error::{InternalSnafu, InvalidResourceNameSnafu},
     },
     resources::{
-        AwsConfiguration, AzureConfiguration, DataLake, DataLakeConfiguration, DataLakeName,
-        GoogleConfiguration, IcebergConfiguration, Namespace, NamespaceName, NamespaceOptions,
-        ObjectStore, ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration,
-        S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName, TopicOptions,
+        AwsConfiguration, AzureConfiguration, CompactionConfiguration, DataLake,
+        DataLakeConfiguration, DataLakeName, GoogleConfiguration, IcebergConfiguration, Namespace,
+        NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration, ObjectStoreName,
+        ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName,
+        TopicOptions,
     },
 };
 
@@ -275,12 +276,14 @@ impl From<Topic> for pb::Topic {
     fn from(topic: Topic) -> Self {
         let fields = serialize_fields(&topic.fields);
         let partition_key = topic.partition_key.map(|idx| idx as u32);
+        let compaction = topic.compaction.into();
 
         Self {
             name: topic.name.name(),
             description: topic.description,
             fields,
             partition_key,
+            compaction: Some(compaction),
         }
     }
 }
@@ -293,12 +296,22 @@ impl TryFrom<pb::Topic> for Topic {
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
         let fields = deserialize_fields(&topic.fields)?;
         let partition_key = topic.partition_key.map(|idx| idx as usize);
+        let compaction = topic
+            .compaction
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing compaction field in Topic proto".to_string(),
+                }
+                .build()
+            })?
+            .into();
 
         Ok(Self {
             name,
             description: topic.description,
             fields,
             partition_key,
+            compaction,
         })
     }
 }
@@ -309,22 +322,52 @@ impl TryFrom<pb::Topic> for TopicOptions {
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
         let fields = deserialize_fields(&topic.fields)?;
         let partition_key = topic.partition_key.map(|idx| idx as usize);
+        let compaction = topic
+            .compaction
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing compaction field in Topic proto".to_string(),
+                }
+                .build()
+            })?
+            .into();
 
         Ok(Self {
             fields,
             partition_key,
             description: topic.description,
+            compaction,
         })
     }
 }
 
 impl From<TopicOptions> for pb::Topic {
     fn from(options: TopicOptions) -> Self {
+        let compaction = options.compaction.into();
         pb::Topic {
             name: String::new(),
             fields: serialize_fields(&options.fields),
             partition_key: options.partition_key.map(|idx| idx as u32),
             description: options.description,
+            compaction: Some(compaction),
+        }
+    }
+}
+
+impl From<CompactionConfiguration> for pb::CompactionConfiguration {
+    fn from(config: CompactionConfiguration) -> Self {
+        pb::CompactionConfiguration {
+            freshness_seconds: config.freshness.as_secs(),
+            ttl_seconds: config.ttl.as_ref().map(|ttl| ttl.as_secs()),
+        }
+    }
+}
+
+impl From<pb::CompactionConfiguration> for CompactionConfiguration {
+    fn from(config: pb::CompactionConfiguration) -> Self {
+        CompactionConfiguration {
+            freshness: Duration::from_secs(config.freshness_seconds),
+            ttl: config.ttl_seconds.map(Duration::from_secs),
         }
     }
 }
