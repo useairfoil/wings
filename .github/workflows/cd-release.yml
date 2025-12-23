@@ -30,7 +30,7 @@ jobs:
     with:
       os: warp-ubuntu-latest-x64-8x
       target: default
-      artifact_name: "wings-x86_64-linux.tar.gz"
+      artifact_name: "wings-x86_64-linux"
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
 
@@ -40,7 +40,17 @@ jobs:
     with:
       os: warp-ubuntu-latest-arm64-8x
       target: default
-      artifact_name: "wings-aarch64-linux.tar.gz"
+      artifact_name: "wings-aarch64-linux"
+    secrets:
+      cachix-token: "${{ secrets.cachix-token }}"
+
+  build-macos-aarch64:
+    name: "Binary MacOS aarch64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-macos-14-arm64-6x
+      target: default
+      artifact_name: "wings-aarch64-macos"
     secrets:
       cachix-token: "${{ secrets.cachix-token }}"
 
@@ -107,3 +117,53 @@ jobs:
           IMAGE_VERSION_PREREL: ${{ inputs.prerel }}
           IMAGE_ARCHIVE_x86_64: /tmp/x86_64/wings.tar.gz
           IMAGE_ARCHIVE_aarch64: /tmp/aarch64/wings.tar.gz
+
+  publish-binaries:
+    name: "Binaries: Publish"
+    needs:
+      - build-linux-x86_64
+      - build-linux-aarch64
+      - build-macos-aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binary for Linux x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: wings-x86_64-linux
+          path: /tmp/bin/x86_64-linux
+      - name: Download binary for Linux aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: wings-aarch64-linux
+          path: /tmp/bin/aarch64-linux
+      - name: Download binary for MacOS aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: wings-aarch64-macos
+          path: /tmp/bin/aarch64-macos
+      - name: Rename binaries
+        run: |
+          mkdir /tmp/artifacts
+
+          cp /tmp/bin/x86_64-linux/wings /tmp/artifacts/wings-x86_64-linux
+          cp /tmp/bin/x86_64-linux/wings-hash.txt /tmp/artifacts/wings-x86_64-linux-hash.txt
+
+          cp /tmp/bin/x86_64-linux/wings-stress /tmp/artifacts/wings-stress-x86_64-linux
+          cp /tmp/bin/x86_64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-x86_64-linux-hash.txt
+
+          cp /tmp/bin/aarch64-linux/wings /tmp/artifacts/wings-aarch64-linux
+          cp /tmp/bin/aarch64-linux/wings-hash.txt /tmp/artifacts/wings-aarch64-linux-hash.txt
+
+          cp /tmp/bin/aarch64-linux/wings-stress /tmp/artifacts/wings-stress-aarch64-linux
+          cp /tmp/bin/aarch64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-linux-hash.txt
+
+          cp /tmp/bin/aarch64-macos/wings /tmp/artifacts/wings-aarch64-macos
+          cp /tmp/bin/aarch64-macos/wings-hash.txt /tmp/artifacts/wings-aarch64-macos-hash.txt
+
+          cp /tmp/bin/aarch64-macos/wings-stress /tmp/artifacts/wings-stress-aarch64-macos
+          cp /tmp/bin/aarch64-macos/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-macos-hash.txt
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: /tmp/artifacts/*
+          file_glob: true

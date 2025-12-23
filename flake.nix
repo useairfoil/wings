@@ -88,6 +88,20 @@
           }
         );
 
+        binariesWithChecksum = pkgs.stdenv.mkDerivation {
+          inherit (binaries) pname version src;
+
+          nativeBuildInputs = [ pkgs.perl ];
+
+          installPhase = ''
+            mkdir -p $out
+            cp ${binaries}/bin/wings $out/wings
+            shasum -b -a 256 $out/wings > $out/wings-hash.txt
+            cp ${binaries}/bin/wings-stress $out/wings-stress
+            shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
+          '';
+        };
+
         dockerImage = pkgs.dockerTools.buildImage {
           name = "ghcr.io/useairfoil/wings";
           tag = "latest";
@@ -136,7 +150,7 @@
       in
       {
         packages = {
-          default = binaries;
+          default = binariesWithChecksum;
           image = dockerArchive;
           extract-version-from-ref = extractVersionFromRef;
           publish-docker-image = publishDockerImage;
