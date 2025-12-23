@@ -15,8 +15,16 @@
     };
   };
 
-  outputs = { nixpkgs, rust-overlay, flake-utils, crane, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      nixpkgs,
+      rust-overlay,
+      flake-utils,
+      crane,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         overlays = [
           (import rust-overlay)
@@ -27,44 +35,58 @@
         };
 
         rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+          ];
         };
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         src = pkgs.lib.cleanSourceWith {
           src = craneLib.path ./.;
-          filter = path: type:
-            (builtins.match ".*proto$" path != null)
-            || (craneLib.filterCargoSources path type);
+          filter =
+            path: type: (builtins.match ".*proto$" path != null) || (craneLib.filterCargoSources path type);
         };
 
         commonArgs = {
           inherit src;
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            protobuf
-            openssl.dev
-          ] ++ pkgs.lib.optional stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
-            CoreFoundation
-            CoreServices
-            Security
-            SystemConfiguration
-          ]);
+          nativeBuildInputs =
+            with pkgs;
+            [
+              pkg-config
+              protobuf
+              openssl.dev
+            ]
+            ++ pkgs.lib.optional stdenv.isDarwin (
+              with pkgs.darwin.apple_sdk.frameworks;
+              [
+                CoreFoundation
+                CoreServices
+                Security
+                SystemConfiguration
+              ]
+            );
         };
 
-        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-          pname = "wings";
-          version = "0.0.0";
-        });
+        cargoArtifacts = craneLib.buildDepsOnly (
+          commonArgs
+          // {
+            pname = "wings";
+            version = "0.0.0";
+          }
+        );
 
-        binaries = craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-          pname = "wings";
-          version = "0.0.0";
-          doCheck = false;
-          cargoExtraArgs = "--all";
-        });
+        binaries = craneLib.buildPackage (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            pname = "wings";
+            version = "0.0.0";
+            doCheck = false;
+            cargoExtraArgs = "--all";
+          }
+        );
 
         dockerImage = pkgs.dockerTools.buildImage {
           name = "ghcr.io/useairfoil/wings";
@@ -76,7 +98,7 @@
             pathsToLink = [ "/bin" ];
           };
           config = {
-            Entrypoint = ["/bin/wings"];
+            Entrypoint = [ "/bin/wings" ];
             ExposedPorts = {
               "7777" = { };
               "7780" = { };
@@ -117,6 +139,18 @@
             exit 1
           fi
 
+          tag=''${GITHUB_REF#refs/tags/}
+
+          major=$(${pkgs.semver-tool}/bin/semver get major ''${tag})
+          minor=$(${pkgs.semver-tool}/bin/semver get minor ''${tag})
+          patch=$(${pkgs.semver-tool}/bin/semver get patch ''${tag})
+          prerel=$(${pkgs.semver-tool}/bin/semver get prerel ''${tag})
+
+          echo "major=''${major}"
+          echo "minor=''${minor}"
+          echo "patch=''${patch}"
+          echo "prerel=''${prerel}"
+
           skopeo="${pkgs.skopeo}/bin/skopeo"
           echo '{"default": [{"type": "insecureAcceptAnything"}]}' > /tmp/policy.json
 
@@ -127,19 +161,51 @@
           skopeo login -u="''${GHCR_USERNAME}" -p="''${GHCR_PASSWORD}" ghcr.io
           echo "::endgroup::"
 
-          tag=''${GITHUB_REF#refs/tags/}
+          version="''${major}.''${minor}.''${patch}"
+          if ! [[ -z "''${prerel:-}" ]]; then
+            version="''${version}-''${prerel}"
+          fi
+
           base="ghcr.io/useairfoil/wings"
 
-          echo "::group::Pushing docker image to ''${tag}"
-          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${tag}-x86_64"
-          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_aarch64}" "docker://''${base}:''${tag}-aarch64"
+          echo "::group::Pushing docker image to ''${version}"
+          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${version}-x86_64"
+          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_aarch64}" "docker://''${base}:''${version}-aarch64"
           echo "::endgroup::"
 
-          # images=("''${base}:''${tag}-x86_64" "''${base}:''${tag}-aarch64")
-          # echo "::group::Create manifest ''${base}:''${tag}"
-          # manifest="''${base}:''${tag}"
-          # buildah manifest create "''${manifest}" "''${images[@]}"
-          # echo "::endgroup::"
+          images=("''${base}:''${version}-x86_64" "''${base}:''${version}-aarch64")
+
+          echo "::group::Create manifest ''${base}:''${version}"
+          manifest="''${base}:''${version}"
+          buildah manifest create "''${manifest}" "''${images[@]}"
+          echo "::endgroup::"
+
+          if ! [[ -z "''${prerel:-}" ]]; then
+            tag="''${major}.''${minor}.''${patch}-''${prerel}"
+            echo "::group::Push manifest ''${base}:''${tag}"
+            buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+            echo "::endgroup::"
+          fi
+
+          tag="''${major}.''${minor}.''${patch}"
+          echo "::group::Push manifest ''${base}:''${tag}"
+          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+          echo "::endgroup::"
+
+          tag="''${major}.''${minor}"
+          echo "::group::Push manifest ''${base}:''${tag}"
+          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+          echo "::endgroup::"
+
+          tag="''${major}"
+          echo "::group::Push manifest ''${base}:''${tag}"
+          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+          echo "::endgroup::"
+
+          tag="latest"
+          echo "::group::Push manifest ''${base}:''${tag}"
+          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
+          echo "::endgroup::"
         '';
       in
       {

@@ -10,8 +10,29 @@ on:
 
 jobs:
   build-linux-x86_64:
-    name: "Linux x86_64: Build"
+    name: "Binary x86_64: Build"
     uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-x64-8x
+      target: default
+      artifact_name: "wings-x86_64-linux.tar.gz"
+    secrets:
+      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+
+  build-linux-aarch64:
+    name: "Binary aarch64: Build"
+    uses: ./.github/workflows/build.yml
+    with:
+      os: warp-ubuntu-latest-arm64-8x
+      target: default
+      artifact_name: "wings-aarch64-linux.tar.gz"
+    secrets:
+      cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+
+  build-image-linux-x86_64:
+    name: "Docker x86_64: Build"
+    uses: ./.github/workflows/build.yml
+    needs: [build-linux-x86_64]
     with:
       os: warp-ubuntu-latest-x64-8x
       target: image
@@ -19,9 +40,10 @@ jobs:
     secrets:
       cachix-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-  build-linux-aarch64:
-    name: "Linux aarch64: Build"
+  build-image-linux-aarch64:
+    name: "Docker aarch64: Build"
     uses: ./.github/workflows/build.yml
+    needs: [build-linux-aarch64]
     with:
       os: warp-ubuntu-latest-arm64-8x
       target: image
@@ -36,7 +58,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
-    needs: [build-linux-x86_64, build-linux-aarch64]
+    needs: [build-image-linux-x86_64, build-image-linux-aarch64]
     runs-on: warp-ubuntu-latest-x64-2x
     steps:
       - name: Set $USER if needed
