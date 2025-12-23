@@ -71,7 +71,7 @@ jobs:
     permissions:
       contents: read
     needs: [build-image-linux-x86_64, build-image-linux-aarch64]
-    runs-on: warp-ubuntu-latest-x64-2x
+    runs-on: ubuntu-latest
     steps:
       - name: Set $USER if needed
         run: |
