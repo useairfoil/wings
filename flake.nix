@@ -51,22 +51,11 @@
 
         commonArgs = {
           inherit src;
-          nativeBuildInputs =
-            with pkgs;
-            [
-              pkg-config
-              protobuf
-              openssl.dev
-            ]
-            ++ pkgs.lib.optional stdenv.isDarwin (
-              with pkgs.darwin.apple_sdk.frameworks;
-              [
-                CoreFoundation
-                CoreServices
-                Security
-                SystemConfiguration
-              ]
-            );
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            protobuf
+            openssl.dev
+          ];
         };
 
         cargoArtifacts = craneLib.buildDepsOnly (
