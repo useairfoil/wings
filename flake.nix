@@ -119,99 +119,27 @@
           '';
         };
 
-        publishDockerImage = pkgs.writeScriptBin "publish-docker-image" ''
-          set -euo pipefail
+        extractVersionFromRef = pkgs.writeShellApplication {
+          name = "extract-version-from-ref";
+          runtimeInputs = [ pkgs.semver-tool ];
+          text = builtins.readFile ./scripts/extract-version-from-ref.sh;
+        };
 
-          echo "Ref: $GITHUB_REF"
-
-          if [[ "''${GITHUB_REF:-}" != "refs/tags/"* ]]; then
-            echo "Not a tag"
-            exit 0
-          fi
-
-          if ! [ -f "''${IMAGE_ARCHIVE_x86_64}" ]; then
-            echo "IMAGE_ARCHIVE_x86_64 image does not exist"
-            exit 1
-          fi
-
-          if ! [ -f "''${IMAGE_ARCHIVE_aarch64}" ]; then
-            echo "IMAGE_ARCHIVE_aarch64 image does not exist"
-            exit 1
-          fi
-
-          tag=''${GITHUB_REF#refs/tags/}
-
-          major=$(${pkgs.semver-tool}/bin/semver get major ''${tag})
-          minor=$(${pkgs.semver-tool}/bin/semver get minor ''${tag})
-          patch=$(${pkgs.semver-tool}/bin/semver get patch ''${tag})
-          prerel=$(${pkgs.semver-tool}/bin/semver get prerel ''${tag})
-
-          echo "major=''${major}"
-          echo "minor=''${minor}"
-          echo "patch=''${patch}"
-          echo "prerel=''${prerel}"
-
-          skopeo="${pkgs.skopeo}/bin/skopeo"
-          echo '{"default": [{"type": "insecureAcceptAnything"}]}' > /tmp/policy.json
-
-          echo "::group::Logging in to ghcr.io"
-          echo "::add-mask::''${GHCR_USERNAME}"
-          echo "::add-mask::''${GHCR_PASSWORD}"
-
-          skopeo login -u="''${GHCR_USERNAME}" -p="''${GHCR_PASSWORD}" ghcr.io
-          echo "::endgroup::"
-
-          version="''${major}.''${minor}.''${patch}"
-          if ! [[ -z "''${prerel:-}" ]]; then
-            version="''${version}-''${prerel}"
-          fi
-
-          base="ghcr.io/useairfoil/wings"
-
-          echo "::group::Pushing docker image to ''${version}"
-          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_x86_64}" "docker://''${base}:''${version}-x86_64"
-          skopeo copy "docker-archive:''${IMAGE_ARCHIVE_aarch64}" "docker://''${base}:''${version}-aarch64"
-          echo "::endgroup::"
-
-          images=("''${base}:''${version}-x86_64" "''${base}:''${version}-aarch64")
-
-          echo "::group::Create manifest ''${base}:''${version}"
-          manifest="''${base}:''${version}"
-          buildah manifest create "''${manifest}" "''${images[@]}"
-          echo "::endgroup::"
-
-          if ! [[ -z "''${prerel:-}" ]]; then
-            tag="''${major}.''${minor}.''${patch}-''${prerel}"
-            echo "::group::Push manifest ''${base}:''${tag}"
-            buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
-            echo "::endgroup::"
-          fi
-
-          tag="''${major}.''${minor}.''${patch}"
-          echo "::group::Push manifest ''${base}:''${tag}"
-          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
-          echo "::endgroup::"
-
-          tag="''${major}.''${minor}"
-          echo "::group::Push manifest ''${base}:''${tag}"
-          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
-          echo "::endgroup::"
-
-          tag="''${major}"
-          echo "::group::Push manifest ''${base}:''${tag}"
-          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
-          echo "::endgroup::"
-
-          tag="latest"
-          echo "::group::Push manifest ''${base}:''${tag}"
-          buildah manifest push --all "''${manifest}" "docker://''${base}:''${tag}"
-          echo "::endgroup::"
-        '';
+        publishDockerImage = pkgs.writeShellApplication {
+          name = "publish-docker-image";
+          runtimeInputs = [
+            pkgs.buildah
+            pkgs.skopeo
+          ];
+          text = builtins.readFile ./scripts/publish-docker-image.sh;
+        };
       in
       {
         packages = {
           default = binaries;
           image = dockerArchive;
+          extract-version-from-ref = extractVersionFromRef;
+          publish-docker-image = publishDockerImage;
         };
 
         # development shells. start with `nix develop`.
@@ -224,8 +152,12 @@
 
             inputsFrom = [ binaries ];
           };
+
           ci = pkgs.mkShell {
-            buildInputs = [ publishDockerImage ];
+            buildInputs = [
+              extractVersionFromRef
+              publishDockerImage
+            ];
           };
         };
       }
