@@ -39,7 +39,6 @@ jobs:
     name: "wings: Release"
     needs: extract-version
     uses: ./.github/workflows/cd-release.yml
-    if: ${{ needs.extract-version.outputs.target != '' }}
     with:
       major: ${{ needs.extract-version.outputs.major }}
       minor: ${{ needs.extract-version.outputs.minor }}
