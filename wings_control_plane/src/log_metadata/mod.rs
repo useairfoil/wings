@@ -64,6 +64,8 @@ pub enum CommittedBatch {
 pub struct RejectedBatchInfo {
     /// The number of messages in the batch.
     pub num_messages: u32,
+    /// The reason for rejection.
+    pub reason: String,
 }
 
 #[derive(Clone, PartialEq, Eq)]

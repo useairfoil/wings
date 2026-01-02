@@ -458,9 +458,10 @@ impl PartitionLogState {
         // we want the state to have the timestamp of the most recently assigned batch
         for batch in page.batches.iter() {
             match validate_timestamp_in_request(&current_offset, batch) {
-                ValidateRequestResult::Reject => {
+                ValidateRequestResult::Reject { reason } => {
                     let rejected = RejectedBatchInfo {
                         num_messages: batch.num_messages,
+                        reason: reason.to_string(),
                     };
                     batches.push(CommittedBatch::Rejected(rejected));
                 }

@@ -250,6 +250,7 @@ impl From<pb::committed_batch::Rejected> for RejectedBatchInfo {
     fn from(info: pb::committed_batch::Rejected) -> Self {
         RejectedBatchInfo {
             num_messages: info.num_messages,
+            reason: info.reason,
         }
     }
 }
@@ -258,6 +259,7 @@ impl From<RejectedBatchInfo> for pb::committed_batch::Rejected {
     fn from(info: RejectedBatchInfo) -> Self {
         pb::committed_batch::Rejected {
             num_messages: info.num_messages,
+            reason: info.reason,
         }
     }
 }

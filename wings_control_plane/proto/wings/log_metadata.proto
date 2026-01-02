@@ -99,8 +99,8 @@ message ListPartitionsResponse {
 }
 
 message PartitionMetadata {
-    optional PartitionValue value = 1;
-    LogOffset end_offset = 2;
+  optional PartitionValue value = 1;
+  LogOffset end_offset = 2;
 }
 
 message CommittedBatch {
@@ -116,6 +116,8 @@ message CommittedBatch {
   message Rejected {
     // How many messages were rejected.
     uint32 num_messages = 1;
+    // The reason for rejection.
+    string reason = 2;
   }
 
   oneof result {
@@ -125,8 +127,8 @@ message CommittedBatch {
 }
 
 message LogOffset {
-    uint64 offset = 1;
-    google.protobuf.Timestamp timestamp = 2;
+  uint64 offset = 1;
+  google.protobuf.Timestamp timestamp = 2;
 }
 
 message PartitionValue {

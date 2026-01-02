@@ -103,7 +103,10 @@ pub async fn process_ingestion_stream(
                 let response = match response {
                     Ok(info) => CommittedBatch::Accepted(info),
                     // TODO: this is a more general write error and not a rejected batch
-                    Err(_err) => CommittedBatch::Rejected(RejectedBatchInfo { num_messages }),
+                    Err(err) => {
+                        debug!(err = ?err, "failed to commit batch");
+                        CommittedBatch::Rejected(RejectedBatchInfo { num_messages, reason: "INTERNAL_ERROR".to_string() })
+                    },
                 };
 
                 let Ok(_) = tx

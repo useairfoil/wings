@@ -5,7 +5,9 @@ use super::{CommitBatchRequest, LogOffset};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ValidateRequestResult {
-    Reject,
+    Reject {
+        reason: &'static str,
+    },
     Accept {
         start_offset: u64,
         end_offset: u64,
@@ -39,7 +41,9 @@ pub fn validate_timestamp_in_request(
     request: &CommitBatchRequest,
 ) -> ValidateRequestResult {
     if request.num_messages == 0 {
-        return ValidateRequestResult::Reject;
+        return ValidateRequestResult::Reject {
+            reason: "EMPTY_BATCH",
+        };
     };
 
     let num_messages = request.num_messages as u64;
@@ -58,7 +62,9 @@ pub fn validate_timestamp_in_request(
     };
 
     if timestamp < ts.timestamp {
-        return ValidateRequestResult::Reject;
+        return ValidateRequestResult::Reject {
+            reason: "INVALID_TIMESTAMP",
+        };
     };
 
     let next_offset = LogOffset {
@@ -143,14 +149,18 @@ mod tests {
         );
         assert_eq!(
             validate_timestamp_in_request(&offset, &req),
-            ValidateRequestResult::Reject
+            ValidateRequestResult::Reject {
+                reason: "EMPTY_BATCH",
+            }
         );
 
         // Timestamp before the current offset.
         let req = CommitBatchRequest::new_with_timestamp(10, SystemTime::UNIX_EPOCH);
         assert_eq!(
             validate_timestamp_in_request(&offset, &req),
-            ValidateRequestResult::Reject
+            ValidateRequestResult::Reject {
+                reason: "INVALID_TIMESTAMP",
+            }
         );
 
         // Same timestamp is fine.
