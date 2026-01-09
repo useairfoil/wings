@@ -4,3 +4,4 @@ pub mod log_metadata;
 pub mod object_store;
 pub mod paths;
 pub mod resources;
+pub mod schema;

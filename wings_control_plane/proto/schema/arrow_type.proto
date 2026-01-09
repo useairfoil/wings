@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package wings.schema;
+
+message EmptyMessage {}
+
+enum TimeUnit {
+  Second = 0;
+  Millisecond = 1;
+  Microsecond = 2;
+  Nanosecond = 3;
+}
+
+enum IntervalUnit {
+  YearMonth = 0;
+  DayTime = 1;
+  MonthDayNano = 2;
+}
+
+enum UnionMode {
+  Sparse = 0;
+  Dense = 1;
+}
+
+message Timestamp {
+  TimeUnit time_unit = 1;
+  string timezone = 2;
+}
+
+message Decimal32Type {
+  uint32 precision = 1;
+  int32 scale = 2;
+}
+
+message Decimal64Type {
+  uint32 precision = 1;
+  int32 scale = 2;
+}
+
+message Decimal128Type {
+  uint32 precision = 1;
+  int32 scale = 2;
+}
+
+message Decimal256Type {
+  uint32 precision = 1;
+  int32 scale = 2;
+}
+
+message List {
+  Field field_type = 1;
+}
+
+message FixedSizeList {
+  Field field_type = 1;
+  int32 list_size = 2;
+}
+
+message Dictionary {
+  ArrowType key = 1;
+  ArrowType value = 2;
+}
+
+message Struct {
+  repeated Field sub_field_types = 1;
+}
+
+message Map {
+  Field field_type = 1;
+  bool keys_sorted = 2;
+}
+
+message Union {
+  repeated Field union_types = 1;
+  UnionMode union_mode = 2;
+  repeated int32 type_ids = 3;
+}
+
+message Field {
+  string name = 1;
+  ArrowType arrow_type = 2;
+  bool nullable = 3;
+  map<string, string> metadata = 4;
+}
+
+message ArrowType {
+  oneof arrow_type_enum {
+    EmptyMessage None = 1;
+    EmptyMessage Bool = 2;
+    EmptyMessage Uint8 = 3;
+    EmptyMessage Int8 = 4;
+    EmptyMessage Uint16 = 5;
+    EmptyMessage Int16 = 6;
+    EmptyMessage Uint32 = 7;
+    EmptyMessage Int32 = 8;
+    EmptyMessage Uint64 = 9;
+    EmptyMessage Int64 = 10;
+    EmptyMessage Float16 = 11;
+    EmptyMessage Float32 = 12;
+    EmptyMessage Float64 = 13;
+    EmptyMessage Utf8 = 14;
+    EmptyMessage Utf8View = 15;
+    EmptyMessage LargeUtf8 = 16;
+    EmptyMessage Binary = 17;
+    EmptyMessage BinaryView = 18;
+    int32 FixedSizeBinary = 19;
+    EmptyMessage LargeBinary = 20;
+    EmptyMessage Date32 = 21;
+    EmptyMessage Date64 = 22;
+    TimeUnit Duration = 23;
+    Timestamp Timestamp = 24;
+    TimeUnit Time32 = 25;
+    TimeUnit Time64 = 26;
+    IntervalUnit Interval = 27;
+    Decimal32Type Decimal32 = 28;
+    Decimal64Type Decimal64 = 29;
+    Decimal128Type Decimal128 = 30;
+    Decimal256Type Decimal256 = 31;
+    List List = 32;
+    List LargeList = 33;
+    FixedSizeList FixedSizeList = 34;
+    Struct Struct = 35;
+    Union Union = 36;
+    Dictionary Dictionary = 37;
+    Map Map = 38;
+  }
+}

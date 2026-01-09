@@ -19,5 +19,9 @@ fn main() -> Result<()> {
         .file_descriptor_set_path(out_dir.join(LOG_METADATA_DESCRIPTOR_FILE))
         .compile_protos(&["proto/wings/log_metadata.proto"], &["proto/"])?;
 
+    tonic_prost_build::configure()
+        .build_server(false)
+        .compile_protos(&["proto/schema/arrow_type.proto"], &["proto/"])?;
+
     Ok(())
 }
