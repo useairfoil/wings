@@ -140,7 +140,7 @@ impl Worker {
         let partition_query = if let Some(field) = topic_ref.partition_field() {
             format!(
                 "AND {} = {}",
-                field.name(),
+                field.name,
                 task.partition_value
                     .as_ref()
                     .map(|v| v.to_string())

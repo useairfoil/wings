@@ -18,26 +18,56 @@
 // under the License.
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, UnionMode};
+use datafusion::arrow::datatypes::{DataType, UnionMode};
 
-use crate::schema::error::{ArrowTypeError, Result};
+use crate::schema::{
+    Field, Schema,
+    error::{Result, SchemaError},
+};
 
-impl TryFrom<&Field> for crate::schema::pb::Field {
-    type Error = ArrowTypeError;
+impl TryFrom<&Schema> for crate::schema::pb::Schema {
+    type Error = SchemaError;
 
-    fn try_from(value: &Field) -> Result<Self> {
-        let arrow_type = value.data_type().try_into()?;
-        Ok(crate::schema::pb::Field {
-            name: value.name().to_owned(),
-            arrow_type: Some(Box::new(arrow_type)),
-            nullable: value.is_nullable(),
-            metadata: value.metadata().clone(),
+    fn try_from(value: &Schema) -> Result<Self> {
+        let fields = value
+            .fields
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(crate::schema::pb::Schema {
+            fields,
+            schema_id: value.schema_id,
+            metadata: value.metadata.clone(),
         })
     }
 }
 
+impl TryFrom<&Field> for crate::schema::pb::Field {
+    type Error = SchemaError;
+
+    fn try_from(value: &Field) -> Result<Self> {
+        let arrow_type = (&value.data_type).try_into()?;
+        Ok(crate::schema::pb::Field {
+            name: value.name.clone(),
+            id: value.id,
+            arrow_type: Some(arrow_type),
+            nullable: value.nullable,
+            metadata: value.metadata.clone(),
+        })
+    }
+}
+
+impl TryFrom<DataType> for crate::schema::pb::ArrowType {
+    type Error = SchemaError;
+
+    fn try_from(value: DataType) -> std::result::Result<Self, Self::Error> {
+        (&value).try_into()
+    }
+}
+
 impl TryFrom<&DataType> for crate::schema::pb::ArrowType {
-    type Error = ArrowTypeError;
+    type Error = SchemaError;
 
     fn try_from(value: &DataType) -> Result<Self> {
         let arrow_type_enum = value.try_into()?;
@@ -48,7 +78,7 @@ impl TryFrom<&DataType> for crate::schema::pb::ArrowType {
 }
 
 impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
-    type Error = ArrowTypeError;
+    type Error = SchemaError;
 
     fn try_from(value: &DataType) -> Result<Self> {
         use crate::schema::pb::{self as pb, arrow_type::ArrowTypeEnum};
@@ -182,12 +212,12 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
                 keys_sorted: *sorted,
             })),
             DataType::RunEndEncoded(_, _) => {
-                return Err(ArrowTypeError::InvalidDataType {
+                return Err(SchemaError::ConversionError {
                     message: "RunEndEncoded data type is not yet supported".to_string(),
                 });
             }
             DataType::ListView(_) | DataType::LargeListView(_) => {
-                return Err(ArrowTypeError::InvalidDataType {
+                return Err(SchemaError::ConversionError {
                     message: format!("{} data type not yet supported", value),
                 });
             }
@@ -197,9 +227,24 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
     }
 }
 
-pub fn convert_arc_fields_to_proto_fields<'a, I>(fields: I) -> Result<Vec<crate::schema::pb::Field>>
+impl TryFrom<&arrow::datatypes::Field> for crate::schema::pb::NestedField {
+    type Error = SchemaError;
+
+    fn try_from(value: &arrow::datatypes::Field) -> Result<Self> {
+        let arrow_type = value.data_type().try_into()?;
+        Ok(crate::schema::pb::NestedField {
+            name: value.name().to_owned(),
+            arrow_type: Some(Box::new(arrow_type)),
+            nullable: value.is_nullable(),
+        })
+    }
+}
+
+pub fn convert_arc_fields_to_proto_fields<'a, I>(
+    fields: I,
+) -> Result<Vec<crate::schema::pb::NestedField>>
 where
-    I: IntoIterator<Item = &'a Arc<Field>>,
+    I: IntoIterator<Item = &'a Arc<arrow::datatypes::Field>>,
 {
     fields
         .into_iter()

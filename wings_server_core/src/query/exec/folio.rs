@@ -21,6 +21,7 @@ use futures::StreamExt;
 use wings_control_plane::{
     log_metadata::{CommittedBatch, FolioLocation},
     resources::PartitionValue,
+    schema::Field,
 };
 
 use crate::{
@@ -42,7 +43,7 @@ impl FolioExec {
         schema: SchemaRef,
         file_schema: SchemaRef,
         partition_value: Option<PartitionValue>,
-        partition_column: Option<FieldRef>,
+        partition_column: Option<Field>,
         location: FolioLocation,
         object_store_url: ObjectStoreUrl,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
@@ -50,7 +51,10 @@ impl FolioExec {
 
         let partition_value_column = match (partition_column, partition_value) {
             (None, None) => None,
-            (Some(column), Some(value)) => Some((column, value)),
+            (Some(column), Some(value)) => {
+                let column: Arc<_> = Arc::new(column.into());
+                Some((column, value))
+            }
             _ => {
                 return Err(DataFusionError::Internal(
                     "Invalid partitioning".to_string(),

@@ -1,8 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
-use datafusion::common::arrow::datatypes::{DataType, FieldRef, Fields, Schema, SchemaRef};
+use datafusion::common::arrow::datatypes::{
+    DataType, Field as ArrowField, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
+};
 
-use crate::resource_type;
+use crate::{
+    resource_type,
+    schema::{Field, Schema},
+};
 
 use super::namespace::NamespaceName;
 
@@ -13,10 +18,10 @@ resource_type!(Topic, "topics", Namespace);
 pub struct Topic {
     /// The topic name.
     pub name: TopicName,
-    /// The fields in the topic messages.
-    pub fields: Fields,
+    /// The topic's schema.
+    pub schema: Schema,
     /// The index of the field that is used to partition the topic.
-    pub partition_key: Option<usize>,
+    pub partition_key: Option<u64>,
     /// The topic description.
     pub description: Option<String>,
     /// The topic compaction configuration.
@@ -38,7 +43,7 @@ impl Topic {
     pub fn new(name: TopicName, options: TopicOptions) -> Self {
         Self {
             name,
-            fields: options.fields,
+            schema: options.schema,
             partition_key: options.partition_key,
             description: options.description,
             compaction: options.compaction,
@@ -46,40 +51,56 @@ impl Topic {
     }
 
     /// The topic's schema.
-    pub fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::new(self.fields.clone()))
+    pub fn schema(&self) -> &Schema {
+        &self.schema
+    }
+
+    pub fn arrow_schema(&self) -> ArrowSchemaRef {
+        let schema = self.schema().clone().into();
+        Arc::new(schema)
     }
 
     /// Returns the topic's schema without the partition field.
     ///
     /// Since partition fields are usually not stored in the physical Parquet
     /// file, this method returns a schema that excludes the partition field.
-    pub fn schema_without_partition_field(&self) -> SchemaRef {
-        let Some(partition_index) = self.partition_key else {
-            return self.schema();
+    pub fn arrow_schema_without_partition_field(&self) -> ArrowSchemaRef {
+        let Some(partition_key) = self.partition_key else {
+            return self.arrow_schema();
         };
-        let fields = self.fields.filter_leaves(|idx, _| idx != partition_index);
-        Arc::new(Schema::new(fields))
+
+        let fields = self
+            .schema()
+            .fields_iter()
+            .filter(|field| field.id != partition_key)
+            .cloned()
+            .map(ArrowField::from)
+            .collect::<Vec<_>>();
+
+        Arc::new(ArrowSchema::new(fields))
     }
 
     /// Returns the partition field, if any.
-    pub fn partition_field(&self) -> Option<&FieldRef> {
-        self.partition_key.map(|idx| &self.fields[idx])
+    pub fn partition_field(&self) -> Option<&Field> {
+        let partition_key = self.partition_key?;
+        self.schema()
+            .fields_iter()
+            .find(|field| field.id == partition_key)
     }
 
     /// Returns the data type of the partition field, if any.
     pub fn partition_field_data_type(&self) -> Option<&DataType> {
-        self.partition_field().map(|col| col.data_type())
+        self.partition_field().map(|col| &col.data_type)
     }
 }
 
 /// Options for creating a topic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicOptions {
-    /// The fields in the topic messages.
-    pub fields: Fields,
+    /// The topic's schema.
+    pub schema: Schema,
     /// The index of the field that is used to partition the topic.
-    pub partition_key: Option<usize>,
+    pub partition_key: Option<u64>,
     /// The topic description.
     pub description: Option<String>,
     /// The topic compaction configuration.
@@ -87,18 +108,18 @@ pub struct TopicOptions {
 }
 
 impl TopicOptions {
-    pub fn new(fields: impl Into<Fields>) -> Self {
+    pub fn new(schema: Schema) -> Self {
         Self {
-            fields: fields.into(),
+            schema,
             partition_key: None,
             description: None,
             compaction: Default::default(),
         }
     }
 
-    pub fn new_with_partition_key(fields: impl Into<Fields>, partition_key: Option<usize>) -> Self {
+    pub fn new_with_partition_key(schema: Schema, partition_key: Option<u64>) -> Self {
         Self {
-            fields: fields.into(),
+            schema,
             partition_key,
             description: None,
             compaction: Default::default(),
@@ -151,16 +172,20 @@ pub fn validate_compaction(compaction: &CompactionConfiguration) -> Result<(), V
 
 #[cfg(test)]
 mod tests {
-    use datafusion::common::arrow::datatypes::{DataType, Field};
+    use datafusion::common::arrow::datatypes::DataType;
 
-    use crate::resources::{NamespaceName, TenantName, Topic, TopicName, TopicOptions};
+    use crate::{
+        resources::{NamespaceName, TenantName, Topic, TopicName, TopicOptions},
+        schema::{Field, Schema},
+    };
 
     #[test]
     fn test_topic_creation() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-        let options = TopicOptions::new(vec![Field::new("test", DataType::Utf8, false)]);
+        let schema = Schema::new(1, vec![Field::new("test", 1, DataType::Utf8, false)]);
+        let options = TopicOptions::new(schema);
         let topic = Topic::new(topic_name.clone(), options);
 
         assert_eq!(topic.name, topic_name);
@@ -170,7 +195,7 @@ mod tests {
             topic.name.name(),
             "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
         );
-        assert_eq!(topic.fields.len(), 1);
+        assert_eq!(topic.schema().fields.len(), 1);
         assert_eq!(topic.partition_key, None);
     }
 
@@ -179,16 +204,18 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-
-        let fields = vec![
-            Field::new("id", DataType::Int64, false),
-            Field::new("message", DataType::Utf8, false),
-        ];
-        let options = TopicOptions::new_with_partition_key(fields, Some(0));
+        let schema = Schema::new(
+            0,
+            vec![
+                Field::new("id", 0, DataType::Int64, false),
+                Field::new("message", 1, DataType::Utf8, false),
+            ],
+        );
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let topic = Topic::new(topic_name.clone(), options);
 
         assert_eq!(topic.name, topic_name);
-        assert_eq!(topic.fields.len(), 2);
+        assert_eq!(topic.schema.fields.len(), 2);
         assert_eq!(topic.partition_key, Some(0));
     }
 }

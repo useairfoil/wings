@@ -89,7 +89,7 @@ impl NamespaceFolioWriter {
                 match PartitionFolioWriter::new(
                     batch.topic.name.clone(),
                     batch.partition.clone(),
-                    batch.topic.schema_without_partition_field(),
+                    batch.topic.arrow_schema_without_partition_field(),
                 ) {
                     Ok(writer) => inner.insert(writer),
                     Err(error) => {

@@ -82,12 +82,12 @@ impl WriteBatchRequest {
                 .fail();
             }
             (Some(col), Some(partition)) => {
-                if col.data_type() != &partition.data_type() {
+                if col.data_type != partition.data_type() {
                     return ValidationSnafu {
                             message: format!(
                                 "topic {} partition column data type {} does not match batch partition data type {}",
                                 self.topic.name,
-                                col.data_type(),
+                                col.data_type,
                                 partition.data_type()
                             ),
                         }

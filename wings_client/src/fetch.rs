@@ -1,9 +1,6 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use arrow::{
-    array::RecordBatch,
-    datatypes::{DataType, Field},
-};
+use arrow::{array::RecordBatch, datatypes::DataType};
 use arrow_flight::{
     decode::FlightDataDecoder, error::FlightError, flight_service_client::FlightServiceClient,
 };
@@ -12,7 +9,10 @@ use snafu::ResultExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
-use wings_control_plane::resources::{PartitionValue, Topic, TopicName};
+use wings_control_plane::{
+    resources::{PartitionValue, Topic, TopicName},
+    schema::Field,
+};
 use wings_flight::FetchTicket;
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 pub struct FetchClient {
     inner: FlightServiceClient<Channel>,
     topic_name: TopicName,
-    partition_field: Option<Arc<Field>>,
+    partition_field: Option<Field>,
     partition_value: Option<PartitionValue>,
     current_offset: u64,
     min_batch_size: usize,
@@ -53,7 +53,7 @@ impl FetchClient {
     pub fn partition_data_type(&self) -> Option<DataType> {
         self.partition_field
             .as_ref()
-            .map(|field| field.data_type().clone())
+            .map(|field| field.data_type.clone())
     }
 
     pub fn with_offset(mut self, offset: u64) -> Self {

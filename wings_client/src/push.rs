@@ -72,7 +72,7 @@ impl PushClient {
         // what action to take and sending a response to the client. Enqueue the
         // schema now to avoid hanging when calling `do_put`.
         let schema_message =
-            encoder.encode_schema(&topic.name, topic.schema_without_partition_field());
+            encoder.encode_schema(&topic.name, topic.arrow_schema_without_partition_field());
         let _ = tx.send(schema_message).await;
 
         let input_stream = ReceiverStream::new(rx);

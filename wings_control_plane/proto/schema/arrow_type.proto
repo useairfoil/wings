@@ -2,6 +2,20 @@ syntax = "proto3";
 
 package wings.schema;
 
+message Schema {
+  repeated Field fields = 1;
+  uint64 schema_id = 2;
+  map<string, string> metadata = 3;
+}
+
+message Field {
+  string name = 1;
+  uint64 id = 2;
+  ArrowType arrow_type = 3;
+  bool nullable = 4;
+  map<string, string> metadata = 5;
+}
+
 message EmptyMessage {}
 
 enum TimeUnit {
@@ -48,11 +62,11 @@ message Decimal256Type {
 }
 
 message List {
-  Field field_type = 1;
+  NestedField field_type = 1;
 }
 
 message FixedSizeList {
-  Field field_type = 1;
+  NestedField field_type = 1;
   int32 list_size = 2;
 }
 
@@ -62,25 +76,24 @@ message Dictionary {
 }
 
 message Struct {
-  repeated Field sub_field_types = 1;
+  repeated NestedField sub_field_types = 1;
 }
 
 message Map {
-  Field field_type = 1;
+  NestedField field_type = 1;
   bool keys_sorted = 2;
 }
 
 message Union {
-  repeated Field union_types = 1;
+  repeated NestedField union_types = 1;
   UnionMode union_mode = 2;
   repeated int32 type_ids = 3;
 }
 
-message Field {
+message NestedField {
   string name = 1;
   ArrowType arrow_type = 2;
   bool nullable = 3;
-  map<string, string> metadata = 4;
 }
 
 message ArrowType {

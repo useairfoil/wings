@@ -220,9 +220,11 @@ impl TonicService for ClusterMetadataServer {
             .inner
             .create_topic(topic_name, options)
             .await
+            .map_err(cluster_metadata_error_to_status)?
+            .try_into()
             .map_err(cluster_metadata_error_to_status)?;
 
-        Ok(Response::new(topic.into()))
+        Ok(Response::new(topic))
     }
 
     async fn get_topic(
@@ -239,9 +241,11 @@ impl TonicService for ClusterMetadataServer {
             .inner
             .get_topic(topic_name)
             .await
+            .map_err(cluster_metadata_error_to_status)?
+            .try_into()
             .map_err(cluster_metadata_error_to_status)?;
 
-        Ok(Response::new(topic.into()))
+        Ok(Response::new(topic))
     }
 
     async fn list_topics(
@@ -257,9 +261,11 @@ impl TonicService for ClusterMetadataServer {
             .inner
             .list_topics(request)
             .await
+            .map_err(cluster_metadata_error_to_status)?
+            .try_into()
             .map_err(cluster_metadata_error_to_status)?;
 
-        Ok(Response::new(response.into()))
+        Ok(Response::new(response))
     }
 
     async fn delete_topic(
@@ -452,6 +458,9 @@ fn cluster_metadata_error_to_status(error: ClusterMetadataError) -> Status {
         }
         ClusterMetadataError::InvalidResourceName { resource, source } => {
             resource_error_to_status(resource, source)
+        }
+        ClusterMetadataError::Schema { source } => {
+            Status::invalid_argument(format!("invalid schema: {source}"))
         }
         ClusterMetadataError::Internal { message } => {
             Status::internal(format!("internal error: {message}"))

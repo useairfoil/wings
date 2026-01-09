@@ -175,10 +175,11 @@ where
     }
 
     async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+        let topic = pb::Topic::try_from(options)?;
         let request = pb::CreateTopicRequest {
             parent: name.parent().to_string(),
             topic_id: name.id().to_string(),
-            topic: pb::Topic::from(options).into(),
+            topic: Some(topic),
         };
 
         self.client

@@ -87,7 +87,7 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataF
 
     for topic in topics {
         let partition_key = topic.partition_key;
-        for (index, field) in topic.schema().fields().iter().enumerate() {
+        for field in topic.schema().fields_iter() {
             let topic_name = topic.name.clone();
             topic_arr.append_value(topic_name.id.clone());
             let namespace_name = topic_name.parent();
@@ -95,10 +95,10 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataF
             let tenant_name = namespace_name.parent();
             tenant_arr.append_value(tenant_name.id.clone());
 
-            field_arr.append_value(field.name());
-            data_type_arr.append_value(field.data_type().to_string());
-            nullable_arr.append_value(field.is_nullable());
-            is_partition_key_arr.append_value(Some(index) == partition_key);
+            field_arr.append_value(&field.name);
+            data_type_arr.append_value(field.data_type.to_string());
+            nullable_arr.append_value(field.nullable);
+            is_partition_key_arr.append_value(Some(field.id) == partition_key);
         }
     }
 

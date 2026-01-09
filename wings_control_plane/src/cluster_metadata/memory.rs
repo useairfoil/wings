@@ -353,16 +353,15 @@ impl ClusterMetadataStore {
             });
         }
 
-        if let Some(key_index) = options.partition_key
-            && key_index >= options.fields.len()
+        if let Some(partition_key) = options.partition_key
+            && !options
+                .schema
+                .fields_iter()
+                .any(|field| field.id == partition_key)
         {
             return Err(ClusterMetadataError::InvalidArgument {
                 resource: "topic",
-                message: format!(
-                    "partition key index {} is out of bounds for fields (length: {})",
-                    key_index,
-                    options.fields.len()
-                ),
+                message: format!("no field with id {partition_key} found in schema"),
             });
         }
 

@@ -80,7 +80,7 @@ async fn process_push_request(
             });
         }
 
-        let schema = topic_ref.schema_without_partition_field();
+        let schema = topic_ref.arrow_schema_without_partition_field();
         let record_batch = parse_json_to_arrow(schema, &batch.data).map_err(|err| {
             HttpIngestorError::BadRequest {
                 message: format!("failed to parse JSON data for topic {topic_name}: {err}"),

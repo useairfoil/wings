@@ -1,7 +1,7 @@
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-use crate::resources::ResourceError;
+use crate::{resources::ResourceError, schema::SchemaError};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -26,6 +26,8 @@ pub enum ClusterMetadataError {
         resource: &'static str,
         source: ResourceError,
     },
+    #[snafu(display("invalid schema"))]
+    Schema { source: SchemaError },
     #[snafu(display("internal error: {message}"))]
     Internal { message: String },
 }
@@ -47,6 +49,10 @@ impl ClusterMetadataError {
 
     pub fn is_invalid_resource_name(&self) -> bool {
         matches!(self, ClusterMetadataError::InvalidResourceName { .. })
+    }
+
+    pub fn is_schema(&self) -> bool {
+        matches!(self, ClusterMetadataError::Schema { .. })
     }
 
     pub fn is_internal(&self) -> bool {

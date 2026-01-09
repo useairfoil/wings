@@ -418,7 +418,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         let partition_query = if let Some(field) = topic_ref.partition_field() {
             format!(
                 "AND {} = {}",
-                field.name(),
+                field.name,
                 partition_value.map(|v| v.to_string()).unwrap_or_default()
             )
         } else {

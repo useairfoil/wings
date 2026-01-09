@@ -21,8 +21,82 @@ pub mod error;
 pub mod from_proto;
 pub mod to_proto;
 
-pub use error::{ArrowTypeError, Result};
+use std::collections::HashMap;
+
+use datafusion::arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
+pub use error::{Result, SchemaError};
+
+pub use datafusion::arrow::datatypes::Field as NestedField;
 
 pub mod pb {
     tonic::include_proto!("wings.schema");
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Schema {
+    pub schema_id: u64,
+    pub fields: Vec<Field>,
+    pub metadata: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub name: String,
+    pub id: u64,
+    pub data_type: DataType,
+    pub nullable: bool,
+    pub metadata: HashMap<String, String>,
+}
+
+impl Schema {
+    pub fn new(schema_id: u64, fields: Vec<Field>) -> Self {
+        Self {
+            schema_id,
+            fields,
+            metadata: HashMap::new(),
+        }
+    }
+
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn fields_iter(&self) -> impl Iterator<Item = &Field> {
+        self.fields.iter()
+    }
+
+    pub fn arrow_schema(&self) -> ArrowSchema {
+        self.clone().into()
+    }
+}
+
+impl Field {
+    pub fn new(name: impl Into<String>, id: u64, data_type: DataType, nullable: bool) -> Self {
+        Self {
+            name: name.into(),
+            id,
+            data_type,
+            nullable,
+            metadata: HashMap::new(),
+        }
+    }
+
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+}
+
+impl From<Field> for ArrowField {
+    fn from(f: Field) -> Self {
+        ArrowField::new(f.name, f.data_type, f.nullable).with_metadata(f.metadata)
+    }
+}
+
+impl From<Schema> for ArrowSchema {
+    fn from(s: Schema) -> Self {
+        let fields: Vec<ArrowField> = s.fields.into_iter().map(Into::into).collect();
+        ArrowSchema::new(fields)
+    }
 }

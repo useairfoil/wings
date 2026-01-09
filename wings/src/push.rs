@@ -130,7 +130,7 @@ impl PushArgs {
                 if remaining >= 3 {
                     // Next arg is partition value, followed by payload
                     let partition_value =
-                        PartitionValue::parse_with_datatype(partition_column.data_type(), next_arg)
+                        PartitionValue::parse_with_datatype(&partition_column.data_type, next_arg)
                             .context(PartitionValueParseSnafu {})?;
                     (Some(partition_value), i + 2)
                 } else {
@@ -151,7 +151,8 @@ impl PushArgs {
             }
 
             let payload_str = &self.batches[payload_index];
-            let data = self.parse_payload(payload_str, topic.schema_without_partition_field())?;
+            let data =
+                self.parse_payload(payload_str, topic.arrow_schema_without_partition_field())?;
 
             let topic = TopicName::new(topic_id, namespace_name.clone())
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;

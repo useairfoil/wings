@@ -4,12 +4,15 @@ use std::{ops::RangeInclusive, sync::Arc, time::SystemTime};
 use clap::ValueEnum;
 use datafusion::common::arrow::{
     array::{Date32Array, Int32Array, Int64Array, StringArray},
-    datatypes::{DataType, Field, Fields, Schema},
+    datatypes::DataType,
     record_batch::RecordBatch,
 };
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 use wings_client::WriteRequest;
-use wings_control_plane::resources::{PartitionValue, TopicOptions};
+use wings_control_plane::{
+    resources::{PartitionValue, TopicOptions},
+    schema::{Field, Schema},
+};
 
 use crate::conversions::{
     decimal128_array_from_iter, string_array_from_display_iter, to_arrow_date32,
@@ -50,22 +53,23 @@ impl RequestGenerator {
 pub struct OrderRecordBatchGenerator {
     customer_id: i64,
     partitions: i64,
-    schema: Arc<Schema>,
+    schema: Schema,
     order_generator_iter: OrderGeneratorIterator<'static>,
 }
 
 impl OrderRecordBatchGenerator {
-    const PARTITION_KEY: usize = 1;
+    pub const SCHEMA_ID: u64 = 0;
+    const PARTITION_KEY: u64 = 1;
 
     fn new(partitions: u64) -> Self {
         let generator = OrderGenerator::new(1.0, 1, 1);
         let fields_without_partition_key = Self::fields()
             .into_iter()
-            .enumerate()
-            .filter(|(index, _)| *index != Self::PARTITION_KEY)
-            .map(|(_, field)| field.clone())
+            .filter(|field| field.id != Self::PARTITION_KEY)
             .collect::<Vec<_>>();
-        let schema = Arc::new(Schema::new(fields_without_partition_key));
+
+        let schema = Schema::new(Self::SCHEMA_ID, fields_without_partition_key);
+
         Self {
             customer_id: 1,
             schema,
@@ -74,22 +78,22 @@ impl OrderRecordBatchGenerator {
         }
     }
 
-    fn fields() -> Fields {
-        Fields::from(vec![
-            Field::new("o_orderkey", DataType::Int64, false),
-            Field::new("o_custkey", DataType::Int64, false),
-            Field::new("o_custkey_check", DataType::Int64, false),
-            Field::new("o_orderstatus", DataType::Utf8, false),
-            Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
-            Field::new("o_orderdate", DataType::Date32, false),
-            Field::new("o_orderpriority", DataType::Utf8, false),
-            Field::new("o_clerk", DataType::Utf8, false),
-            Field::new("o_shippriority", DataType::Int32, false),
-            Field::new("o_comment", DataType::Utf8, false),
-        ])
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::new("o_orderkey", 0, DataType::Int64, false),
+            Field::new("o_custkey", Self::PARTITION_KEY, DataType::Int64, false),
+            Field::new("o_custkey_check", 2, DataType::Int64, false),
+            Field::new("o_orderstatus", 3, DataType::Utf8, false),
+            Field::new("o_totalprice", 4, DataType::Decimal128(15, 2), false),
+            Field::new("o_orderdate", 5, DataType::Date32, false),
+            Field::new("o_orderpriority", 6, DataType::Utf8, false),
+            Field::new("o_clerk", 7, DataType::Utf8, false),
+            Field::new("o_shippriority", 8, DataType::Int32, false),
+            Field::new("o_comment", 9, DataType::Utf8, false),
+        ]
     }
 
-    fn partition_key() -> Option<usize> {
+    fn partition_key() -> Option<u64> {
         Some(Self::PARTITION_KEY)
     }
 
@@ -118,7 +122,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             .collect();
 
         let batch = if rows.is_empty() {
-            RecordBatch::new_empty(self.schema.clone())
+            RecordBatch::new_empty(self.schema.arrow_schema().into())
         } else {
             let o_orderkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_orderkey));
             let o_custkey_check =
@@ -137,7 +141,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             let o_comment = StringArray::from_iter_values(rows.iter().map(|r| r.o_comment));
 
             RecordBatch::try_new(
-                self.schema.clone(),
+                self.schema.arrow_schema().into(),
                 vec![
                     Arc::new(o_orderkey),
                     Arc::new(o_custkey_check),
@@ -176,7 +180,10 @@ impl TopicType {
     pub fn topic_options(&self) -> TopicOptions {
         match self {
             TopicType::Order => TopicOptions {
-                fields: OrderRecordBatchGenerator::fields(),
+                schema: Schema::new(
+                    OrderRecordBatchGenerator::SCHEMA_ID,
+                    OrderRecordBatchGenerator::fields(),
+                ),
                 partition_key: OrderRecordBatchGenerator::partition_key(),
                 description: "TPC-H orders table".to_string().into(),
                 compaction: Default::default(),

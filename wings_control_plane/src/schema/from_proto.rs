@@ -18,27 +18,49 @@
 // under the License.
 use std::sync::Arc;
 
-use arrow::datatypes::{
-    DataType, Field, IntervalUnit as ArrowIntervalUnit, TimeUnit as ArrowTimeUnit, UnionFields,
+use datafusion::arrow::datatypes::{
+    DataType, IntervalUnit as ArrowIntervalUnit, TimeUnit as ArrowTimeUnit, UnionFields,
     UnionMode as ArrowUnionMode,
 };
 
-use crate::schema::error::{ArrowTypeError, Result};
+use crate::schema::{
+    Field, Schema,
+    error::{Result, SchemaError},
+};
+
+impl TryFrom<&crate::schema::pb::Schema> for Schema {
+    type Error = SchemaError;
+
+    fn try_from(schema: &crate::schema::pb::Schema) -> Result<Self> {
+        let fields = schema
+            .fields
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
+            fields,
+            schema_id: schema.schema_id,
+            metadata: schema.metadata.clone(),
+        })
+    }
+}
 
 impl TryFrom<&crate::schema::pb::Field> for Field {
-    type Error = ArrowTypeError;
+    type Error = SchemaError;
 
     fn try_from(field: &crate::schema::pb::Field) -> Result<Self> {
         let datatype: &crate::schema::pb::ArrowType =
-            field.arrow_type.as_deref().required("arrow_type")?;
-        let field = Self::new(field.name.as_str(), datatype.try_into()?, field.nullable)
+            field.arrow_type.as_ref().required("arrow_type")?;
+        let datatype = datatype.try_into()?;
+        let field = Self::new(field.name.as_str(), field.id, datatype, field.nullable)
             .with_metadata(field.metadata.clone());
         Ok(field)
     }
 }
 
 impl TryFrom<&crate::schema::pb::ArrowType> for DataType {
-    type Error = ArrowTypeError;
+    type Error = SchemaError;
 
     fn try_from(arrow_type: &crate::schema::pb::ArrowType) -> Result<Self> {
         let arrow_type_enum = arrow_type
@@ -50,7 +72,7 @@ impl TryFrom<&crate::schema::pb::ArrowType> for DataType {
 }
 
 impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
-    type Error = ArrowTypeError;
+    type Error = SchemaError;
 
     fn try_from(arrow_type_enum: &crate::schema::pb::arrow_type::ArrowTypeEnum) -> Result<Self> {
         use crate::schema::pb::arrow_type::ArrowTypeEnum;
@@ -110,17 +132,17 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 DataType::Decimal256(decimal.precision as u8, decimal.scale as i8)
             }
             ArrowTypeEnum::List(list) => {
-                let list_type: &crate::schema::pb::Field =
+                let list_type: &crate::schema::pb::NestedField =
                     list.field_type.as_deref().required("field_type")?;
                 DataType::List(Arc::new(list_type.try_into()?))
             }
             ArrowTypeEnum::LargeList(list) => {
-                let list_type: &crate::schema::pb::Field =
+                let list_type: &crate::schema::pb::NestedField =
                     list.field_type.as_deref().required("field_type")?;
                 DataType::LargeList(Arc::new(list_type.try_into()?))
             }
             ArrowTypeEnum::FixedSizeList(list) => {
-                let list_type: &crate::schema::pb::Field =
+                let list_type: &crate::schema::pb::NestedField =
                     list.field_type.as_deref().required("field_type")?;
                 DataType::FixedSizeList(Arc::new(list_type.try_into()?), list.list_size)
             }
@@ -132,9 +154,8 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                     0 => ArrowUnionMode::Sparse,
                     1 => ArrowUnionMode::Dense,
                     _ => {
-                        return Err(ArrowTypeError::UnknownEnumVariant {
-                            name: "UnionMode".to_string(),
-                            value: union.union_mode,
+                        return Err(SchemaError::ConversionError {
+                            message: format!("Invalid union mode: {}", union.union_mode),
                         });
                     }
                 };
@@ -158,11 +179,25 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 )
             }
             ArrowTypeEnum::Map(map) => {
-                let field: &crate::schema::pb::Field =
+                let field: &crate::schema::pb::NestedField =
                     map.field_type.as_deref().required("field_type")?;
                 DataType::Map(Arc::new(field.try_into()?), map.keys_sorted)
             }
         })
+    }
+}
+
+impl TryFrom<&crate::schema::pb::NestedField> for arrow::datatypes::Field {
+    type Error = SchemaError;
+
+    fn try_from(field: &crate::schema::pb::NestedField) -> Result<Self> {
+        let datatype: &crate::schema::pb::ArrowType =
+            field.arrow_type.as_deref().required("arrow_type")?;
+        Ok(Self::new(
+            field.name.as_str(),
+            datatype.try_into()?,
+            field.nullable,
+        ))
     }
 }
 
@@ -172,8 +207,8 @@ pub trait FromOptionalField<T> {
 
 impl<T> FromOptionalField<T> for Option<T> {
     fn required(self, field: &str) -> Result<T> {
-        self.ok_or_else(|| ArrowTypeError::MissingRequiredField {
-            field: field.to_string(),
+        self.ok_or_else(|| SchemaError::ConversionError {
+            message: format!("Missing required field: {}", field),
         })
     }
 }
@@ -186,9 +221,8 @@ pub fn parse_i32_to_time_unit(value: i32) -> Result<ArrowTimeUnit> {
         2 => ArrowTimeUnit::Microsecond,
         3 => ArrowTimeUnit::Nanosecond,
         _ => {
-            return Err(ArrowTypeError::UnknownEnumVariant {
-                name: "TimeUnit".to_string(),
-                value,
+            return Err(SchemaError::ConversionError {
+                message: format!("Invalid time unit: {}", value),
             });
         }
     })
@@ -201,14 +235,15 @@ pub fn parse_i32_to_interval_unit(value: i32) -> Result<ArrowIntervalUnit> {
         1 => ArrowIntervalUnit::DayTime,
         2 => ArrowIntervalUnit::MonthDayNano,
         _ => {
-            return Err(ArrowTypeError::UnknownEnumVariant {
-                name: "IntervalUnit".to_string(),
-                value,
+            return Err(SchemaError::ConversionError {
+                message: format!("Invalid interval unit: {}", value),
             });
         }
     })
 }
 
-pub fn parse_proto_fields_to_fields(fields: &[crate::schema::pb::Field]) -> Result<Vec<Field>> {
+pub fn parse_proto_fields_to_fields(
+    fields: &[crate::schema::pb::NestedField],
+) -> Result<Vec<arrow::datatypes::Field>> {
     fields.iter().map(|field| field.try_into()).collect()
 }

@@ -3,13 +3,6 @@
 use std::time::Duration;
 
 use bytesize::ByteSize;
-use datafusion::common::arrow::{
-    datatypes::{Fields, Schema},
-    ipc::{
-        convert::{IpcSchemaEncoder, fb_to_schema},
-        root_as_schema,
-    },
-};
 use snafu::ResultExt;
 
 use crate::{
@@ -18,7 +11,7 @@ use crate::{
         ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
         ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse,
         Result as AdminResult,
-        error::{InternalSnafu, InvalidResourceNameSnafu},
+        error::{InternalSnafu, InvalidResourceNameSnafu, SchemaSnafu},
     },
     resources::{
         AwsConfiguration, AzureConfiguration, CompactionConfiguration, DataLake,
@@ -272,19 +265,20 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
  *    ░░░░░       ░░░░░░░    ░░░░░        ░░░░░   ░░░░░░░░░
  */
 
-impl From<Topic> for pb::Topic {
-    fn from(topic: Topic) -> Self {
-        let fields = serialize_fields(&topic.fields);
-        let partition_key = topic.partition_key.map(|idx| idx as u32);
+impl TryFrom<Topic> for pb::Topic {
+    type Error = ClusterMetadataError;
+
+    fn try_from(topic: Topic) -> AdminResult<Self> {
+        let schema = topic.schema().try_into().context(SchemaSnafu {})?;
         let compaction = topic.compaction.into();
 
-        Self {
+        Ok(Self {
             name: topic.name.name(),
+            schema: Some(schema),
             description: topic.description,
-            fields,
-            partition_key,
+            partition_key: topic.partition_key,
             compaction: Some(compaction),
-        }
+        })
     }
 }
 
@@ -294,8 +288,18 @@ impl TryFrom<pb::Topic> for Topic {
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
         let name = TopicName::parse(&topic.name)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
-        let fields = deserialize_fields(&topic.fields)?;
-        let partition_key = topic.partition_key.map(|idx| idx as usize);
+        let schema = topic
+            .schema
+            .as_ref()
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing schema field in Topic proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()
+            .context(SchemaSnafu {})?;
+
         let compaction = topic
             .compaction
             .ok_or_else(|| {
@@ -308,9 +312,9 @@ impl TryFrom<pb::Topic> for Topic {
 
         Ok(Self {
             name,
+            schema,
             description: topic.description,
-            fields,
-            partition_key,
+            partition_key: topic.partition_key,
             compaction,
         })
     }
@@ -320,8 +324,17 @@ impl TryFrom<pb::Topic> for TopicOptions {
     type Error = ClusterMetadataError;
 
     fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let fields = deserialize_fields(&topic.fields)?;
-        let partition_key = topic.partition_key.map(|idx| idx as usize);
+        let schema = topic
+            .schema
+            .as_ref()
+            .ok_or_else(|| {
+                InternalSnafu {
+                    message: "missing schema field in Topic proto".to_string(),
+                }
+                .build()
+            })?
+            .try_into()
+            .context(SchemaSnafu {})?;
         let compaction = topic
             .compaction
             .ok_or_else(|| {
@@ -333,24 +346,28 @@ impl TryFrom<pb::Topic> for TopicOptions {
             .into();
 
         Ok(Self {
-            fields,
-            partition_key,
+            schema,
+            partition_key: topic.partition_key,
             description: topic.description,
             compaction,
         })
     }
 }
 
-impl From<TopicOptions> for pb::Topic {
-    fn from(options: TopicOptions) -> Self {
+impl TryFrom<TopicOptions> for pb::Topic {
+    type Error = ClusterMetadataError;
+
+    fn try_from(options: TopicOptions) -> AdminResult<Self> {
         let compaction = options.compaction.into();
-        pb::Topic {
+        let schema = (&options.schema).try_into().context(SchemaSnafu {})?;
+
+        Ok(pb::Topic {
             name: String::new(),
-            fields: serialize_fields(&options.fields),
-            partition_key: options.partition_key.map(|idx| idx as u32),
+            schema: Some(schema),
+            partition_key: options.partition_key,
             description: options.description,
             compaction: Some(compaction),
-        }
+        })
     }
 }
 
@@ -398,18 +415,20 @@ impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
     }
 }
 
-impl From<ListTopicsResponse> for pb::ListTopicsResponse {
-    fn from(response: ListTopicsResponse) -> Self {
+impl TryFrom<ListTopicsResponse> for pb::ListTopicsResponse {
+    type Error = ClusterMetadataError;
+
+    fn try_from(response: ListTopicsResponse) -> AdminResult<Self> {
         let topics = response
             .topics
             .into_iter()
-            .map(pb::Topic::from)
-            .collect::<Vec<_>>();
+            .map(pb::Topic::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Self {
+        Ok(Self {
             topics,
             next_page_token: response.next_page_token.unwrap_or_default(),
-        }
+        })
     }
 }
 
@@ -432,22 +451,6 @@ impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
             },
         })
     }
-}
-
-fn serialize_fields(fields: &arrow::datatypes::Fields) -> Vec<u8> {
-    let schema = Schema::new(fields.clone());
-    let fb = IpcSchemaEncoder::new().schema_to_fb(&schema);
-    fb.finished_data().to_vec()
-}
-
-fn deserialize_fields(data: &[u8]) -> AdminResult<Fields> {
-    let ipc_schema =
-        root_as_schema(data).map_err(|inner| ClusterMetadataError::InvalidArgument {
-            resource: "topic",
-            message: format!("invalid topic schema: {}", inner),
-        })?;
-    let schema = fb_to_schema(ipc_schema);
-    Ok(schema.fields)
 }
 
 /*
@@ -910,7 +913,9 @@ impl TryFrom<pb::DeleteDataLakeRequest> for DataLakeName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion::common::arrow::datatypes::{DataType, Field};
+
+    use crate::schema::{Field, Schema};
+    use datafusion::common::arrow::datatypes::DataType;
 
     #[test]
     fn test_tenant_conversion() {
@@ -962,24 +967,21 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let fields = vec![Field::new("test", DataType::Utf8, false)];
-        let options = TopicOptions::new_with_partition_key(fields.clone(), Some(0));
+        let schema = Schema::new(0, vec![Field::new("test", 0, DataType::Utf8, false)]);
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let domain_topic = Topic::new(topic_name.clone(), options);
 
         // Domain to protobuf
-        let pb_topic = pb::Topic::from(domain_topic.clone());
-        assert_eq!(
-            pb_topic.name,
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
-        );
-        assert_eq!(pb_topic.partition_key, Some(0));
-        assert!(!pb_topic.fields.is_empty());
+        let pb_topic = pb::Topic::try_from(domain_topic.clone()).unwrap();
 
         // Protobuf to domain
         let converted_topic = Topic::try_from(pb_topic).unwrap();
         assert_eq!(converted_topic.name, domain_topic.name);
         assert_eq!(converted_topic.partition_key, domain_topic.partition_key);
-        assert_eq!(converted_topic.fields.len(), domain_topic.fields.len());
+        assert_eq!(
+            converted_topic.schema().fields.len(),
+            domain_topic.schema().fields.len()
+        );
     }
 
     #[test]
@@ -1062,23 +1064,5 @@ mod tests {
 
         let result = Namespace::try_from(pb_namespace);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_arrow_schema_serialization() {
-        let fields = vec![
-            Field::new("id", DataType::Int64, false),
-            Field::new("name", DataType::Utf8, false),
-            Field::new("value", DataType::Float64, true),
-        ];
-
-        let serialized = serialize_fields(&fields.into());
-        assert!(!serialized.is_empty());
-
-        let deserialized = deserialize_fields(&serialized).unwrap();
-        assert_eq!(deserialized.len(), 3);
-        assert_eq!(deserialized[0].name(), "id");
-        assert_eq!(deserialized[1].name(), "name");
-        assert_eq!(deserialized[2].name(), "value");
     }
 }

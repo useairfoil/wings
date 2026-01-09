@@ -3,6 +3,7 @@ syntax = "proto3";
 package wings.v1.cluster_metadata;
 
 import "google/protobuf/empty.proto";
+import "schema/arrow_type.proto";
 
 // Cluster metadata service to manage cluster resources.
 service ClusterMetadataService {
@@ -234,14 +235,14 @@ message Topic {
   // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
   string name = 1;
 
-  // The fields in the topic messages.
-  bytes fields = 2;
+  // The schema of the topic messages.
+  wings.schema.Schema schema = 2;
 
   // The topic description.
   optional string description = 3;
 
   // The index of the field that is used to partition the topic.
-  optional uint32 partition_key = 4;
+  optional uint64 partition_key = 4;
 
   // The topic compaction configuration.
   CompactionConfiguration compaction = 5;

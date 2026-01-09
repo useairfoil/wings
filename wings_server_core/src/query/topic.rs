@@ -77,7 +77,7 @@ impl TableProvider for TopicTableProvider {
     }
 
     fn schema(&self) -> SchemaRef {
-        Self::output_schema(self.topic.schema())
+        Self::output_schema(self.topic.arrow_schema())
     }
 
     fn supports_filters_pushdown(
@@ -101,7 +101,7 @@ impl TableProvider for TopicTableProvider {
         let (partition_value, partition_column) =
             if let Some(partition_column) = self.topic.partition_field() {
                 let partition_value: PartitionValue =
-                    find_partition_column_value(partition_column.name(), filters)?
+                    find_partition_column_value(&partition_column.name, filters)?
                         .try_into()
                         .map_err(|err| {
                             DataFusionError::Plan(format!(
@@ -109,11 +109,11 @@ impl TableProvider for TopicTableProvider {
                             ))
                         })?;
 
-                if partition_column.data_type() != &partition_value.data_type() {
+                if partition_column.data_type != partition_value.data_type() {
                     return Err(DataFusionError::Plan(format!(
                         "Partition column data type mismatch. Have {:?}, expected {:?}",
                         partition_value.data_type(),
-                        partition_column.data_type()
+                        partition_column.data_type
                     )));
                 }
 
@@ -137,7 +137,7 @@ impl TableProvider for TopicTableProvider {
         let object_store_url = self.namespace.object_store.wings_object_store_url()?;
 
         let schema = self.schema();
-        let file_schema = self.topic.schema_without_partition_field();
+        let file_schema = self.topic.arrow_schema_without_partition_field();
         let locations_exec = locations
             .into_iter()
             .map(|(_, partition_value, location)| match location {

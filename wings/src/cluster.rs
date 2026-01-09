@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use datafusion::common::arrow::datatypes::{DataType, Field};
+use datafusion::common::arrow::datatypes::DataType;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
@@ -11,6 +11,7 @@ use wings_control_plane::{
         DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
         TenantName, Topic, TopicName, TopicOptions,
     },
+    schema::{Field, Schema},
 };
 
 use crate::{
@@ -213,7 +214,7 @@ impl ClusterMetadataCommands {
                 let partition_key = if let Some(partition_column) = partition {
                     let index = parsed_fields
                         .iter()
-                        .position(|f| f.name() == &partition_column)
+                        .position(|f| f.name == partition_column)
                         .ok_or_else(|| CliError::InvalidArgument {
                             name: "partition",
                             message: format!(
@@ -221,13 +222,13 @@ impl ClusterMetadataCommands {
                                 partition_column
                             ),
                         })?;
-                    Some(index)
+                    Some(index as u64)
                 } else {
                     None
                 };
 
-                let topic_options =
-                    TopicOptions::new_with_partition_key(parsed_fields, partition_key);
+                let schema = Schema::new(0, parsed_fields);
+                let topic_options = TopicOptions::new_with_partition_key(schema, partition_key);
 
                 let topic = client
                     .create_topic(topic_name, topic_options)
@@ -337,7 +338,8 @@ fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
             }
         };
 
-        parsed_fields.push(Field::new(column_name, data_type, false));
+        let field_id = parsed_fields.len() as u64;
+        parsed_fields.push(Field::new(column_name, field_id, data_type, false));
     }
 
     Ok(parsed_fields)
@@ -357,11 +359,11 @@ fn print_namespace(namespace: &Namespace) {
 
 fn print_topic(topic: &Topic) {
     println!("{}", topic.name);
-    if let Some(partition_key) = topic.partition_key {
-        println!("  partition key: {}", topic.fields[partition_key].name());
+    if let Some(field) = topic.partition_field() {
+        println!("  partition key: {}", field.name);
     }
     println!("  fields:");
-    for field in topic.fields.iter() {
-        println!("  - {}: {}", field.name(), field.data_type());
+    for field in topic.schema().fields_iter() {
+        println!("  - {}: {}", field.name, field.data_type);
     }
 }
