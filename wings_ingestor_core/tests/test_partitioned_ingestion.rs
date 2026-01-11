@@ -29,8 +29,8 @@ fn partitioned_ingestion_schema_without_region_code() -> Schema {
     Schema::new(
         0,
         vec![
-            Field::new("name", 0, DataType::Utf8, false),
-            Field::new("age", 1, DataType::Int32, false),
+            Field::new("name", 1, DataType::Utf8, false),
+            Field::new("age", 2, DataType::Int32, false),
         ],
     )
 }

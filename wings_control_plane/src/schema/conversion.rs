@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod tests {
-    use crate::schema::{Field, NestedField};
+    use crate::schema::Field;
     use datafusion::arrow::datatypes::{DataType, TimeUnit, UnionFields, UnionMode};
     use std::sync::Arc;
 
@@ -240,8 +240,8 @@ pub mod tests {
 
     #[test]
     fn test_list() {
-        let item_field = NestedField::new("item", DataType::Int32, false);
-        let data_type = DataType::List(Arc::new(item_field));
+        let item_field = Field::new("item", 2, DataType::Int32, false);
+        let data_type = DataType::List(Arc::new(item_field.into()));
         let field = Field::new("test_field", 1, data_type, false);
         let result = round_trip_field(&field);
         assert_eq!(field, result);
@@ -249,8 +249,8 @@ pub mod tests {
 
     #[test]
     fn test_large_list() {
-        let item_field = NestedField::new("item", DataType::Int32, false);
-        let data_type = DataType::LargeList(Arc::new(item_field));
+        let item_field = Field::new("item", 2, DataType::Int32, false);
+        let data_type = DataType::LargeList(Arc::new(item_field.into()));
         let field = Field::new("test_field", 1, data_type, false);
         let result = round_trip_field(&field);
         assert_eq!(field, result);
@@ -261,8 +261,8 @@ pub mod tests {
         let sizes = vec![3, 10, 100];
 
         for size in sizes {
-            let item_field = NestedField::new("item", DataType::Int32, false);
-            let data_type = DataType::FixedSizeList(Arc::new(item_field), size);
+            let item_field = Field::new("item", 2, DataType::Int32, false);
+            let data_type = DataType::FixedSizeList(Arc::new(item_field.into()), size);
             let field = Field::new("test_field", 1, data_type, false);
             let result = round_trip_field(&field);
             assert_eq!(field, result);
@@ -271,10 +271,10 @@ pub mod tests {
 
     #[test]
     fn test_struct() {
-        let fields = vec![
-            NestedField::new("a", DataType::Int32, false),
-            NestedField::new("b", DataType::Utf8, true),
-            NestedField::new("c", DataType::Float64, false),
+        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
+            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
+            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
+            Arc::new(Field::new("c", 4, DataType::Float64, false).into()),
         ];
         let data_type = DataType::Struct(fields.into());
         let field = Field::new("test_field", 1, data_type, false);
@@ -284,9 +284,9 @@ pub mod tests {
 
     #[test]
     fn test_union_sparse() {
-        let fields = vec![
-            NestedField::new("a", DataType::Int32, false),
-            NestedField::new("b", DataType::Utf8, true),
+        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
+            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
+            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
         ];
         let type_ids = vec![0i8, 1i8];
         let union_fields = UnionFields::new(type_ids.clone(), fields);
@@ -298,9 +298,9 @@ pub mod tests {
 
     #[test]
     fn test_union_dense() {
-        let fields = vec![
-            NestedField::new("a", DataType::Int32, false),
-            NestedField::new("b", DataType::Utf8, true),
+        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
+            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
+            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
         ];
         let type_ids = vec![0i8, 1i8];
         let union_fields = UnionFields::new(type_ids.clone(), fields);
@@ -322,20 +322,23 @@ pub mod tests {
 
     #[test]
     fn test_map() {
-        let map_field = NestedField::new(
+        let map_field = Field::new(
             "entries",
+            2,
             DataType::Struct(
                 vec![
-                    NestedField::new("key", DataType::Utf8, false),
-                    NestedField::new("value", DataType::Int32, true),
+                    Arc::new(Field::new("key", 3, DataType::Utf8, false).into()),
+                    Arc::new(Field::new("value", 4, DataType::Int32, true).into()),
                 ]
+                .into_iter()
+                .collect::<Vec<Arc<arrow::datatypes::Field>>>()
                 .into(),
             ),
             false,
         );
 
         for keys_sorted in [true, false] {
-            let data_type = DataType::Map(Arc::new(map_field.clone()), keys_sorted);
+            let data_type = DataType::Map(Arc::new(map_field.clone().into()), keys_sorted);
             let field = Field::new("test_field", 1, data_type, false);
             let result = round_trip_field(&field);
             assert_eq!(field, result);

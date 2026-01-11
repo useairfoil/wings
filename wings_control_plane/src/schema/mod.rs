@@ -25,8 +25,7 @@ use std::collections::HashMap;
 
 use datafusion::arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
 pub use error::{Result, SchemaError};
-
-pub use datafusion::arrow::datatypes::Field as NestedField;
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 
 pub mod pb {
     tonic::include_proto!("wings.schema");
@@ -90,7 +89,9 @@ impl Field {
 
 impl From<Field> for ArrowField {
     fn from(f: Field) -> Self {
-        ArrowField::new(f.name, f.data_type, f.nullable).with_metadata(f.metadata)
+        let mut metadata = f.metadata;
+        metadata.insert(PARQUET_FIELD_ID_META_KEY.to_string(), f.id.to_string());
+        ArrowField::new(f.name, f.data_type, f.nullable).with_metadata(metadata)
     }
 }
 

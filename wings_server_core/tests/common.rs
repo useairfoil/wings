@@ -136,9 +136,9 @@ pub fn schema_without_partition() -> Schema {
     Schema::new(
         0,
         vec![
-            Field::new("id", 0, DataType::Int32, false),
-            Field::new("name", 1, DataType::Utf8, false),
-            Field::new("age", 2, DataType::Int32, false),
+            Field::new("id", 1, DataType::Int32, false),
+            Field::new("name", 2, DataType::Utf8, false),
+            Field::new("age", 3, DataType::Int32, false),
         ],
     )
 }

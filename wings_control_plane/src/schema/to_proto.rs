@@ -19,6 +19,7 @@
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, UnionMode};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 
 use crate::schema::{
     Field, Schema,
@@ -47,11 +48,11 @@ impl TryFrom<&Field> for crate::schema::pb::Field {
     type Error = SchemaError;
 
     fn try_from(value: &Field) -> Result<Self> {
-        let arrow_type = (&value.data_type).try_into()?;
+        let arrow_type: crate::schema::pb::ArrowType = (&value.data_type).try_into()?;
         Ok(crate::schema::pb::Field {
             name: value.name.clone(),
             id: value.id,
-            arrow_type: Some(arrow_type),
+            arrow_type: Some(Box::new(arrow_type)),
             nullable: value.nullable,
             metadata: value.metadata.clone(),
         })
@@ -154,16 +155,16 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
             DataType::Utf8View => ArrowTypeEnum::Utf8View(pb::EmptyMessage {}),
             DataType::LargeUtf8 => ArrowTypeEnum::LargeUtf8(pb::EmptyMessage {}),
             DataType::List(item_type) => ArrowTypeEnum::List(Box::new(pb::List {
-                field_type: Some(Box::new(item_type.as_ref().try_into()?)),
+                field_type: Some(Box::new(arrow_field_to_proto_field(item_type.as_ref())?)),
             })),
             DataType::FixedSizeList(item_type, size) => {
                 ArrowTypeEnum::FixedSizeList(Box::new(pb::FixedSizeList {
-                    field_type: Some(Box::new(item_type.as_ref().try_into()?)),
+                    field_type: Some(Box::new(arrow_field_to_proto_field(item_type.as_ref())?)),
                     list_size: *size,
                 }))
             }
             DataType::LargeList(item_type) => ArrowTypeEnum::LargeList(Box::new(pb::List {
-                field_type: Some(Box::new(item_type.as_ref().try_into()?)),
+                field_type: Some(Box::new(arrow_field_to_proto_field(item_type.as_ref())?)),
             })),
             DataType::Struct(struct_fields) => ArrowTypeEnum::Struct(pb::Struct {
                 sub_field_types: convert_arc_fields_to_proto_fields(struct_fields)?,
@@ -182,9 +183,17 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
                 })
             }
             DataType::Dictionary(key_type, value_type) => {
+                let key_arrow_type =
+                    <&DataType as TryInto<crate::schema::pb::ArrowType>>::try_into(
+                        key_type.as_ref(),
+                    )?;
+                let value_arrow_type =
+                    <&DataType as TryInto<crate::schema::pb::ArrowType>>::try_into(
+                        value_type.as_ref(),
+                    )?;
                 ArrowTypeEnum::Dictionary(Box::new(pb::Dictionary {
-                    key: Some(Box::new(key_type.as_ref().try_into()?)),
-                    value: Some(Box::new(value_type.as_ref().try_into()?)),
+                    key: Some(Box::new(key_arrow_type)),
+                    value: Some(Box::new(value_arrow_type)),
                 }))
             }
             DataType::Decimal32(precision, scale) => ArrowTypeEnum::Decimal32(pb::Decimal32Type {
@@ -208,7 +217,7 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
                 })
             }
             DataType::Map(field, sorted) => ArrowTypeEnum::Map(Box::new(pb::Map {
-                field_type: Some(Box::new(field.as_ref().try_into()?)),
+                field_type: Some(Box::new(arrow_field_to_proto_field(field.as_ref())?)),
                 keys_sorted: *sorted,
             })),
             DataType::RunEndEncoded(_, _) => {
@@ -227,27 +236,34 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
     }
 }
 
-impl TryFrom<&arrow::datatypes::Field> for crate::schema::pb::NestedField {
-    type Error = SchemaError;
-
-    fn try_from(value: &arrow::datatypes::Field) -> Result<Self> {
-        let arrow_type = value.data_type().try_into()?;
-        Ok(crate::schema::pb::NestedField {
-            name: value.name().to_owned(),
-            arrow_type: Some(Box::new(arrow_type)),
-            nullable: value.is_nullable(),
-        })
-    }
+fn arrow_field_to_proto_field(field: &arrow::datatypes::Field) -> Result<crate::schema::pb::Field> {
+    let arrow_type =
+        <&DataType as TryInto<crate::schema::pb::ArrowType>>::try_into(field.data_type())?;
+    let id = field
+        .metadata()
+        .get(PARQUET_FIELD_ID_META_KEY)
+        .and_then(|s| s.parse::<u64>().ok())
+        .ok_or_else(|| SchemaError::ConversionError {
+            message: format!(
+                "Missing or invalid field ID metadata for field '{}'",
+                field.name()
+            ),
+        })?;
+    Ok(crate::schema::pb::Field {
+        name: field.name().to_owned(),
+        id,
+        arrow_type: Some(Box::new(arrow_type)),
+        nullable: field.is_nullable(),
+        metadata: field.metadata().clone(),
+    })
 }
 
-pub fn convert_arc_fields_to_proto_fields<'a, I>(
-    fields: I,
-) -> Result<Vec<crate::schema::pb::NestedField>>
+pub fn convert_arc_fields_to_proto_fields<'a, I>(fields: I) -> Result<Vec<crate::schema::pb::Field>>
 where
     I: IntoIterator<Item = &'a Arc<arrow::datatypes::Field>>,
 {
     fields
         .into_iter()
-        .map(|field| field.as_ref().try_into())
+        .map(|field| arrow_field_to_proto_field(field.as_ref()))
         .collect()
 }

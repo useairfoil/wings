@@ -132,19 +132,22 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 DataType::Decimal256(decimal.precision as u8, decimal.scale as i8)
             }
             ArrowTypeEnum::List(list) => {
-                let list_type: &crate::schema::pb::NestedField =
+                let list_type: &crate::schema::pb::Field =
                     list.field_type.as_deref().required("field_type")?;
-                DataType::List(Arc::new(list_type.try_into()?))
+                let field: Field = list_type.try_into()?;
+                DataType::List(Arc::new(field.into()))
             }
             ArrowTypeEnum::LargeList(list) => {
-                let list_type: &crate::schema::pb::NestedField =
+                let list_type: &crate::schema::pb::Field =
                     list.field_type.as_deref().required("field_type")?;
-                DataType::LargeList(Arc::new(list_type.try_into()?))
+                let field: Field = list_type.try_into()?;
+                DataType::LargeList(Arc::new(field.into()))
             }
             ArrowTypeEnum::FixedSizeList(list) => {
-                let list_type: &crate::schema::pb::NestedField =
+                let list_type: &crate::schema::pb::Field =
                     list.field_type.as_deref().required("field_type")?;
-                DataType::FixedSizeList(Arc::new(list_type.try_into()?), list.list_size)
+                let field: Field = list_type.try_into()?;
+                DataType::FixedSizeList(Arc::new(field.into()), list.list_size)
             }
             ArrowTypeEnum::Struct(strct) => {
                 DataType::Struct(parse_proto_fields_to_fields(&strct.sub_field_types)?.into())
@@ -179,25 +182,12 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 )
             }
             ArrowTypeEnum::Map(map) => {
-                let field: &crate::schema::pb::NestedField =
+                let field: &crate::schema::pb::Field =
                     map.field_type.as_deref().required("field_type")?;
-                DataType::Map(Arc::new(field.try_into()?), map.keys_sorted)
+                let f: Field = field.try_into()?;
+                DataType::Map(Arc::new(f.into()), map.keys_sorted)
             }
         })
-    }
-}
-
-impl TryFrom<&crate::schema::pb::NestedField> for arrow::datatypes::Field {
-    type Error = SchemaError;
-
-    fn try_from(field: &crate::schema::pb::NestedField) -> Result<Self> {
-        let datatype: &crate::schema::pb::ArrowType =
-            field.arrow_type.as_deref().required("arrow_type")?;
-        Ok(Self::new(
-            field.name.as_str(),
-            datatype.try_into()?,
-            field.nullable,
-        ))
     }
 }
 
@@ -243,7 +233,13 @@ pub fn parse_i32_to_interval_unit(value: i32) -> Result<ArrowIntervalUnit> {
 }
 
 pub fn parse_proto_fields_to_fields(
-    fields: &[crate::schema::pb::NestedField],
+    fields: &[crate::schema::pb::Field],
 ) -> Result<Vec<arrow::datatypes::Field>> {
-    fields.iter().map(|field| field.try_into()).collect()
+    fields
+        .iter()
+        .map(|field| {
+            let f: Field = field.try_into()?;
+            Ok(f.into())
+        })
+        .collect()
 }
