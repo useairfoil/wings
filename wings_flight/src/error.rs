@@ -1,4 +1,5 @@
 use snafu::Snafu;
+use wings_control_plane::ErrorKind;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -27,10 +28,24 @@ impl FlightServerError {
     }
 }
 
+impl FlightServerError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Arrow { .. } | Self::DataFusion { .. } | Self::Flight { .. } => {
+                ErrorKind::Temporary
+            }
+            Self::InvalidTicket { .. } => ErrorKind::Validation,
+        }
+    }
+}
+
 impl From<FlightServerError> for tonic::Status {
     fn from(err: FlightServerError) -> Self {
-        // For now they're all internal errors
-        let code = tonic::Code::Internal;
+        let code = match err.kind() {
+            ErrorKind::Validation => tonic::Code::InvalidArgument,
+            ErrorKind::NotFound => tonic::Code::NotFound,
+            _ => tonic::Code::Internal,
+        };
         let message = err.to_string();
         tonic::Status::new(code, message)
     }

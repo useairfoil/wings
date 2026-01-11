@@ -1,7 +1,7 @@
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-use crate::{resources::ResourceError, schema::SchemaError};
+use crate::{ErrorKind, resources::ResourceError, schema::SchemaError};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -35,28 +35,39 @@ pub enum ClusterMetadataError {
 pub type Result<T, E = ClusterMetadataError> = ::std::result::Result<T, E>;
 
 impl ClusterMetadataError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::NotFound { .. } => ErrorKind::NotFound,
+            Self::AlreadyExists { .. } => ErrorKind::Conflict,
+            Self::InvalidArgument { .. }
+            | Self::InvalidResourceName { .. }
+            | Self::Schema { .. } => ErrorKind::Validation,
+            Self::Internal { .. } => ErrorKind::Internal,
+        }
+    }
+
     pub fn is_not_found(&self) -> bool {
-        matches!(self, ClusterMetadataError::NotFound { .. })
+        matches!(self, Self::NotFound { .. })
     }
 
     pub fn is_already_exists(&self) -> bool {
-        matches!(self, ClusterMetadataError::AlreadyExists { .. })
+        matches!(self, Self::AlreadyExists { .. })
     }
 
     pub fn is_invalid_argument(&self) -> bool {
-        matches!(self, ClusterMetadataError::InvalidArgument { .. })
+        matches!(self, Self::InvalidArgument { .. })
     }
 
     pub fn is_invalid_resource_name(&self) -> bool {
-        matches!(self, ClusterMetadataError::InvalidResourceName { .. })
+        matches!(self, Self::InvalidResourceName { .. })
     }
 
     pub fn is_schema(&self) -> bool {
-        matches!(self, ClusterMetadataError::Schema { .. })
+        matches!(self, Self::Schema { .. })
     }
 
     pub fn is_internal(&self) -> bool {
-        matches!(self, ClusterMetadataError::Internal { .. })
+        matches!(self, Self::Internal { .. })
     }
 }
 

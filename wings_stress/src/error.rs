@@ -2,7 +2,9 @@ use axum::http::uri::InvalidUri;
 use snafu::Snafu;
 use tokio::task::JoinError;
 use wings_client::ClientError;
-use wings_control_plane::{cluster_metadata::ClusterMetadataError, resources::ResourceError};
+use wings_control_plane::{
+    ErrorKind, cluster_metadata::ClusterMetadataError, resources::ResourceError,
+};
 
 use crate::helpers::RangeParserError;
 
@@ -32,3 +34,16 @@ pub enum CliError {
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
+
+impl CliError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::InvalidNamespaceName { .. } | Self::InvalidRange { .. } => ErrorKind::Validation,
+            Self::InvalidRemoteUrl { .. } => ErrorKind::Configuration,
+            Self::Connection { .. } | Self::TonicServer { .. } => ErrorKind::Temporary,
+            Self::ClusterMetadata { source, .. } => source.kind(),
+            Self::ClientError { source } => source.kind(),
+            Self::JoinError { .. } => ErrorKind::Internal,
+        }
+    }
+}

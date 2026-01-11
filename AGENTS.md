@@ -91,34 +91,97 @@ We follow the standard Rust style guide.
 
 ### Error handling
 
-We use the `error_stack` and `thiserror` crates for error handling. We create a custom error type per module (usually, in the `error.rs` file). Both the error and result types are exported by the module.
+We use the `snafu` crate for error handling. We create a custom error type per module (usually, in the `error.rs` file). Both the error and result types are exported by the module.
 
-We can use the `attach_printable` and `attach_printable_lazy` methods to attach additional information to errors. We do this to provide more context about the error to end users.
+#### Error Categories
+
+All error types implement a `kind()` method that returns an `ErrorKind` enum from `wings_control_plane`. This categorizes errors into:
+
+- **Configuration**: Bad configuration that needs user fix
+- **Validation**: Invalid input or user error
+- **NotFound**: Resource not found
+- **Conflict**: Resource already exists or locked
+- **Temporary**: Network/IO errors that may be retryable
+- **Internal**: Bugs or system errors
+
+The `ErrorKind` enum provides helper methods:
+- `is_retryable()`: Returns true for `Temporary` errors
+- `exit_code()`: Returns standard exit codes (EX_CONFIG, EX_USAGE, etc.)
+
+#### Error Type Pattern
 
 ```rust
-// in error.rs
-use error_stack::ResultExt;
-use thiserror::Error;
+// error.rs in each module
+use snafu::Snafu;
+use wings_control_plane::ErrorKind;
 
-/// Example AppError.
-#[derive(Error, Debug)]
-pub enum AppError {
-    #[error("validation error: {message}")]
-    Validation { message: &'static str },
-    #[error("file not found: {filename}")]
-    FileNotFound { filename: String },
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum Error {
+    #[snafu(display("Invalid {field}: {reason}"))]
+    Validation { field: &'static str, reason: String },
+
+    #[snafu(display("{resource} not found"))]
+    NotFound { resource: &'static str },
+
+    #[snafu(display("Internal error: {message}"))]
+    Internal { message: String },
 }
 
-pub type AppResult<T> = error_stack::Result<T, AppError>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-// somewhere else
-fn do_something(input: &str) -> AppResult<()> {
-    do_fallible(input).change_context(AppError::FileNotFound {
-        filename: input.to_string(),
-    })
-    .attach_printable("failed to do fallible")
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Validation { .. } => ErrorKind::Validation,
+            Self::NotFound { .. } => ErrorKind::NotFound,
+            Self::Internal { .. } => ErrorKind::Internal,
+        }
+    }
+}
+```
+
+#### Error Delegation
+
+For errors that wrap other error types (e.g., from dependencies or other modules), delegate `kind()` to the wrapped error:
+
+```rust
+#[snafu(display("Metadata error: {message}"))]
+Metadata {
+    message: &'static str,
+    source: ClusterMetadataError,
 }
 
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Metadata { source, .. } => source.kind(),
+            // ... other variants
+        }
+    }
+}
+```
+
+#### Usage Pattern
+
+Use context selectors for adding context to errors:
+
+```rust
+use snafu::prelude::*;
+
+fn do_something(input: &str) -> Result<()> {
+    do_fallible(input).context(InvalidInputSnafu { field: "input" })?;
+    Ok(())
+}
+```
+
+Or use `ensure!` for validation:
+
+```rust
+fn validate(value: usize) -> Result<()> {
+    ensure!(value > 0, ValueMustBePositiveSnafu);
+    Ok(())
+}
 ```
 
 ### Task cancellation

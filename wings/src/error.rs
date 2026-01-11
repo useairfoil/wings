@@ -3,6 +3,7 @@ use std::net::AddrParseError;
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
 use wings_control_plane::{
+    ErrorKind,
     cluster_metadata::ClusterMetadataError,
     resources::{PartitionValueParseError, ResourceError},
 };
@@ -63,3 +64,28 @@ pub enum CliError {
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
+
+impl CliError {
+    #[allow(dead_code)]
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::InvalidResourceName { .. }
+            | Self::InvalidArgument { .. }
+            | Self::InvalidPartitionValue
+            | Self::PartitionValueParse { .. }
+            | Self::InvalidTimestampFormat { .. } => ErrorKind::Validation,
+            Self::InvalidRemoteUrl { .. } | Self::InvalidServerUrl { .. } => {
+                ErrorKind::Configuration
+            }
+            Self::ClusterMetadata { source, .. } => source.kind(),
+            Self::ObjectStore { .. } | Self::Io { .. } => ErrorKind::Temporary,
+            Self::Connection { .. }
+            | Self::TonicReflection { .. }
+            | Self::TonicServer { .. }
+            | Self::Client { .. }
+            | Self::Flight { .. } => ErrorKind::Temporary,
+            Self::Arrow { .. } => ErrorKind::Internal,
+            Self::Observability { .. } => ErrorKind::Internal,
+        }
+    }
+}

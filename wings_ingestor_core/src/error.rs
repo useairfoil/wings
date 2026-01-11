@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_control_plane::log_metadata::LogMetadataError;
+use wings_control_plane::{ErrorKind, log_metadata::LogMetadataError};
 
 /// Ingestor error types.
 ///
-/// The message associated with an error is forwarded to the client,
-/// for this reason it should contain information that is useful to the user.
+/// The message associated with an error is forwarded to client,
+/// for this reason it should contain information that is useful to user.
 #[derive(Debug, Clone, Snafu)]
 #[snafu(visibility(pub))]
 pub enum IngestorError {
@@ -18,7 +18,7 @@ pub enum IngestorError {
     Internal { message: String },
     /// Schema error.
     ///
-    /// This is for errors related to the topic's schema.
+    /// This is for errors related to topic's schema.
     #[snafu(display("schema error: {message}"))]
     Schema { message: String },
     #[snafu(display("parquet error: {message}"))]
@@ -30,7 +30,7 @@ pub enum IngestorError {
     },
     /// Log metadata error.
     ///
-    /// This errors are used when something goes wrong with the log metadata.
+    /// This errors are used when something goes wrong with log metadata.
     #[snafu(display("log metadata error: {message}"))]
     LogMetadata {
         message: &'static str,
@@ -54,3 +54,15 @@ pub enum IngestorError {
 }
 
 pub type Result<T, E = IngestorError> = std::result::Result<T, E>;
+
+impl IngestorError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Validation { .. } | Self::Schema { .. } => ErrorKind::Validation,
+            Self::Parquet { .. } | Self::ObjectStore { .. } => ErrorKind::Temporary,
+            Self::LogMetadata { source, .. } => source.kind(),
+            Self::Internal { .. } => ErrorKind::Internal,
+            Self::ReplyChannelClosed => ErrorKind::Internal,
+        }
+    }
+}

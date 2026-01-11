@@ -1,7 +1,7 @@
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 use wings_control_plane::{
-    cluster_metadata::ClusterMetadataError, data_lake::DataLakeError,
+    ErrorKind, cluster_metadata::ClusterMetadataError, data_lake::DataLakeError,
     log_metadata::LogMetadataError,
 };
 
@@ -33,3 +33,14 @@ pub enum WorkerError {
 }
 
 pub type Result<T, E = WorkerError> = std::result::Result<T, E>;
+
+impl WorkerError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::LogMetadata { source, .. } => source.kind(),
+            Self::ClusterMetadata { source, .. } => source.kind(),
+            Self::DataLake { source, .. } => source.kind(),
+            Self::DataFusion { .. } => ErrorKind::Temporary,
+        }
+    }
+}

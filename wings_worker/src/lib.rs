@@ -16,7 +16,7 @@ use wings_server_core::query::NamespaceProviderFactory;
 mod error;
 mod worker;
 
-use crate::{
+pub use crate::{
     error::{Result, WorkerPoolError},
     worker::Worker,
 };

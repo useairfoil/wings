@@ -1,7 +1,7 @@
 use parquet::errors::ParquetError;
 use snafu::Snafu;
 
-use crate::{cluster_metadata::ClusterMetadataError, paths::ParquetPathError};
+use crate::{ErrorKind, cluster_metadata::ClusterMetadataError, paths::ParquetPathError};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -20,3 +20,13 @@ pub enum DataLakeError {
 }
 
 pub type Result<T, E = DataLakeError> = std::result::Result<T, E>;
+
+impl DataLakeError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::ClusterMetadata { source, .. } => source.kind(),
+            Self::ObjectStore { .. } | Self::Parquet { .. } => ErrorKind::Temporary,
+            Self::ParquetPath { .. } => ErrorKind::Validation,
+        }
+    }
+}

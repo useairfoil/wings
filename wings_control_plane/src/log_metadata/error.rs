@@ -3,9 +3,12 @@ use std::{sync::Arc, time::SystemTimeError};
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-use crate::resources::{NamespaceName, PartitionValue, ResourceError, TopicName};
+use crate::{
+    ErrorKind,
+    resources::{NamespaceName, PartitionValue, ResourceError, TopicName},
+};
 
-/// Errors related to the log metadata operations.
+/// Errors related to log metadata operations.
 #[derive(Clone, Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum LogMetadataError {
@@ -59,5 +62,24 @@ pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;
 impl From<LogMetadataError> for DataFusionError {
     fn from(err: LogMetadataError) -> Self {
         DataFusionError::External(Box::new(err))
+    }
+}
+
+impl LogMetadataError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::DuplicatePartitionValue { .. }
+            | Self::InvalidArgument { .. }
+            | Self::InvalidResourceName { .. }
+            | Self::InvalidOffsetRange
+            | Self::InvalidDeadline { .. }
+            | Self::InvalidTimestamp { .. }
+            | Self::InvalidDuration { .. } => ErrorKind::Validation,
+            Self::NamespaceNotFound { .. }
+            | Self::OffsetNotFound { .. }
+            | Self::TaskNotFound { .. } => ErrorKind::NotFound,
+            Self::UnorderedPageBatches { .. } => ErrorKind::Conflict,
+            Self::Internal { .. } => ErrorKind::Internal,
+        }
     }
 }

@@ -1,4 +1,5 @@
 use snafu::Snafu;
+use wings_control_plane::ErrorKind;
 
 /// Errors that can occur in the HTTP ingestor.
 #[derive(Debug, Snafu)]
@@ -16,3 +17,13 @@ pub enum HttpIngestorError {
 }
 
 pub type Result<T, E = HttpIngestorError> = std::result::Result<T, E>;
+
+impl HttpIngestorError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::BindError { .. } | Self::BadRequest { .. } => ErrorKind::Validation,
+            Self::NotFound { .. } => ErrorKind::NotFound,
+            Self::ServerError { .. } | Self::Internal { .. } => ErrorKind::Internal,
+        }
+    }
+}
