@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::{sync::Arc, time::Duration};
 
-use datafusion::common::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::common::arrow::datatypes::DataType;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
@@ -9,9 +9,11 @@ use wings_control_plane::{
     log_metadata::InMemoryLogMetadata,
     object_store::TemporaryFileSystemFactory,
     resources::{
-        DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName,
-        Topic, TopicName, TopicOptions,
+        AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
+        NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Topic, TopicName,
+        TopicOptions,
     },
+    schema::{Field, Schema},
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_observability::MetricsExporter;
@@ -56,9 +58,33 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
         .create_tenant(tenant_name.clone())
         .await
         .expect("create_tenant");
-    let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name.clone());
+
     let object_store_name = ObjectStoreName::new_unchecked("test-cred", tenant_name.clone());
-    let data_lake_name = DataLakeName::new_unchecked("test-data-lake", tenant_name);
+    let aws_config = AwsConfiguration {
+        bucket_name: "test".to_string(),
+        access_key_id: Default::default(),
+        secret_access_key: Default::default(),
+        prefix: None,
+        region: None,
+    };
+    cluster_meta
+        .create_object_store(
+            object_store_name.clone(),
+            ObjectStoreConfiguration::Aws(aws_config),
+        )
+        .await
+        .expect("create_object_store");
+
+    let data_lake_name = DataLakeName::new_unchecked("test-data-lake", tenant_name.clone());
+    cluster_meta
+        .create_data_lake(
+            data_lake_name.clone(),
+            DataLakeConfiguration::Parquet(Default::default()),
+        )
+        .await
+        .expect("create_data_lake");
+
+    let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name);
     let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),
@@ -80,7 +106,7 @@ pub async fn initialize_test_partitioned_topic(
     let topic = cluster_meta
         .create_topic(
             topic_name,
-            TopicOptions::new_with_partition_key(schema.fields, Some(0)),
+            TopicOptions::new_with_partition_key(schema, Some(0)),
         )
         .await
         .expect("create_topic");
@@ -95,7 +121,7 @@ pub async fn initialize_test_topic(
     let topic_name = TopicName::new_unchecked("my_topic", namespace.clone());
     let schema = schema_without_partition();
     let topic = cluster_meta
-        .create_topic(topic_name, TopicOptions::new(schema.fields))
+        .create_topic(topic_name, TopicOptions::new(schema))
         .await
         .expect("create_topic");
 
@@ -107,18 +133,24 @@ pub fn default_flush_interval() -> Duration {
 }
 
 pub fn schema_without_partition() -> Schema {
-    Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-    ])
+    Schema::new(
+        0,
+        vec![
+            Field::new("id", 0, DataType::Int32, false),
+            Field::new("name", 1, DataType::Utf8, false),
+            Field::new("age", 2, DataType::Int32, false),
+        ],
+    )
 }
 
 pub fn schema_with_partition() -> Schema {
-    Schema::new(vec![
-        Field::new("region_id", DataType::Int64, false),
-        Field::new("id", DataType::Int32, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-    ])
+    Schema::new(
+        0,
+        vec![
+            Field::new("region_id", 0, DataType::Int64, false),
+            Field::new("id", 1, DataType::Int32, false),
+            Field::new("name", 2, DataType::Utf8, false),
+            Field::new("age", 3, DataType::Int32, false),
+        ],
+    )
 }

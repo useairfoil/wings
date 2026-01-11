@@ -2,38 +2,42 @@ use std::sync::Arc;
 
 use common::{create_batch_ingestor, initialize_test_namespace};
 use datafusion::common::{
-    arrow::{
-        array::RecordBatch,
-        datatypes::{DataType, Field, Schema},
-    },
+    arrow::{array::RecordBatch, datatypes::DataType},
     create_array,
 };
 use wings_control_plane::{
     cluster_metadata::ClusterMetadata,
     resources::{Namespace, PartitionValue, Topic, TopicName, TopicOptions},
+    schema::{Field, Schema},
 };
 use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
 fn partitioned_ingestion_schema() -> Schema {
-    Schema::new(vec![
-        Field::new("region_code", DataType::Int32, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-    ])
+    Schema::new(
+        0,
+        vec![
+            Field::new("region_code", 0, DataType::Int32, false),
+            Field::new("name", 1, DataType::Utf8, false),
+            Field::new("age", 2, DataType::Int32, false),
+        ],
+    )
 }
 
 fn partitioned_ingestion_schema_without_region_code() -> Schema {
-    Schema::new(vec![
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-    ])
+    Schema::new(
+        0,
+        vec![
+            Field::new("name", 0, DataType::Utf8, false),
+            Field::new("age", 1, DataType::Int32, false),
+        ],
+    )
 }
 
 fn partitioned_ingestion_records() -> RecordBatch {
     RecordBatch::try_new(
-        partitioned_ingestion_schema_without_region_code().into(),
+        Arc::new(partitioned_ingestion_schema_without_region_code().into()),
         vec![
             create_array!(Utf8, vec!["Alice", "Bob", "Charlie"]),
             create_array!(Int32, vec![25, 30, 35]),
@@ -53,7 +57,7 @@ async fn initialize_test_topic(
     let topic = cluster_meta
         .create_topic(
             topic_name,
-            TopicOptions::new_with_partition_key(schema.fields, Some(0)),
+            TopicOptions::new_with_partition_key(schema, Some(0)),
         )
         .await
         .expect("create_topic");

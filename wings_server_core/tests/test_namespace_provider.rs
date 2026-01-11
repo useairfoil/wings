@@ -41,6 +41,7 @@ async fn test_metadata_system_tables() -> Result<()> {
         "+---------------+--------------+-----------------------+------------+",
         "| table_catalog | table_schema | table_name            | table_type |",
         "+---------------+--------------+-----------------------+------------+",
+        "| wings         | system       | metrics               | VIEW       |",
         "| wings         | system       | namespace_info        | VIEW       |",
         "| wings         | system       | topic                 | VIEW       |",
         "| wings         | system       | topic_offset_location | VIEW       |",
@@ -80,12 +81,12 @@ async fn test_topic_and_topic_schema() -> Result<()> {
         let out = ctx.sql("SELECT * FROM system.topic").await.expect("sql");
         let out = out.collect().await.expect("collect");
         let expected = vec![
-            "+--------+-----------+----------------------+---------------+",
-            "| tenant | namespace | topic                | partition_key |",
-            "+--------+-----------+----------------------+---------------+",
-            "| test   | test_ns   | my_partitioned_topic | 0             |",
-            "| test   | test_ns   | my_topic             |               |",
-            "+--------+-----------+----------------------+---------------+",
+            "+--------+-----------+----------------------+---------------+-------------+-------------------------+-------------------+",
+            "| tenant | namespace | topic                | partition_key | description | compaction_freshness_ms | compaction_ttl_ms |",
+            "+--------+-----------+----------------------+---------------+-------------+-------------------------+-------------------+",
+            "| test   | test-ns   | my_partitioned_topic | 0             |             | 300000                  |                   |",
+            "| test   | test-ns   | my_topic             |               |             | 300000                  |                   |",
+            "+--------+-----------+----------------------+---------------+-------------+-------------------------+-------------------+",
         ];
         assert_batches_sorted_eq!(expected, &out);
     }
@@ -99,13 +100,13 @@ async fn test_topic_and_topic_schema() -> Result<()> {
             "+--------+-----------+----------------------+-----------+-----------+----------+------------------+",
             "| tenant | namespace | topic                | field     | data_type | nullable | is_partition_key |",
             "+--------+-----------+----------------------+-----------+-----------+----------+------------------+",
-            "| test   | test_ns   | my_partitioned_topic | age       | Int32     | false    | false            |",
-            "| test   | test_ns   | my_partitioned_topic | id        | Int32     | false    | false            |",
-            "| test   | test_ns   | my_partitioned_topic | name      | Utf8      | false    | false            |",
-            "| test   | test_ns   | my_partitioned_topic | region_id | Int64     | false    | true             |",
-            "| test   | test_ns   | my_topic             | age       | Int32     | false    | false            |",
-            "| test   | test_ns   | my_topic             | id        | Int32     | false    | false            |",
-            "| test   | test_ns   | my_topic             | name      | Utf8      | false    | false            |",
+            "| test   | test-ns   | my_partitioned_topic | age       | Int32     | false    | false            |",
+            "| test   | test-ns   | my_partitioned_topic | id        | Int32     | false    | false            |",
+            "| test   | test-ns   | my_partitioned_topic | name      | Utf8      | false    | false            |",
+            "| test   | test-ns   | my_partitioned_topic | region_id | Int64     | false    | true             |",
+            "| test   | test-ns   | my_topic             | age       | Int32     | false    | false            |",
+            "| test   | test-ns   | my_topic             | id        | Int32     | false    | false            |",
+            "| test   | test-ns   | my_topic             | name      | Utf8      | false    | false            |",
             "+--------+-----------+----------------------+-----------+-----------+----------+------------------+",
         ];
         assert_batches_sorted_eq!(expected, &out);
@@ -212,9 +213,9 @@ async fn test_topic_partition_value() -> Result<()> {
         "+--------+-----------+----------------------+-----------------+-------------+",
         "| tenant | namespace | topic                | partition_value | next_offset |",
         "+--------+-----------+----------------------+-----------------+-------------+",
-        "| test   | test_ns   | my_partitioned_topic | 100             | 6           |",
-        "| test   | test_ns   | my_partitioned_topic | 200             | 3           |",
-        "| test   | test_ns   | my_topic             |                 | 9           |",
+        "| test   | test-ns   | my_partitioned_topic | 100             | 6           |",
+        "| test   | test-ns   | my_partitioned_topic | 200             | 3           |",
+        "| test   | test-ns   | my_topic             |                 | 9           |",
         "+--------+-----------+----------------------+-----------------+-------------+",
     ];
     assert_batches_sorted_eq!(expected, &out);
@@ -232,7 +233,7 @@ async fn ingest_some_data(
     partitioned_topic: Arc<Topic>,
 ) -> Result<(), WriteBatchError> {
     let records = RecordBatch::try_new(
-        schema_without_partition().into(),
+        Arc::new(schema_without_partition().into()),
         vec![
             create_array!(Int32, vec![101, 102, 103]),
             create_array!(

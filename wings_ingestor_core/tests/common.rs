@@ -7,7 +7,8 @@ use wings_control_plane::{
     log_metadata::InMemoryLogMetadata,
     object_store::TemporaryFileSystemFactory,
     resources::{
-        DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, TenantName,
+        AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
+        NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
     },
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
@@ -43,9 +44,33 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
         .create_tenant(tenant_name.clone())
         .await
         .expect("create_tenant");
-    let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name.clone());
+
     let object_store = ObjectStoreName::new_unchecked("test-cred", tenant_name.clone());
-    let data_lake = DataLakeName::new_unchecked("test-data-lake", tenant_name);
+    let aws_config = AwsConfiguration {
+        bucket_name: "test".to_string(),
+        access_key_id: Default::default(),
+        secret_access_key: Default::default(),
+        prefix: None,
+        region: None,
+    };
+    cluster_meta
+        .create_object_store(
+            object_store.clone(),
+            ObjectStoreConfiguration::Aws(aws_config),
+        )
+        .await
+        .expect("create_object_store");
+
+    let data_lake = DataLakeName::new_unchecked("test-data-lake", tenant_name.clone());
+    cluster_meta
+        .create_data_lake(
+            data_lake.clone(),
+            DataLakeConfiguration::Parquet(Default::default()),
+        )
+        .await
+        .expect("create_data_lake");
+
+    let namespace_name = NamespaceName::new_unchecked("test-ns", tenant_name);
     let namespace = cluster_meta
         .create_namespace(
             namespace_name.clone(),

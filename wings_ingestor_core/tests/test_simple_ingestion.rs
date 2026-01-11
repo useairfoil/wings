@@ -2,31 +2,32 @@ use std::{sync::Arc, time::Duration};
 
 use common::{create_batch_ingestor, initialize_test_namespace};
 use datafusion::common::{
-    arrow::{
-        array::RecordBatch,
-        datatypes::{DataType, Field, Schema},
-    },
+    arrow::{array::RecordBatch, datatypes::DataType},
     create_array, record_batch,
 };
 use wings_control_plane::{
     cluster_metadata::ClusterMetadata,
     resources::{Namespace, Topic, TopicName, TopicOptions},
+    schema::{Field, Schema},
 };
 use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
 fn simple_ingestion_schema() -> Schema {
-    Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-    ])
+    Schema::new(
+        0,
+        vec![
+            Field::new("id", 0, DataType::Int32, false),
+            Field::new("name", 1, DataType::Utf8, false),
+            Field::new("age", 2, DataType::Int32, false),
+        ],
+    )
 }
 
 fn simple_ingestion_records() -> RecordBatch {
     RecordBatch::try_new(
-        simple_ingestion_schema().into(),
+        Arc::new(simple_ingestion_schema().into()),
         vec![
             create_array!(Int32, vec![1, 2, 3]),
             create_array!(Utf8, vec!["Alice", "Bob", "Charlie"]),
@@ -44,7 +45,7 @@ async fn initialize_test_topic(
     let topic_name = TopicName::new_unchecked("simple_ingestion", namespace.name.clone());
     let schema = simple_ingestion_schema();
     let topic = cluster_meta
-        .create_topic(topic_name, TopicOptions::new(schema.fields))
+        .create_topic(topic_name, TopicOptions::new(schema))
         .await
         .expect("create_topic");
 
