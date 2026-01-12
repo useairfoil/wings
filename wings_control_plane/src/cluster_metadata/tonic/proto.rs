@@ -967,7 +967,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let schema = Schema::new(0, vec![Field::new("test", 0, DataType::Utf8, false)]);
+        let schema = Schema::new(vec![Field::new("test", 0, DataType::Utf8, false)]);
         let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let domain_topic = Topic::new(topic_name.clone(), options);
 

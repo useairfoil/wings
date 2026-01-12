@@ -33,7 +33,6 @@ pub mod pb {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Schema {
-    pub schema_id: u64,
     pub fields: Vec<Field>,
     pub metadata: HashMap<String, String>,
 }
@@ -48,9 +47,8 @@ pub struct Field {
 }
 
 impl Schema {
-    pub fn new(schema_id: u64, fields: Vec<Field>) -> Self {
+    pub fn new(fields: Vec<Field>) -> Self {
         Self {
-            schema_id,
             fields,
             metadata: HashMap::new(),
         }

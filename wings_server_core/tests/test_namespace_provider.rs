@@ -37,7 +37,7 @@ async fn test_metadata_system_tables() -> Result<()> {
         .await
         .expect("sql");
     let out = out.collect().await.expect("collect");
-    let expected = vec![
+    let expected = [
         "+---------------+--------------+-----------------------+------------+",
         "| table_catalog | table_schema | table_name            | table_type |",
         "+---------------+--------------+-----------------------+------------+",
@@ -80,7 +80,7 @@ async fn test_topic_and_topic_schema() -> Result<()> {
     {
         let out = ctx.sql("SELECT * FROM system.topic").await.expect("sql");
         let out = out.collect().await.expect("collect");
-        let expected = vec![
+        let expected = [
             "+--------+-----------+----------------------+---------------+-------------+-------------------------+-------------------+",
             "| tenant | namespace | topic                | partition_key | description | compaction_freshness_ms | compaction_ttl_ms |",
             "+--------+-----------+----------------------+---------------+-------------+-------------------------+-------------------+",
@@ -96,7 +96,7 @@ async fn test_topic_and_topic_schema() -> Result<()> {
             .await
             .expect("sql");
         let out = out.collect().await.expect("collect");
-        let expected = vec![
+        let expected = [
             "+--------+-----------+----------------------+-----------+-----------+----------+------------------+",
             "| tenant | namespace | topic                | field     | data_type | nullable | is_partition_key |",
             "+--------+-----------+----------------------+-----------+-----------+----------+------------------+",
@@ -209,7 +209,7 @@ async fn test_topic_partition_value() -> Result<()> {
         .drop_columns(&["latest_timestamp"])
         .expect("drop timestamp columns");
     let out = out.collect().await.expect("collect");
-    let expected = vec![
+    let expected = [
         "+--------+-----------+----------------------+-----------------+-------------+",
         "| tenant | namespace | topic                | partition_value | next_offset |",
         "+--------+-----------+----------------------+-----------------+-------------+",

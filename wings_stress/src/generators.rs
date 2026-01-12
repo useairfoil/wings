@@ -58,7 +58,6 @@ pub struct OrderRecordBatchGenerator {
 }
 
 impl OrderRecordBatchGenerator {
-    pub const SCHEMA_ID: u64 = 0;
     const PARTITION_KEY: u64 = 1;
 
     fn new(partitions: u64) -> Self {
@@ -68,7 +67,7 @@ impl OrderRecordBatchGenerator {
             .filter(|field| field.id != Self::PARTITION_KEY)
             .collect::<Vec<_>>();
 
-        let schema = Schema::new(Self::SCHEMA_ID, fields_without_partition_key);
+        let schema = Schema::new(fields_without_partition_key);
 
         Self {
             customer_id: 1,
@@ -180,10 +179,7 @@ impl TopicType {
     pub fn topic_options(&self) -> TopicOptions {
         match self {
             TopicType::Order => TopicOptions {
-                schema: Schema::new(
-                    OrderRecordBatchGenerator::SCHEMA_ID,
-                    OrderRecordBatchGenerator::fields(),
-                ),
+                schema: Schema::new(OrderRecordBatchGenerator::fields()),
                 partition_key: OrderRecordBatchGenerator::partition_key(),
                 description: "TPC-H orders table".to_string().into(),
                 compaction: Default::default(),

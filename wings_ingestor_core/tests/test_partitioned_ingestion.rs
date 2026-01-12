@@ -15,24 +15,18 @@ use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 mod common;
 
 fn partitioned_ingestion_schema() -> Schema {
-    Schema::new(
-        0,
-        vec![
-            Field::new("region_code", 0, DataType::Int32, false),
-            Field::new("name", 1, DataType::Utf8, false),
-            Field::new("age", 2, DataType::Int32, false),
-        ],
-    )
+    Schema::new(vec![
+        Field::new("region_code", 0, DataType::Int32, false),
+        Field::new("name", 1, DataType::Utf8, false),
+        Field::new("age", 2, DataType::Int32, false),
+    ])
 }
 
 fn partitioned_ingestion_schema_without_region_code() -> Schema {
-    Schema::new(
-        0,
-        vec![
-            Field::new("name", 1, DataType::Utf8, false),
-            Field::new("age", 2, DataType::Int32, false),
-        ],
-    )
+    Schema::new(vec![
+        Field::new("name", 1, DataType::Utf8, false),
+        Field::new("age", 2, DataType::Int32, false),
+    ])
 }
 
 fn partitioned_ingestion_records() -> RecordBatch {
@@ -62,7 +56,7 @@ async fn initialize_test_topic(
         .await
         .expect("create_topic");
 
-    (namespace.into(), topic.into())
+    (namespace, topic.into())
 }
 
 #[tokio::test]

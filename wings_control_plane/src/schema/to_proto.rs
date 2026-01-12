@@ -38,7 +38,6 @@ impl TryFrom<&Schema> for crate::schema::pb::Schema {
 
         Ok(crate::schema::pb::Schema {
             fields,
-            schema_id: value.schema_id,
             metadata: value.metadata.clone(),
         })
     }

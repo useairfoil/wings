@@ -184,7 +184,7 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-        let schema = Schema::new(1, vec![Field::new("test", 1, DataType::Utf8, false)]);
+        let schema = Schema::new(vec![Field::new("test", 1, DataType::Utf8, false)]);
         let options = TopicOptions::new(schema);
         let topic = Topic::new(topic_name.clone(), options);
 
@@ -204,13 +204,10 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-        let schema = Schema::new(
-            0,
-            vec![
-                Field::new("id", 0, DataType::Int64, false),
-                Field::new("message", 1, DataType::Utf8, false),
-            ],
-        );
+        let schema = Schema::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ]);
         let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let topic = Topic::new(topic_name.clone(), options);
 

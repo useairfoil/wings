@@ -4,8 +4,7 @@ package wings.schema;
 
 message Schema {
   repeated Field fields = 1;
-  uint64 schema_id = 2;
-  map<string, string> metadata = 3;
+  map<string, string> metadata = 2;
 }
 
 message Field {

@@ -227,7 +227,7 @@ impl ClusterMetadataCommands {
                     None
                 };
 
-                let schema = Schema::new(0, parsed_fields);
+                let schema = Schema::new(parsed_fields);
                 let topic_options = TopicOptions::new_with_partition_key(schema, partition_key);
 
                 let topic = client

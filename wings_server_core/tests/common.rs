@@ -133,24 +133,18 @@ pub fn default_flush_interval() -> Duration {
 }
 
 pub fn schema_without_partition() -> Schema {
-    Schema::new(
-        0,
-        vec![
-            Field::new("id", 1, DataType::Int32, false),
-            Field::new("name", 2, DataType::Utf8, false),
-            Field::new("age", 3, DataType::Int32, false),
-        ],
-    )
+    Schema::new(vec![
+        Field::new("id", 1, DataType::Int32, false),
+        Field::new("name", 2, DataType::Utf8, false),
+        Field::new("age", 3, DataType::Int32, false),
+    ])
 }
 
 pub fn schema_with_partition() -> Schema {
-    Schema::new(
-        0,
-        vec![
-            Field::new("region_id", 0, DataType::Int64, false),
-            Field::new("id", 1, DataType::Int32, false),
-            Field::new("name", 2, DataType::Utf8, false),
-            Field::new("age", 3, DataType::Int32, false),
-        ],
-    )
+    Schema::new(vec![
+        Field::new("region_id", 0, DataType::Int64, false),
+        Field::new("id", 1, DataType::Int32, false),
+        Field::new("name", 2, DataType::Utf8, false),
+        Field::new("age", 3, DataType::Int32, false),
+    ])
 }

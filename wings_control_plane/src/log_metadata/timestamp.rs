@@ -183,7 +183,7 @@ mod tests {
         let ts = SystemTime::UNIX_EPOCH + Duration::from_secs(121);
         let req = CommitBatchRequest::new_with_timestamp(10, ts);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &&req),
+            validate_timestamp_in_request(&offset, &req),
             ValidateRequestResult::Accept {
                 start_offset: 123,
                 end_offset: 132,

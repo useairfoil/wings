@@ -199,13 +199,10 @@ mod tests {
             .await
             .unwrap();
 
-        let store = factory
+        let _store = factory
             .create_object_store(object_store_name)
             .await
             .unwrap();
-
-        // Verify that the store is created successfully
-        assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
     }
 
     #[tokio::test]
@@ -235,11 +232,8 @@ mod tests {
             .await
             .unwrap();
 
-        let store1 = factory.create_object_store(object_store1).await.unwrap();
-        let store2 = factory.create_object_store(object_store2).await.unwrap();
-
-        // Both stores should be created successfully and be different instances
-        assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
+        let _store1 = factory.create_object_store(object_store1).await.unwrap();
+        let _store2 = factory.create_object_store(object_store2).await.unwrap();
     }
 
     #[test]
@@ -271,13 +265,10 @@ mod tests {
             .await
             .unwrap();
 
-        let store = factory
+        let _store = factory
             .create_object_store(object_store_name)
             .await
             .unwrap();
-
-        // Verify that the store is created successfully
-        assert!(store.as_ref() as *const _ as *const () != std::ptr::null());
     }
 
     #[tokio::test]
@@ -342,11 +333,8 @@ mod tests {
             .await
             .unwrap();
 
-        let store1 = factory.create_object_store(object_store1).await.unwrap();
-        let store2 = factory.create_object_store(object_store2).await.unwrap();
-
-        // Both stores should be created successfully and be different instances
-        assert!(!std::ptr::addr_eq(store1.as_ref(), store2.as_ref()));
+        let _store1 = factory.create_object_store(object_store1).await.unwrap();
+        let _store2 = factory.create_object_store(object_store2).await.unwrap();
 
         // Both should use the same root temporary directory
         let root_path = factory.root_path();

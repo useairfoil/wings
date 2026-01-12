@@ -15,14 +15,11 @@ use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 mod common;
 
 fn simple_ingestion_schema() -> Schema {
-    Schema::new(
-        0,
-        vec![
-            Field::new("id", 0, DataType::Int32, false),
-            Field::new("name", 1, DataType::Utf8, false),
-            Field::new("age", 2, DataType::Int32, false),
-        ],
-    )
+    Schema::new(vec![
+        Field::new("id", 0, DataType::Int32, false),
+        Field::new("name", 1, DataType::Utf8, false),
+        Field::new("age", 2, DataType::Int32, false),
+    ])
 }
 
 fn simple_ingestion_records() -> RecordBatch {
@@ -49,7 +46,7 @@ async fn initialize_test_topic(
         .await
         .expect("create_topic");
 
-    (namespace.into(), topic.into())
+    (namespace, topic.into())
 }
 
 #[tokio::test]
