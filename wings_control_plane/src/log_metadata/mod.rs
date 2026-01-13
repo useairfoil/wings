@@ -208,6 +208,15 @@ pub struct TaskMetadata {
     pub updated_at: SystemTime,
 }
 
+/// The operation type for a compaction task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompactionOperation {
+    /// Append new data to existing segments.
+    Append,
+    /// Replace existing segments with new data.
+    Replace,
+}
+
 /// A compaction task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionTask {
@@ -219,6 +228,34 @@ pub struct CompactionTask {
     pub start_offset: u64,
     /// The end offset of the compaction range.
     pub end_offset: u64,
+    /// The operation type for this compaction.
+    pub operation: CompactionOperation,
+}
+
+/// A task to create a table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTableTask {
+    /// The topic name for the table to create.
+    pub topic_name: TopicName,
+}
+
+/// Result for a compaction task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionResult {
+    // Empty for now, will add fields later
+}
+
+/// Result for a create table task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTableResult {
+    // Empty for now, will add fields later
+}
+
+/// Result for different task types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskResult {
+    Compaction(CompactionResult),
+    CreateTable(CreateTableResult),
 }
 
 /// A task that can be assigned to a worker.
@@ -227,6 +264,10 @@ pub enum Task {
     Compaction {
         metadata: TaskMetadata,
         task: CompactionTask,
+    },
+    CreateTable {
+        metadata: TaskMetadata,
+        task: CreateTableTask,
     },
 }
 
@@ -241,15 +282,20 @@ pub struct RequestTaskResponse {
     pub task: Option<Task>,
 }
 
+/// Result of task completion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskCompletionResult {
+    Success(TaskResult),
+    Failure(String),
+}
+
 /// Request to complete a task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteTaskRequest {
     /// The identifier of the task to complete.
     pub task_id: String,
-    /// The new status of the task.
-    pub status: TaskStatus,
-    /// Optional error message if the task failed.
-    pub error_message: Option<String>,
+    /// The result of task completion.
+    pub result: TaskCompletionResult,
 }
 
 /// Response indicating whether the task completion was successful.
@@ -372,16 +418,23 @@ impl Task {
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
+            Task::CreateTable { metadata, .. } => &metadata.task_id,
         }
     }
 }
 
 impl CompleteTaskRequest {
-    pub fn new_completed(task_id: String) -> Self {
+    pub fn new_completed(task_id: String, result: TaskResult) -> Self {
         Self {
             task_id,
-            status: TaskStatus::Completed,
-            error_message: None,
+            result: TaskCompletionResult::Success(result),
+        }
+    }
+
+    pub fn new_failed(task_id: String, error_message: String) -> Self {
+        Self {
+            task_id,
+            result: TaskCompletionResult::Failure(error_message),
         }
     }
 }

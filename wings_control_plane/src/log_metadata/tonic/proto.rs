@@ -7,10 +7,12 @@ use snafu::{ResultExt, ensure};
 use crate::{
     log_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse,
-        CommittedBatch, CompactionTask, CompleteTaskRequest, CompleteTaskResponse, FolioLocation,
+        CommittedBatch, CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest,
+        CompleteTaskResponse, CreateTableResult, CreateTableTask, FolioLocation,
         GetLogLocationOptions, GetLogLocationRequest, ListPartitionsRequest,
         ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset, PartitionMetadata,
-        RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskMetadata, TaskStatus,
+        RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskCompletionResult,
+        TaskMetadata, TaskResult, TaskStatus,
         error::{
             InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
             InvalidTimestampSnafu,
@@ -655,6 +657,10 @@ impl From<CompactionTask> for pb::CompactionTask {
             partition: task.partition_value.as_ref().map(Into::into),
             start_offset: task.start_offset,
             end_offset: task.end_offset,
+            operation: match task.operation {
+                CompactionOperation::Append => pb::CompactionOperation::Append.into(),
+                CompactionOperation::Replace => pb::CompactionOperation::Replace.into(),
+            },
         }
     }
 }
@@ -666,14 +672,44 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
         let topic_name = TopicName::parse(&task.topic)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-        let partition_value = task.partition.map(TryFrom::try_from).transpose()?;
+        let partition_value = task.partition.clone().map(TryFrom::try_from).transpose()?;
+
+        let operation = match task.operation() {
+            pb::CompactionOperation::Unspecified => {
+                return Err(LogMetadataError::InvalidArgument {
+                    message: "CompactionOperation must be specified".to_string(),
+                });
+            }
+            pb::CompactionOperation::Append => CompactionOperation::Append,
+            pb::CompactionOperation::Replace => CompactionOperation::Replace,
+        };
 
         Ok(CompactionTask {
             topic_name,
             partition_value,
             start_offset: task.start_offset,
             end_offset: task.end_offset,
+            operation,
         })
+    }
+}
+
+impl From<CreateTableTask> for pb::CreateTableTask {
+    fn from(task: CreateTableTask) -> Self {
+        pb::CreateTableTask {
+            topic: task.topic_name.to_string(),
+        }
+    }
+}
+
+impl TryFrom<pb::CreateTableTask> for CreateTableTask {
+    type Error = LogMetadataError;
+
+    fn try_from(task: pb::CreateTableTask) -> Result<Self, Self::Error> {
+        let topic_name = TopicName::parse(&task.topic)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+        Ok(CreateTableTask { topic_name })
     }
 }
 
@@ -720,6 +756,10 @@ impl TryFrom<pb::Task> for Task {
                 let task = compaction.try_into()?;
                 Ok(Task::Compaction { metadata, task })
             }
+            pb::task::Task::CreateTableTask(create_table) => {
+                let task = create_table.try_into()?;
+                Ok(Task::CreateTable { metadata, task })
+            }
         }
     }
 }
@@ -727,17 +767,23 @@ impl TryFrom<pb::Task> for Task {
 impl From<Task> for pb::Task {
     fn from(task: Task) -> Self {
         let meta = match task {
-            Task::Compaction { metadata, .. } => metadata,
+            Task::Compaction { ref metadata, .. } => metadata,
+            Task::CreateTable { ref metadata, .. } => metadata,
         };
 
         let status: pb::TaskStatus = meta.status.into();
 
         let task = match task {
-            Task::Compaction { task, .. } => pb::task::Task::CompactionTask(task.into()),
+            Task::Compaction { ref task, .. } => {
+                pb::task::Task::CompactionTask(task.clone().into())
+            }
+            Task::CreateTable { ref task, .. } => {
+                pb::task::Task::CreateTableTask(task.clone().into())
+            }
         };
 
         pb::Task {
-            task_id: meta.task_id,
+            task_id: meta.task_id.clone(),
             status: status as i32,
             created_at: Some(meta.created_at.into()),
             updated_at: Some(meta.updated_at.into()),
@@ -777,26 +823,104 @@ impl From<RequestTaskResponse> for pb::RequestTaskResponse {
     }
 }
 
+impl From<CompactionResult> for pb::CompactionResult {
+    fn from(_result: CompactionResult) -> Self {
+        pb::CompactionResult {}
+    }
+}
+
+impl TryFrom<pb::CompactionResult> for CompactionResult {
+    type Error = LogMetadataError;
+
+    fn try_from(_result: pb::CompactionResult) -> Result<Self, Self::Error> {
+        Ok(CompactionResult {})
+    }
+}
+
+impl From<CreateTableResult> for pb::CreateTableResult {
+    fn from(_result: CreateTableResult) -> Self {
+        pb::CreateTableResult {}
+    }
+}
+
+impl TryFrom<pb::CreateTableResult> for CreateTableResult {
+    type Error = LogMetadataError;
+
+    fn try_from(_result: pb::CreateTableResult) -> Result<Self, Self::Error> {
+        Ok(CreateTableResult {})
+    }
+}
+
+impl From<TaskResult> for pb::TaskResult {
+    fn from(result: TaskResult) -> Self {
+        match result {
+            TaskResult::Compaction(compaction) => pb::TaskResult {
+                result: Some(pb::task_result::Result::Compaction(compaction.into())),
+            },
+            TaskResult::CreateTable(create_table) => pb::TaskResult {
+                result: Some(pb::task_result::Result::CreateTable(create_table.into())),
+            },
+        }
+    }
+}
+
+impl TryFrom<pb::TaskResult> for TaskResult {
+    type Error = LogMetadataError;
+
+    fn try_from(result: pb::TaskResult) -> Result<Self, Self::Error> {
+        match result.result {
+            Some(pb::task_result::Result::Compaction(compaction)) => {
+                Ok(TaskResult::Compaction(compaction.try_into()?))
+            }
+            Some(pb::task_result::Result::CreateTable(create_table)) => {
+                Ok(TaskResult::CreateTable(create_table.try_into()?))
+            }
+            None => Err(LogMetadataError::Internal {
+                message: "missing result in TaskResult proto".to_string(),
+            }),
+        }
+    }
+}
+
 impl TryFrom<pb::CompleteTaskRequest> for CompleteTaskRequest {
     type Error = LogMetadataError;
 
     fn try_from(request: pb::CompleteTaskRequest) -> Result<Self, Self::Error> {
-        let status = request.status().try_into()?;
+        let result = match request.result {
+            Some(pb::complete_task_request::Result::Success(task_result)) => {
+                TaskCompletionResult::Success(task_result.try_into()?)
+            }
+            Some(pb::complete_task_request::Result::Failure(error_message)) => {
+                TaskCompletionResult::Failure(error_message)
+            }
+            None => {
+                return Err(LogMetadataError::Internal {
+                    message: "missing result in CompleteTaskRequest proto".to_string(),
+                });
+            }
+        };
+
         Ok(CompleteTaskRequest {
             task_id: request.task_id,
-            status,
-            error_message: request.error_message,
+            result,
         })
     }
 }
 
 impl From<CompleteTaskRequest> for pb::CompleteTaskRequest {
     fn from(request: CompleteTaskRequest) -> Self {
-        let status: pb::TaskStatus = request.status.into();
+        let result = match request.result {
+            TaskCompletionResult::Success(task_result) => {
+                pb::complete_task_request::Result::Success(task_result.into())
+            }
+            TaskCompletionResult::Failure(error_message) => {
+                pb::complete_task_request::Result::Failure(error_message)
+            }
+        };
+
         pb::CompleteTaskRequest {
             task_id: request.task_id,
-            status: status as i32,
-            error_message: request.error_message,
+            result: Some(result),
         }
     }
 }

@@ -11,8 +11,8 @@ use wings_control_plane::{
     },
     data_lake::DataLakeFactory,
     log_metadata::{
-        CompactionTask, CompleteTaskRequest, LogMetadata, RequestTaskRequest, RequestTaskResponse,
-        Task, TaskMetadata,
+        CompactionResult, CompactionTask, CompleteTaskRequest, CreateTableResult, CreateTableTask,
+        LogMetadata, RequestTaskRequest, RequestTaskResponse, Task, TaskMetadata, TaskResult,
     },
     object_store::ObjectStoreFactory,
 };
@@ -89,6 +89,9 @@ impl Worker {
         match task {
             Task::Compaction { metadata, task } => {
                 self.execute_compaction_task(metadata, task, ct).await
+            }
+            Task::CreateTable { metadata, task } => {
+                self.execute_create_table_task(metadata, task, ct).await
             }
         }
     }
@@ -213,8 +216,13 @@ impl Worker {
         // so we need to be careful updating the catalog concurrently.
 
         // TODO: we should include the compacted range and file reference in the complete task request.
+        let result = TaskResult::Compaction(CompactionResult {});
+
         self.log_meta
-            .complete_task(CompleteTaskRequest::new_completed(metadata.task_id.clone()))
+            .complete_task(CompleteTaskRequest::new_completed(
+                metadata.task_id.clone(),
+                result,
+            ))
             .await
             .context(LogMetadataSnafu {
                 operation: "complete_task",
@@ -224,6 +232,42 @@ impl Worker {
             task_id = metadata.task_id,
             // file_ref = %file_ref,
             "Compaction task completed"
+        );
+
+        Ok(())
+    }
+
+    async fn execute_create_table_task(
+        &self,
+        metadata: &TaskMetadata,
+        task: &CreateTableTask,
+        _ct: CancellationToken,
+    ) -> Result<()> {
+        info!(
+            topic_name = %task.topic_name,
+            task_id = %metadata.task_id,
+            "Executing create table task"
+        );
+
+        // TODO: Implement actual table creation logic
+        // For now, we'll just log and complete the task
+
+        let result = TaskResult::CreateTable(CreateTableResult {});
+
+        self.log_meta
+            .complete_task(CompleteTaskRequest::new_completed(
+                metadata.task_id.clone(),
+                result,
+            ))
+            .await
+            .context(LogMetadataSnafu {
+                operation: "complete_task",
+            })?;
+
+        info!(
+            task_id = %metadata.task_id,
+            topic_name = %task.topic_name,
+            "Create table task completed"
         );
 
         Ok(())

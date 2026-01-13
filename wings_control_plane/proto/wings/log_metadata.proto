@@ -159,11 +159,33 @@ enum TaskStatus {
   TASK_STATUS_FAILED = 4;
 }
 
+enum CompactionOperation {
+  COMPACTION_OPERATION_UNSPECIFIED = 0;
+  COMPACTION_OPERATION_APPEND = 1;
+  COMPACTION_OPERATION_REPLACE = 2;
+}
+
 message CompactionTask {
   string topic = 1;
   optional PartitionValue partition = 2;
   uint64 start_offset = 3;
   uint64 end_offset = 4;
+  CompactionOperation operation = 5;
+}
+
+message CreateTableTask {
+  string topic = 1;
+}
+
+message CompactionResult {}
+
+message CreateTableResult {}
+
+message TaskResult {
+  oneof result {
+    CompactionResult compaction = 1;
+    CreateTableResult create_table = 2;
+  }
 }
 
 message Task {
@@ -174,6 +196,7 @@ message Task {
 
   oneof task {
     CompactionTask compaction_task = 5;
+    CreateTableTask create_table_task = 6;
   }
 }
 
@@ -185,8 +208,10 @@ message RequestTaskResponse {
 
 message CompleteTaskRequest {
   string task_id = 1;
-  TaskStatus status = 2;
-  optional string error_message = 3;
+  oneof result {
+    TaskResult success = 2;
+    string failure = 3; // error_message
+  }
 }
 
 message CompleteTaskResponse {

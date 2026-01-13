@@ -32,11 +32,12 @@ use crate::{
 const COMPACTION_THRESHOLD: u64 = 64 * 1024 * 1024; // 64 MiB for testing
 
 use super::{
-    CommitPageRequest, CommitPageResponse, CommittedBatch, CompactionTask, CompleteTaskRequest,
-    CompleteTaskResponse, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
-    ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata, LogMetadataError,
-    LogOffset, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result, Task,
-    TaskMetadata, TaskStatus, error::InternalSnafu, timestamp::compare_batch_request_timestamps,
+    CommitPageRequest, CommitPageResponse, CommittedBatch, CompactionOperation, CompactionTask,
+    CompleteTaskRequest, CompleteTaskResponse, FolioLocation, GetLogLocationOptions,
+    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
+    LogMetadataError, LogOffset, PartitionMetadata, RequestTaskRequest, RequestTaskResponse,
+    Result, Task, TaskMetadata, TaskStatus, error::InternalSnafu,
+    timestamp::compare_batch_request_timestamps,
 };
 
 #[derive(Clone)]
@@ -621,6 +622,7 @@ impl PartitionLogState {
             partition_value: self.key.partition_value.clone(),
             start_offset: start_offset.offset,
             end_offset: end_offset.offset,
+            operation: CompactionOperation::Append,
         };
 
         TaskDefinition::Compaction(metadata, task)
