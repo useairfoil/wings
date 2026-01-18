@@ -217,6 +217,13 @@ pub enum CompactionOperation {
     Replace,
 }
 
+/// A task to create a table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTableTask {
+    /// The topic name for the table to create.
+    pub topic_name: TopicName,
+}
+
 /// A compaction task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionTask {
@@ -234,9 +241,15 @@ pub struct CompactionTask {
 
 /// A task to create a table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateTableTask {
+pub struct CommitTask {
     /// The topic name for the table to create.
     pub topic_name: TopicName,
+}
+
+/// Result for a create table task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTableResult {
+    // Empty for now, will add fields later
 }
 
 /// Result for a compaction task.
@@ -247,7 +260,7 @@ pub struct CompactionResult {
 
 /// Result for a create table task.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateTableResult {
+pub struct CommitResult {
     // Empty for now, will add fields later
 }
 
@@ -256,6 +269,7 @@ pub struct CreateTableResult {
 pub enum TaskResult {
     Compaction(CompactionResult),
     CreateTable(CreateTableResult),
+    Commit(CommitResult),
 }
 
 /// A task that can be assigned to a worker.
@@ -268,6 +282,10 @@ pub enum Task {
     CreateTable {
         metadata: TaskMetadata,
         task: CreateTableTask,
+    },
+    Commit {
+        metadata: TaskMetadata,
+        task: CommitTask,
     },
 }
 
@@ -419,6 +437,7 @@ impl Task {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
             Task::CreateTable { metadata, .. } => &metadata.task_id,
+            Task::Commit { metadata, .. } => &metadata.task_id,
         }
     }
 }

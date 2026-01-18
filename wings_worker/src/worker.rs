@@ -11,8 +11,9 @@ use wings_control_plane::{
     },
     data_lake::DataLakeFactory,
     log_metadata::{
-        CompactionResult, CompactionTask, CompleteTaskRequest, CreateTableResult, CreateTableTask,
-        LogMetadata, RequestTaskRequest, RequestTaskResponse, Task, TaskMetadata, TaskResult,
+        CommitResult, CommitTask, CompactionResult, CompactionTask, CompleteTaskRequest,
+        CreateTableResult, CreateTableTask, LogMetadata, RequestTaskRequest, RequestTaskResponse,
+        Task, TaskMetadata, TaskResult,
     },
     object_store::ObjectStoreFactory,
 };
@@ -93,6 +94,7 @@ impl Worker {
             Task::CreateTable { metadata, task } => {
                 self.execute_create_table_task(metadata, task, ct).await
             }
+            Task::Commit { metadata, task } => self.execute_commit_task(metadata, task, ct).await,
         }
     }
 
@@ -268,6 +270,42 @@ impl Worker {
             task_id = %metadata.task_id,
             topic_name = %task.topic_name,
             "Create table task completed"
+        );
+
+        Ok(())
+    }
+
+    async fn execute_commit_task(
+        &self,
+        metadata: &TaskMetadata,
+        task: &CommitTask,
+        _ct: CancellationToken,
+    ) -> Result<()> {
+        info!(
+            topic_name = %task.topic_name,
+            task_id = %metadata.task_id,
+            "Executing commit task"
+        );
+
+        // TODO: Implement actual commit logic here
+        // For now, we'll just mark it as completed
+
+        let result = TaskResult::Commit(CommitResult {});
+
+        self.log_meta
+            .complete_task(CompleteTaskRequest::new_completed(
+                metadata.task_id.clone(),
+                result,
+            ))
+            .await
+            .context(LogMetadataSnafu {
+                operation: "complete_task",
+            })?;
+
+        info!(
+            task_id = %metadata.task_id,
+            topic_name = %task.topic_name,
+            "Commit task completed"
         );
 
         Ok(())

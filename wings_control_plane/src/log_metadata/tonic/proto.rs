@@ -6,10 +6,10 @@ use snafu::{ResultExt, ensure};
 
 use crate::{
     log_metadata::{
-        AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse,
-        CommittedBatch, CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest,
-        CompleteTaskResponse, CreateTableResult, CreateTableTask, FolioLocation,
-        GetLogLocationOptions, GetLogLocationRequest, ListPartitionsRequest,
+        AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
+        CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
+        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask,
+        FolioLocation, GetLogLocationOptions, GetLogLocationRequest, ListPartitionsRequest,
         ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset, PartitionMetadata,
         RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskCompletionResult,
         TaskMetadata, TaskResult, TaskStatus,
@@ -713,6 +713,25 @@ impl TryFrom<pb::CreateTableTask> for CreateTableTask {
     }
 }
 
+impl From<CommitTask> for pb::CommitTask {
+    fn from(task: CommitTask) -> Self {
+        pb::CommitTask {
+            topic: task.topic_name.to_string(),
+        }
+    }
+}
+
+impl TryFrom<pb::CommitTask> for CommitTask {
+    type Error = LogMetadataError;
+
+    fn try_from(task: pb::CommitTask) -> Result<Self, Self::Error> {
+        let topic_name = TopicName::parse(&task.topic)
+            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+        Ok(CommitTask { topic_name })
+    }
+}
+
 impl TryFrom<pb::Task> for Task {
     type Error = LogMetadataError;
 
@@ -752,13 +771,17 @@ impl TryFrom<pb::Task> for Task {
         })?;
 
         match inner_task {
-            pb::task::Task::CompactionTask(compaction) => {
+            pb::task::Task::Compaction(compaction) => {
                 let task = compaction.try_into()?;
                 Ok(Task::Compaction { metadata, task })
             }
-            pb::task::Task::CreateTableTask(create_table) => {
+            pb::task::Task::CreateTable(create_table) => {
                 let task = create_table.try_into()?;
                 Ok(Task::CreateTable { metadata, task })
+            }
+            pb::task::Task::Commit(commit) => {
+                let task = commit.try_into()?;
+                Ok(Task::Commit { metadata, task })
             }
         }
     }
@@ -769,17 +792,15 @@ impl From<Task> for pb::Task {
         let meta = match task {
             Task::Compaction { ref metadata, .. } => metadata,
             Task::CreateTable { ref metadata, .. } => metadata,
+            Task::Commit { ref metadata, .. } => metadata,
         };
 
         let status: pb::TaskStatus = meta.status.into();
 
         let task = match task {
-            Task::Compaction { ref task, .. } => {
-                pb::task::Task::CompactionTask(task.clone().into())
-            }
-            Task::CreateTable { ref task, .. } => {
-                pb::task::Task::CreateTableTask(task.clone().into())
-            }
+            Task::Compaction { ref task, .. } => pb::task::Task::Compaction(task.clone().into()),
+            Task::CreateTable { ref task, .. } => pb::task::Task::CreateTable(task.clone().into()),
+            Task::Commit { ref task, .. } => pb::task::Task::Commit(task.clone().into()),
         };
 
         pb::Task {
@@ -851,6 +872,20 @@ impl TryFrom<pb::CreateTableResult> for CreateTableResult {
     }
 }
 
+impl From<CommitResult> for pb::CommitResult {
+    fn from(_result: CommitResult) -> Self {
+        pb::CommitResult {}
+    }
+}
+
+impl TryFrom<pb::CommitResult> for CommitResult {
+    type Error = LogMetadataError;
+
+    fn try_from(_result: pb::CommitResult) -> Result<Self, Self::Error> {
+        Ok(CommitResult {})
+    }
+}
+
 impl From<TaskResult> for pb::TaskResult {
     fn from(result: TaskResult) -> Self {
         match result {
@@ -859,6 +894,9 @@ impl From<TaskResult> for pb::TaskResult {
             },
             TaskResult::CreateTable(create_table) => pb::TaskResult {
                 result: Some(pb::task_result::Result::CreateTable(create_table.into())),
+            },
+            TaskResult::Commit(commit) => pb::TaskResult {
+                result: Some(pb::task_result::Result::Commit(commit.into())),
             },
         }
     }
@@ -874,6 +912,9 @@ impl TryFrom<pb::TaskResult> for TaskResult {
             }
             Some(pb::task_result::Result::CreateTable(create_table)) => {
                 Ok(TaskResult::CreateTable(create_table.try_into()?))
+            }
+            Some(pb::task_result::Result::Commit(commit)) => {
+                Ok(TaskResult::Commit(commit.try_into()?))
             }
             None => Err(LogMetadataError::Internal {
                 message: "missing result in TaskResult proto".to_string(),

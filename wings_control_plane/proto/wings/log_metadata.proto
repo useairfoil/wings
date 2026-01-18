@@ -165,6 +165,10 @@ enum CompactionOperation {
   COMPACTION_OPERATION_REPLACE = 2;
 }
 
+message CreateTableTask {
+  string topic = 1;
+}
+
 message CompactionTask {
   string topic = 1;
   optional PartitionValue partition = 2;
@@ -173,18 +177,21 @@ message CompactionTask {
   CompactionOperation operation = 5;
 }
 
-message CreateTableTask {
+message CommitTask {
   string topic = 1;
 }
 
+message CreateTableResult {}
+
 message CompactionResult {}
 
-message CreateTableResult {}
+message CommitResult {}
 
 message TaskResult {
   oneof result {
-    CompactionResult compaction = 1;
-    CreateTableResult create_table = 2;
+    CreateTableResult create_table = 1;
+    CompactionResult compaction = 2;
+    CommitResult commit = 3;
   }
 }
 
@@ -195,8 +202,9 @@ message Task {
   google.protobuf.Timestamp updated_at = 4;
 
   oneof task {
-    CompactionTask compaction_task = 5;
-    CreateTableTask create_table_task = 6;
+    CreateTableTask create_table = 5;
+    CompactionTask compaction = 6;
+    CommitTask commit = 7;
   }
 }
 
