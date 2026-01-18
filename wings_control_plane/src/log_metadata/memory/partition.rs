@@ -74,10 +74,10 @@ impl PartitionLogState {
     ) -> Option<(CandidateTask, Duration)> {
         // Check if enough time has passed since the last candidate task
         let now = Instant::now();
-        if let Some(last_time) = self.last_candidate_task_time {
-            if now.duration_since(last_time) < config.freshness {
-                return None;
-            }
+        if let Some(last_time) = self.last_candidate_task_time
+            && now.duration_since(last_time) < config.freshness
+        {
+            return None;
         }
 
         self.last_candidate_task_time = Some(now);

@@ -287,16 +287,16 @@ impl LogMetadata for InMemoryLogMetadata {
                         })?;
 
                 if let Some(task) = topic_state.candidate_task(candidate) {
-                    // Store the mapping from task ID to topic name
+                    // Store the mapping from task ID to topic name, needed to dispatch result later
+                    debug!(task_id = %task.task_id(), topic = %topic_name, "Assigned task to worker");
                     self.task_to_topic
                         .insert(task.task_id().to_string(), topic_name.clone());
-                    debug!(task_id = %task.task_id(), topic = %topic_name, "Assigned task to worker");
+
                     return Ok(RequestTaskResponse { task: Some(task) });
                 }
-                // If candidate_task returns None, we continue to try another candidate
+
                 trace!("Candidate could not be converted to task, trying another candidate");
             } else {
-                // No candidate available, wait 100ms before polling again
                 trace!("No candidate available, waiting 100ms");
                 tokio::time::sleep(poll_interval).await;
             }
@@ -323,12 +323,17 @@ impl LogMetadata for InMemoryLogMetadata {
                     message: format!("Topic {} not found", topic_name),
                 })?;
 
-        if topic_state.complete_task(task_id, request.result.clone())? {
-            debug!(task_id = %task_id, topic = %topic_name, "Task completed successfully");
-            Ok(CompleteTaskResponse { success: true })
-        } else {
-            debug!(task_id = %task_id, topic = %topic_name, "Task completion failed or task not found");
-            Ok(CompleteTaskResponse { success: false })
+        let (success, pending_candidates) =
+            topic_state.complete_task(task_id, request.result.clone())?;
+
+        // Queue any pending partition candidates for processing
+        if !pending_candidates.is_empty() {
+            let mut candidate_queue = self.candidate_queue.lock().await;
+            for candidate in pending_candidates {
+                candidate_queue.queue_immediate(candidate);
+            }
         }
+
+        Ok(CompleteTaskResponse { success })
     }
 }
