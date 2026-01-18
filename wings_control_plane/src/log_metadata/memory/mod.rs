@@ -3,6 +3,8 @@
 //! This implementation stores all data in memory and is suitable for testing
 //! and development.
 
+pub mod candidate;
+
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
