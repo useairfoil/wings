@@ -254,7 +254,9 @@ impl Worker {
         // TODO: Implement actual table creation logic
         // For now, we'll just log and complete the task
 
-        let result = TaskResult::CreateTable(CreateTableResult {});
+        let result = TaskResult::CreateTable(CreateTableResult {
+            table_id: task.topic_name.id.clone(),
+        });
 
         self.log_meta
             .complete_task(CompleteTaskRequest::new_completed(

@@ -24,7 +24,7 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-ulid = "1.2.1"
+ulid.workspace = true
 wings-control-plane = { path = "../wings_control_plane" }
 wings-observability = { path = "../wings_observability" }
 

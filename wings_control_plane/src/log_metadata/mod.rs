@@ -249,7 +249,8 @@ pub struct CommitTask {
 /// Result for a create table task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTableResult {
-    // Empty for now, will add fields later
+    /// The ID of the created table
+    pub table_id: String,
 }
 
 /// Result for a compaction task.

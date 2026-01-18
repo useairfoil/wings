@@ -20,6 +20,16 @@ pub enum CandidateTask {
     Partition(TopicName, Option<PartitionValue>),
 }
 
+impl CandidateTask {
+    /// Get the topic name associated with this candidate task.
+    pub fn topic_name(&self) -> &TopicName {
+        match self {
+            CandidateTask::Topic(topic_name) => topic_name,
+            CandidateTask::Partition(topic_name, _) => topic_name,
+        }
+    }
+}
+
 /// A queue for managing candidate tasks with timing control.
 ///
 /// This queue allows tasks to be queued for immediate availability or delayed

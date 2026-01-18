@@ -6788,6 +6788,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tracing",
+ "ulid",
  "wings-observability",
 ]
 

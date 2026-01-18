@@ -22,6 +22,7 @@ use tracing::{debug, trace};
 use crate::{
     cluster_metadata::{ClusterMetadata, cache::TopicCache},
     log_metadata::memory::{
+        candidate::{CandidateTask, CandidateTaskQueue},
         partition::{GetLogLocationResult, PartitionKey},
         topic::TopicLogState,
     },
@@ -39,6 +40,10 @@ pub struct InMemoryLogMetadata {
     /// Maps topic names to their log state
     topics: Arc<DashMap<TopicName, TopicLogState>>,
     topic_cache: TopicCache,
+    /// Candidate task queue for managing task polling
+    candidate_queue: Arc<tokio::sync::Mutex<CandidateTaskQueue>>,
+    /// Maps task IDs to topic names for task completion
+    task_to_topic: Arc<DashMap<String, TopicName>>,
 }
 
 impl InMemoryLogMetadata {
@@ -47,6 +52,8 @@ impl InMemoryLogMetadata {
         Self {
             topics: Default::default(),
             topic_cache,
+            candidate_queue: Arc::new(tokio::sync::Mutex::new(CandidateTaskQueue::new())),
+            task_to_topic: Arc::new(DashMap::new()),
         }
     }
 }
@@ -73,10 +80,17 @@ impl LogMetadata for InMemoryLogMetadata {
             let partition_key =
                 PartitionKey::new(page.topic_name.clone(), page.partition_value.clone());
 
-            let mut topic_state = self
-                .topics
-                .entry(page.topic_name.clone())
-                .or_insert_with(|| TopicLogState::default());
+            let topic_name = page.topic_name.clone();
+            let topic_state_entry = self.topics.entry(topic_name.clone());
+            let is_new_topic = matches!(topic_state_entry, dashmap::Entry::Vacant(_));
+            let mut topic_state = topic_state_entry.or_default();
+
+            // If this is the first time we see this topic, queue a table creation task
+            if is_new_topic && topic_state.needs_table_creation() {
+                debug!(topic = %topic_name, "New topic detected, queuing table creation task");
+                let mut candidate_queue = self.candidate_queue.lock().await;
+                candidate_queue.queue_immediate(CandidateTask::Topic(topic_name.clone()));
+            }
 
             let committed_page =
                 topic_state.commit_page(partition_key, page, file_ref.clone(), now_ts)?;
@@ -210,63 +224,75 @@ impl LogMetadata for InMemoryLogMetadata {
     async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
         debug!("Received task request");
 
-        /*
-        let timeout = tokio::time::sleep(Duration::from_secs(1));
-        tokio::pin!(timeout);
+        let start_time = std::time::Instant::now();
+        let max_duration = Duration::from_secs(1);
+        let poll_interval = Duration::from_millis(100);
 
         loop {
-            let waiter = {
-                let mut task_manager = self.task_manager.lock().map_err(|_| {
-                    InternalSnafu {
-                        message: "failed to acquire poisoned lock".to_string(),
-                    }
-                    .build()
-                })?;
+            // Check if we've exceeded the maximum duration
+            if start_time.elapsed() >= max_duration {
+                debug!("Task request timeout after 1 second");
+                return Ok(RequestTaskResponse { task: None });
+            }
 
-                if let Some(task) = task_manager.next_task() {
-                    info!(task_id = task.task_id(), "Assigned task to worker");
-                    return Ok(RequestTaskResponse { task: task.into() });
-                }
-
-                task_manager.notify.clone().notified_owned()
+            // Poll the candidate queue for a new candidate
+            let candidate = {
+                let mut candidate_queue = self.candidate_queue.lock().await;
+                candidate_queue.next_candidate()
             };
 
-            debug!("No task available. Waiting.");
+            if let Some(candidate) = candidate {
+                let topic_name = candidate.topic_name().clone();
+                let mut topic_state =
+                    self.topics
+                        .get_mut(&topic_name)
+                        .ok_or_else(|| LogMetadataError::Internal {
+                            message: format!("Candidate task for non existing topic {topic_name}"),
+                        })?;
 
-            tokio::select! {
-                _ = waiter => {
-                    continue;
+                if let Some(task) = topic_state.candidate_task(candidate) {
+                    // Store the mapping from task ID to topic name
+                    self.task_to_topic
+                        .insert(task.task_id().to_string(), topic_name.clone());
+                    debug!(task_id = %task.task_id(), topic = %topic_name, "Assigned task to worker");
+                    return Ok(RequestTaskResponse { task: Some(task) });
                 }
-                _ = &mut timeout => {
-                    break;
-                }
+                // If candidate_task returns None, we continue to try another candidate
+                debug!("Candidate could not be converted to task, trying another candidate");
+            } else {
+                // No candidate available, wait 100ms before polling again
+                debug!("No candidate available, waiting 100ms");
+                tokio::time::sleep(poll_interval).await;
             }
         }
-
-        */
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        Ok(RequestTaskResponse { task: None })
     }
 
     async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
-        /*
-        let mut task_manager = self.task_manager.lock().map_err(|_| {
-            InternalSnafu {
-                message: "failed to acquire poisoned lock".to_string(),
-            }
-            .build()
-        })?;
+        let task_id = &request.task_id;
 
-        let Some(task) = task_manager.complete_task(&request.task_id) else {
-            return Err(LogMetadataError::TaskNotFound {
-                task_id: request.task_id,
-            });
-        };
+        // Look up the topic name for this task
+        let topic_name = self
+            .task_to_topic
+            .remove(task_id)
+            .map(|(_, topic_name)| topic_name)
+            .ok_or_else(|| LogMetadataError::TaskNotFound {
+                task_id: task_id.clone(),
+            })?;
 
-        info!(task_id = task.task_id(), "Task completed by worker");
+        // Get the topic state
+        let mut topic_state =
+            self.topics
+                .get_mut(&topic_name)
+                .ok_or_else(|| LogMetadataError::InvalidArgument {
+                    message: format!("Topic {} not found", topic_name),
+                })?;
 
-        Ok(CompleteTaskResponse { success: true })
-        */
-        todo!();
+        if topic_state.complete_task(task_id, request.result.clone())? {
+            debug!(task_id = %task_id, topic = %topic_name, "Task completed successfully");
+            Ok(CompleteTaskResponse { success: true })
+        } else {
+            debug!(task_id = %task_id, topic = %topic_name, "Task completion failed or task not found");
+            Ok(CompleteTaskResponse { success: false })
+        }
     }
 }

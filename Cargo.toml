@@ -90,4 +90,5 @@ tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "json",
 ] }
+ulid = "1.2.1"
 url = "2.5.4"

@@ -181,7 +181,9 @@ message CommitTask {
   string topic = 1;
 }
 
-message CreateTableResult {}
+message CreateTableResult {
+  string table_id = 1;
+}
 
 message CompactionResult {}
 

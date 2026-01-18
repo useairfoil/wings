@@ -859,16 +859,20 @@ impl TryFrom<pb::CompactionResult> for CompactionResult {
 }
 
 impl From<CreateTableResult> for pb::CreateTableResult {
-    fn from(_result: CreateTableResult) -> Self {
-        pb::CreateTableResult {}
+    fn from(result: CreateTableResult) -> Self {
+        pb::CreateTableResult {
+            table_id: result.table_id,
+        }
     }
 }
 
 impl TryFrom<pb::CreateTableResult> for CreateTableResult {
     type Error = LogMetadataError;
 
-    fn try_from(_result: pb::CreateTableResult) -> Result<Self, Self::Error> {
-        Ok(CreateTableResult {})
+    fn try_from(result: pb::CreateTableResult) -> Result<Self, Self::Error> {
+        Ok(CreateTableResult {
+            table_id: result.table_id,
+        })
     }
 }
 
