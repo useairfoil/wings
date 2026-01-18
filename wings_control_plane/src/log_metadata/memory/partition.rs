@@ -1,4 +1,10 @@
-use std::{cmp::Ordering, collections::BTreeMap, fmt::Display, sync::Arc, time::SystemTime};
+use std::{
+    cmp::Ordering,
+    collections::BTreeMap,
+    fmt::Display,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 
 use tokio::sync::{Notify, futures::OwnedNotified};
 use tracing::{debug, trace};
@@ -8,9 +14,10 @@ use crate::{
         AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation,
         GetLogLocationOptions, LogLocation, LogOffset, RejectedBatchInfo,
         error::Result,
+        memory::candidate::CandidateTask,
         timestamp::{ValidateRequestResult, validate_timestamp_in_request},
     },
-    resources::{PartitionValue, TopicName},
+    resources::{CompactionConfiguration, PartitionValue, TopicName},
 };
 
 use super::page::PageInfo;
@@ -34,6 +41,8 @@ pub struct PartitionLogState {
     timestamp_index: BTreeMap<SystemTime, u64>,
     /// Notify when a new page is added.
     notify: Arc<Notify>,
+    /// Last time a candidate task was generated for this partition
+    last_candidate_task_time: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -50,6 +59,7 @@ impl PartitionLogState {
             pages: BTreeMap::new(),
             timestamp_index: BTreeMap::new(),
             notify: Arc::new(Notify::new()),
+            last_candidate_task_time: None,
         }
     }
 
@@ -57,12 +67,36 @@ impl PartitionLogState {
         self.next_offset
     }
 
+    /// Check if we should generate a candidate task for compaction based on the configuration
+    fn should_generate_candidate_task(
+        &mut self,
+        config: &CompactionConfiguration,
+    ) -> Option<(CandidateTask, Duration)> {
+        // Check if enough time has passed since the last candidate task
+        let now = Instant::now();
+        if let Some(last_time) = self.last_candidate_task_time {
+            if now.duration_since(last_time) < config.freshness {
+                return None;
+            }
+        }
+
+        self.last_candidate_task_time = Some(now);
+
+        let task = CandidateTask::Partition(
+            self.key.topic_name.clone(),
+            self.key.partition_value.clone(),
+        );
+
+        Some((task, config.freshness))
+    }
+
     pub fn commit_page(
         &mut self,
         page: &CommitPageRequest,
         file_ref: String,
         now_ts: SystemTime,
-    ) -> Result<CommitPageResponse> {
+        compaction_config: Option<&CompactionConfiguration>,
+    ) -> Result<(CommitPageResponse, Option<(CandidateTask, Duration)>)> {
         let start_offset = self.next_offset;
 
         let mut batches = Vec::new();
@@ -129,11 +163,20 @@ impl PartitionLogState {
             self.notify.notify_waiters();
         }
 
-        Ok(CommitPageResponse {
+        // Check if we should generate a candidate task for compaction
+        let candidate_task = if let Some(config) = compaction_config {
+            self.should_generate_candidate_task(config)
+        } else {
+            None
+        };
+
+        let response = CommitPageResponse {
             topic_name: page.topic_name.clone(),
             partition_value: page.partition_value.clone(),
             batches,
-        })
+        };
+
+        Ok((response, candidate_task))
     }
 
     pub fn get_log_location(

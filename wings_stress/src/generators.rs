@@ -1,5 +1,9 @@
 //! RecordBatch generators.
-use std::{ops::RangeInclusive, sync::Arc, time::SystemTime};
+use std::{
+    ops::RangeInclusive,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use clap::ValueEnum;
 use datafusion::common::arrow::{
@@ -10,7 +14,7 @@ use datafusion::common::arrow::{
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 use wings_client::WriteRequest;
 use wings_control_plane::{
-    resources::{PartitionValue, TopicOptions},
+    resources::{CompactionConfiguration, PartitionValue, TopicOptions},
     schema::{Field, Schema},
 };
 
@@ -182,7 +186,10 @@ impl TopicType {
                 schema: Schema::new(OrderRecordBatchGenerator::fields()),
                 partition_key: OrderRecordBatchGenerator::partition_key(),
                 description: "TPC-H orders table".to_string().into(),
-                compaction: Default::default(),
+                compaction: CompactionConfiguration {
+                    freshness: Duration::from_mins(1),
+                    ..Default::default()
+                },
             },
         }
     }

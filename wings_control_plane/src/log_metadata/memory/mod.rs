@@ -72,6 +72,7 @@ impl LogMetadata for InMemoryLogMetadata {
         let now_ts = SystemTime::now();
 
         let mut committed_pages = Vec::new();
+        let mut candidate_tasks = Vec::new();
 
         for page in pages {
             // This should have been checked already by the caller.
@@ -85,17 +86,52 @@ impl LogMetadata for InMemoryLogMetadata {
             let is_new_topic = matches!(topic_state_entry, dashmap::Entry::Vacant(_));
             let mut topic_state = topic_state_entry.or_default();
 
-            // If this is the first time we see this topic, queue a table creation task
+            // If this is the first time we see this topic, fetch the compaction config and queue a table creation task
             if is_new_topic && topic_state.needs_table_creation() {
-                debug!(topic = %topic_name, "New topic detected, queuing table creation task");
+                debug!(topic = %topic_name, "New topic detected, fetching compaction config and queuing table creation task");
+
+                // Fetch the topic to get compaction configuration - fail if we can't get it
+                let topic = self
+                    .topic_cache
+                    .get(topic_name.clone())
+                    .await
+                    .map_err(|err| LogMetadataError::InvalidArgument {
+                        message: format!(
+                            "Failed to fetch topic {} for compaction config: {}",
+                            topic_name, err
+                        ),
+                    })?;
+
+                topic_state.compaction_config = Some(topic.compaction.clone());
+                debug!(topic = %topic_name, "Fetched compaction config: freshness={:?}", topic.compaction.freshness);
+
                 let mut candidate_queue = self.candidate_queue.lock().await;
                 candidate_queue.queue_immediate(CandidateTask::Topic(topic_name.clone()));
             }
 
-            let committed_page =
+            let (committed_page, candidate_task) =
                 topic_state.commit_page(partition_key, page, file_ref.clone(), now_ts)?;
 
             committed_pages.push(committed_page);
+
+            // Collect candidate tasks for later addition to queue
+            if let Some(task) = candidate_task {
+                candidate_tasks.push(task);
+            }
+        }
+
+        // Add all collected candidate tasks to the queue after committing all pages
+        if !candidate_tasks.is_empty() {
+            debug!(
+                "Adding {} partition candidate tasks to queue",
+                candidate_tasks.len()
+            );
+
+            let mut candidate_queue = self.candidate_queue.lock().await;
+            for (task, duration) in candidate_tasks {
+                debug!(task = ?task, ?duration, "adding candidate task");
+                candidate_queue.queue(task, duration);
+            }
         }
 
         Ok(committed_pages)
@@ -222,7 +258,7 @@ impl LogMetadata for InMemoryLogMetadata {
     }
 
     async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
-        debug!("Received task request");
+        trace!("Received task request");
 
         let start_time = std::time::Instant::now();
         let max_duration = Duration::from_secs(1);
@@ -231,7 +267,7 @@ impl LogMetadata for InMemoryLogMetadata {
         loop {
             // Check if we've exceeded the maximum duration
             if start_time.elapsed() >= max_duration {
-                debug!("Task request timeout after 1 second");
+                trace!("Task request timeout after 1 second");
                 return Ok(RequestTaskResponse { task: None });
             }
 
@@ -258,10 +294,10 @@ impl LogMetadata for InMemoryLogMetadata {
                     return Ok(RequestTaskResponse { task: Some(task) });
                 }
                 // If candidate_task returns None, we continue to try another candidate
-                debug!("Candidate could not be converted to task, trying another candidate");
+                trace!("Candidate could not be converted to task, trying another candidate");
             } else {
                 // No candidate available, wait 100ms before polling again
-                debug!("No candidate available, waiting 100ms");
+                trace!("No candidate available, waiting 100ms");
                 tokio::time::sleep(poll_interval).await;
             }
         }

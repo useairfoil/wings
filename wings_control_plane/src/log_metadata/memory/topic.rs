@@ -1,9 +1,16 @@
-use std::{collections::BTreeMap, ops::Bound, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    ops::Bound,
+    time::{Duration, SystemTime},
+};
 
-use crate::log_metadata::{
-    CommitPageRequest, CommitPageResponse, CreateTableTask, GetLogLocationOptions, LogLocation,
-    Task, TaskCompletionResult, TaskMetadata, TaskStatus, error::Result,
-    memory::partition::GetLogLocationResult,
+use crate::{
+    log_metadata::{
+        CommitPageRequest, CommitPageResponse, CreateTableTask, GetLogLocationOptions, LogLocation,
+        Task, TaskCompletionResult, TaskMetadata, TaskStatus, error::Result,
+        memory::partition::GetLogLocationResult,
+    },
+    resources::CompactionConfiguration,
 };
 
 use super::{
@@ -29,6 +36,8 @@ pub struct TopicLogState {
     partitions: BTreeMap<PartitionKey, PartitionLogState>,
     /// Status of table creation for this topic
     table_status: TableStatus,
+    /// Topic compaction configuration, fetched when topic is first created
+    pub(crate) compaction_config: Option<CompactionConfiguration>,
 }
 
 impl TopicLogState {
@@ -46,13 +55,17 @@ impl TopicLogState {
         page: &CommitPageRequest,
         file_ref: String,
         now_ts: SystemTime,
-    ) -> Result<CommitPageResponse> {
+    ) -> Result<(CommitPageResponse, Option<(CandidateTask, Duration)>)> {
         let partition_state = self
             .partitions
             .entry(partition_key.clone())
-            .or_insert_with(|| PartitionLogState::new(partition_key));
+            .or_insert_with(|| PartitionLogState::new(partition_key.clone()));
 
-        partition_state.commit_page(page, file_ref, now_ts)
+        let compaction_config = self.compaction_config.as_ref();
+        let (response, candidate_task) =
+            partition_state.commit_page(page, file_ref, now_ts, compaction_config)?;
+
+        Ok((response, candidate_task))
     }
 
     pub fn get_log_location(
@@ -79,11 +92,7 @@ impl TopicLogState {
         match candidate {
             CandidateTask::Topic(topic_name) => match &self.table_status {
                 TableStatus::NotCreated => {
-                    let task_id = format!(
-                        "create_table_{}_{}",
-                        topic_name.name(),
-                        SystemTime::now().elapsed().unwrap_or_default().as_millis()
-                    );
+                    let task_id = ulid::Ulid::new().to_string();
 
                     let task_metadata = TaskMetadata {
                         task_id,
