@@ -253,6 +253,8 @@ message CompactionConfiguration {
   uint64 freshness_seconds = 1;
   // How long to keep the topic data, in seconds.
   optional uint64 ttl_seconds = 2;
+  // The target file size for compacted files, in bytes.
+  uint64 target_file_size_bytes = 3;
 }
 
 message CreateObjectStoreRequest {

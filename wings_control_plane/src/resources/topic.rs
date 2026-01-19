@@ -1,5 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
+use bytesize::ByteSize;
+
 use datafusion::common::arrow::datatypes::{
     DataType, Field as ArrowField, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
 };
@@ -34,6 +36,8 @@ pub struct CompactionConfiguration {
     pub freshness: Duration,
     /// How long to keep the topic data.
     pub ttl: Option<Duration>,
+    /// The target file size for compacted files.
+    pub target_file_size: ByteSize,
 }
 
 pub type TopicRef = Arc<Topic>;
@@ -142,6 +146,7 @@ impl Default for CompactionConfiguration {
         Self {
             freshness: Duration::from_mins(5),
             ttl: None,
+            target_file_size: ByteSize::mb(512),
         }
     }
 }

@@ -376,6 +376,7 @@ impl From<CompactionConfiguration> for pb::CompactionConfiguration {
         pb::CompactionConfiguration {
             freshness_seconds: config.freshness.as_secs(),
             ttl_seconds: config.ttl.as_ref().map(|ttl| ttl.as_secs()),
+            target_file_size_bytes: config.target_file_size.as_u64(),
         }
     }
 }
@@ -385,6 +386,7 @@ impl From<pb::CompactionConfiguration> for CompactionConfiguration {
         CompactionConfiguration {
             freshness: Duration::from_secs(config.freshness_seconds),
             ttl: config.ttl_seconds.map(Duration::from_secs),
+            target_file_size: ByteSize::b(config.target_file_size_bytes),
         }
     }
 }

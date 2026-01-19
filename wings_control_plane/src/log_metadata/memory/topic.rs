@@ -44,17 +44,25 @@ impl Default for TableStatus {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct TopicLogState {
     /// Maps partition keys to their offset tracking
     partitions: BTreeMap<PartitionKey, PartitionLogState>,
     /// Status of table creation for this topic
     table_status: TableStatus,
     /// Topic compaction configuration, fetched when topic is first created
-    pub(crate) compaction_config: Option<CompactionConfiguration>,
+    compaction_config: CompactionConfiguration,
 }
 
 impl TopicLogState {
+    pub fn new(compaction_config: CompactionConfiguration) -> Self {
+        Self {
+            partitions: BTreeMap::new(),
+            table_status: TableStatus::default(),
+            compaction_config,
+        }
+    }
+
     pub fn partition_range(
         &self,
         start: Bound<&PartitionKey>,
@@ -75,9 +83,8 @@ impl TopicLogState {
             .entry(partition_key.clone())
             .or_insert_with(|| PartitionLogState::new(partition_key.clone()));
 
-        let compaction_config = self.compaction_config.as_ref();
         let (response, candidate_task) =
-            partition_state.commit_page(page, file_ref, now_ts, compaction_config)?;
+            partition_state.commit_page(page, file_ref, now_ts, Some(&self.compaction_config))?;
 
         Ok((response, candidate_task))
     }
@@ -94,11 +101,6 @@ impl TopicLogState {
         };
 
         partition_state.get_log_location(offset, options, locations)
-    }
-
-    /// Check if this topic needs a table creation task.
-    pub fn needs_table_creation(&self) -> bool {
-        matches!(self.table_status, TableStatus::NotCreated { .. })
     }
 
     /// Create a table creation task for this topic if needed.
@@ -202,7 +204,7 @@ impl TopicLogState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resources::{NamespaceName, PartitionValue, TopicName};
+    use crate::resources::{CompactionConfiguration, NamespaceName, PartitionValue, TopicName};
 
     fn create_test_topic_name(name: &str) -> TopicName {
         let namespace =
@@ -212,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_partition_candidate_pending_when_table_not_created() {
-        let mut topic_state = TopicLogState::default();
+        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
         let partition_value = Some(PartitionValue::String("partition-1".to_string()));
 
@@ -237,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_partition_candidate_pending_when_table_in_progress() {
-        let mut topic_state = TopicLogState::default();
+        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
 
         // First create a table creation task to set status to InProgress
@@ -271,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_pending_candidates_returned_on_table_creation_complete() {
-        let mut topic_state = TopicLogState::default();
+        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
 
         // Add some pending partition candidates

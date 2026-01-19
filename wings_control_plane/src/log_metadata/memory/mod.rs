@@ -82,32 +82,35 @@ impl LogMetadata for InMemoryLogMetadata {
                 PartitionKey::new(page.topic_name.clone(), page.partition_value.clone());
 
             let topic_name = page.topic_name.clone();
-            let topic_state_entry = self.topics.entry(topic_name.clone());
-            let is_new_topic = matches!(topic_state_entry, dashmap::Entry::Vacant(_));
-            let mut topic_state = topic_state_entry.or_default();
 
-            // If this is the first time we see this topic, fetch the compaction config and queue a table creation task
-            if is_new_topic && topic_state.needs_table_creation() {
-                debug!(topic = %topic_name, "New topic detected, fetching compaction config and queuing table creation task");
+            let topic_state = match self.topics.entry(topic_name.clone()) {
+                dashmap::Entry::Occupied(entry) => entry.into_ref(),
+                dashmap::Entry::Vacant(entry) => {
+                    debug!(topic = %topic_name, "New topic detected, fetching compaction config");
 
-                // Fetch the topic to get compaction configuration - fail if we can't get it
-                let topic = self
-                    .topic_cache
-                    .get(topic_name.clone())
-                    .await
-                    .map_err(|err| LogMetadataError::InvalidArgument {
-                        message: format!(
-                            "Failed to fetch topic {} for compaction config: {}",
-                            topic_name, err
-                        ),
-                    })?;
+                    // Fetch the topic to get compaction configuration - fail if we can't get it
+                    let topic = self
+                        .topic_cache
+                        .get(topic_name.clone())
+                        .await
+                        .map_err(|err| LogMetadataError::InvalidArgument {
+                            message: format!(
+                                "Failed to fetch topic {} for compaction config: {}",
+                                topic_name, err
+                            ),
+                        })?;
 
-                topic_state.compaction_config = Some(topic.compaction.clone());
-                debug!(topic = %topic_name, "Fetched compaction config: freshness={:?}", topic.compaction.freshness);
+                    let topic_state = TopicLogState::new(topic.compaction.clone());
 
-                let mut candidate_queue = self.candidate_queue.lock().await;
-                candidate_queue.queue_immediate(CandidateTask::Topic(topic_name.clone()));
-            }
+                    // Queue table creation task since this is a new topic
+                    let mut candidate_queue = self.candidate_queue.lock().await;
+                    candidate_queue.queue_immediate(CandidateTask::Topic(topic_name));
+
+                    entry.insert(topic_state)
+                }
+            };
+
+            let mut topic_state = topic_state;
 
             let (committed_page, candidate_task) =
                 topic_state.commit_page(partition_key, page, file_ref.clone(), now_ts)?;
