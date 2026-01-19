@@ -169,12 +169,20 @@ message CreateTableTask {
   string topic = 1;
 }
 
+message FileInfo {
+  string file_ref = 1;
+  uint64 file_size_bytes = 2;
+  uint64 start_offset = 3;
+  uint64 end_offset = 4;
+}
+
 message CompactionTask {
   string topic = 1;
   optional PartitionValue partition = 2;
   uint64 start_offset = 3;
   uint64 end_offset = 4;
   CompactionOperation operation = 5;
+  uint64 target_file_size = 6;
 }
 
 message CommitTask {
@@ -185,7 +193,10 @@ message CreateTableResult {
   string table_id = 1;
 }
 
-message CompactionResult {}
+message CompactionResult {
+  repeated FileInfo new_files = 1;
+  CompactionOperation operation = 2;
+}
 
 message CommitResult {}
 

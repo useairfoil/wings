@@ -8,7 +8,7 @@ use crate::{
     log_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
         CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
-        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask,
+        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask, FileInfo,
         FolioLocation, GetLogLocationOptions, GetLogLocationRequest, ListPartitionsRequest,
         ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset, PartitionMetadata,
         RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskCompletionResult,
@@ -657,6 +657,7 @@ impl From<CompactionTask> for pb::CompactionTask {
             partition: task.partition_value.as_ref().map(Into::into),
             start_offset: task.start_offset,
             end_offset: task.end_offset,
+            target_file_size: task.target_file_size,
             operation: match task.operation {
                 CompactionOperation::Append => pb::CompactionOperation::Append.into(),
                 CompactionOperation::Replace => pb::CompactionOperation::Replace.into(),
@@ -689,6 +690,7 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
             partition_value,
             start_offset: task.start_offset,
             end_offset: task.end_offset,
+            target_file_size: task.target_file_size,
             operation,
         })
     }
@@ -844,17 +846,72 @@ impl From<RequestTaskResponse> for pb::RequestTaskResponse {
     }
 }
 
+impl From<FileInfo> for pb::FileInfo {
+    fn from(info: FileInfo) -> Self {
+        pb::FileInfo {
+            file_ref: info.file_ref,
+            file_size_bytes: info.file_size_bytes,
+            start_offset: info.start_offset,
+            end_offset: info.end_offset,
+        }
+    }
+}
+
+impl From<pb::FileInfo> for FileInfo {
+    fn from(info: pb::FileInfo) -> Self {
+        FileInfo {
+            file_ref: info.file_ref,
+            file_size_bytes: info.file_size_bytes,
+            start_offset: info.start_offset,
+            end_offset: info.end_offset,
+        }
+    }
+}
+
 impl From<CompactionResult> for pb::CompactionResult {
-    fn from(_result: CompactionResult) -> Self {
-        pb::CompactionResult {}
+    fn from(result: CompactionResult) -> Self {
+        let new_files = result
+            .new_files
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+
+        let operation = match result.operation {
+            CompactionOperation::Append => pb::CompactionOperation::Append.into(),
+            CompactionOperation::Replace => pb::CompactionOperation::Replace.into(),
+        };
+
+        pb::CompactionResult {
+            new_files,
+            operation,
+        }
     }
 }
 
 impl TryFrom<pb::CompactionResult> for CompactionResult {
     type Error = LogMetadataError;
 
-    fn try_from(_result: pb::CompactionResult) -> Result<Self, Self::Error> {
-        Ok(CompactionResult {})
+    fn try_from(result: pb::CompactionResult) -> Result<Self, Self::Error> {
+        let operation = match result.operation() {
+            pb::CompactionOperation::Unspecified => {
+                return Err(LogMetadataError::InvalidArgument {
+                    message: "CompactionOperation must be specified".to_string(),
+                });
+            }
+            pb::CompactionOperation::Append => CompactionOperation::Append,
+            pb::CompactionOperation::Replace => CompactionOperation::Replace,
+        };
+
+        let new_files = result
+            .new_files
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+
+        Ok(CompactionResult {
+            new_files,
+            operation,
+        })
     }
 }
 

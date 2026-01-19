@@ -55,6 +55,8 @@ pub enum LogMetadataError {
     },
     #[snafu(display("task not found: {task_id}"))]
     TaskNotFound { task_id: String },
+    #[snafu(display("task validation failed: {message}"))]
+    TaskValidation { message: String },
 }
 
 pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;
@@ -74,7 +76,8 @@ impl LogMetadataError {
             | Self::InvalidOffsetRange
             | Self::InvalidDeadline { .. }
             | Self::InvalidTimestamp { .. }
-            | Self::InvalidDuration { .. } => ErrorKind::Validation,
+            | Self::InvalidDuration { .. }
+            | Self::TaskValidation { .. } => ErrorKind::Validation,
             Self::NamespaceNotFound { .. }
             | Self::OffsetNotFound { .. }
             | Self::TaskNotFound { .. } => ErrorKind::NotFound,

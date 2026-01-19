@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     ops::Bound,
     time::{Duration, SystemTime},
 };
@@ -7,8 +7,7 @@ use std::{
 use crate::{
     log_metadata::{
         CommitPageRequest, CommitPageResponse, CreateTableTask, GetLogLocationOptions, LogLocation,
-        Task, TaskCompletionResult, TaskMetadata, TaskStatus, error::Result,
-        memory::partition::GetLogLocationResult,
+        Task, TaskCompletionResult, error::Result, memory::partition::GetLogLocationResult,
     },
     resources::CompactionConfiguration,
 };
@@ -33,7 +32,11 @@ pub enum TableStatus {
         pending_candidates: Vec<CandidateTask>,
     },
     /// Table has been created.
-    Created { table_id: String },
+    Created {
+        table_id: String,
+        /// Map between task_ids and and which partition they belong to.
+        partition_tasks: HashMap<String, PartitionKey>,
+    },
 }
 
 impl Default for TableStatus {
@@ -109,19 +112,7 @@ impl TopicLogState {
         match candidate {
             CandidateTask::Topic(topic_name) => match &mut self.table_status {
                 TableStatus::NotCreated { pending_candidates } => {
-                    let task_id = ulid::Ulid::new().to_string();
-
-                    let task_metadata = TaskMetadata {
-                        task_id,
-                        status: TaskStatus::Pending,
-                        created_at: SystemTime::now(),
-                        updated_at: SystemTime::now(),
-                    };
-
-                    let task = Task::CreateTable {
-                        metadata: task_metadata,
-                        task: CreateTableTask { topic_name },
-                    };
+                    let task = Task::new_create_table(CreateTableTask { topic_name });
 
                     // Move pending candidates to the new InProgress state
                     let existing_pending = std::mem::take(pending_candidates);
@@ -134,34 +125,34 @@ impl TopicLogState {
                 }
                 _ => None,
             },
-            CandidateTask::Partition(topic_name, partition_value) => {
-                match &mut self.table_status {
-                    TableStatus::Created { .. } => {
-                        // Table is created, try to get candidate task from partition state
-                        let _partition_key = PartitionKey::new(topic_name, partition_value);
-                        // TODO: we will request candidates from the partition log states
-                        None
-                    }
-                    TableStatus::InProgress {
-                        pending_candidates, ..
-                    }
-                    | TableStatus::NotCreated { pending_candidates } => {
-                        pending_candidates
-                            .push(CandidateTask::Partition(topic_name, partition_value));
-                        None
-                    }
+            CandidateTask::Partition(topic_name, partition_value) => match &mut self.table_status {
+                TableStatus::Created { .. } => {
+                    let partition_key = PartitionKey::new(topic_name, partition_value);
+
+                    let partition_state = self.partitions.get_mut(&partition_key)?;
+
+                    partition_state.candidate_task(&self.compaction_config)
                 }
-            }
+                TableStatus::InProgress {
+                    pending_candidates, ..
+                }
+                | TableStatus::NotCreated { pending_candidates } => {
+                    pending_candidates.push(CandidateTask::Partition(topic_name, partition_value));
+                    None
+                }
+            },
         }
     }
 
-    /// Complete a table creation task for this topic.
+    /// Complete a task for this topic.
     /// Returns success status and any pending partition candidates that should be processed.
+    /// Handles both table creation and compaction tasks.
     pub fn complete_task(
         &mut self,
         task_id: &str,
         result: TaskCompletionResult,
     ) -> Result<(bool, Vec<CandidateTask>)> {
+        // First check if this is a table creation task in progress
         match &mut self.table_status {
             TableStatus::InProgress {
                 task,
@@ -177,11 +168,16 @@ impl TopicLogState {
                                     let table_id = create_table_result.table_id.clone();
                                     // Take the pending candidates before changing the state
                                     let pending_candidates = std::mem::take(pending_candidates);
-                                    self.table_status = TableStatus::Created { table_id };
+
+                                    self.table_status = TableStatus::Created {
+                                        table_id,
+                                        partition_tasks: Default::default(),
+                                    };
+
                                     Ok((true, pending_candidates))
                                 }
                                 _ => {
-                                    // For now, we only handle table creation tasks
+                                    // Table creation task but wrong result type - this shouldn't happen
                                     Ok((false, Vec::new()))
                                 }
                             }
@@ -196,7 +192,26 @@ impl TopicLogState {
                     Ok((false, Vec::new()))
                 }
             }
-            _ => Ok((false, Vec::new())),
+            TableStatus::Created {
+                partition_tasks, ..
+            } => {
+                // TODO: if it's a topic task we can track it ind the create struct
+                // and handle it locally.
+                // For now assume it's always to be forwarded to the partition.
+                let Some(partition_key) = partition_tasks.get(task_id) else {
+                    return Ok((false, Vec::new()));
+                };
+
+                let Some(partition_state) = self.partitions.get_mut(partition_key) else {
+                    return Ok((false, Vec::new()));
+                };
+
+                partition_state.complete_task(task_id, result)
+            }
+            _ => {
+                // Table not created or other states, can't handle compaction tasks
+                Ok((false, Vec::new()))
+            }
         }
     }
 }

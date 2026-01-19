@@ -11,9 +11,9 @@ use wings_control_plane::{
     },
     data_lake::DataLakeFactory,
     log_metadata::{
-        CommitResult, CommitTask, CompactionResult, CompactionTask, CompleteTaskRequest,
-        CreateTableResult, CreateTableTask, LogMetadata, RequestTaskRequest, RequestTaskResponse,
-        Task, TaskMetadata, TaskResult,
+        CommitResult, CommitTask, CompactionOperation, CompactionResult, CompactionTask,
+        CompleteTaskRequest, CreateTableResult, CreateTableTask, LogMetadata, RequestTaskRequest,
+        RequestTaskResponse, Task, TaskMetadata, TaskResult,
     },
     object_store::ObjectStoreFactory,
 };
@@ -218,7 +218,10 @@ impl Worker {
         // so we need to be careful updating the catalog concurrently.
 
         // TODO: we should include the compacted range and file reference in the complete task request.
-        let result = TaskResult::Compaction(CompactionResult {});
+        let result = TaskResult::Compaction(CompactionResult {
+            new_files: Vec::default(),
+            operation: CompactionOperation::Append,
+        });
 
         self.log_meta
             .complete_task(CompleteTaskRequest::new_completed(

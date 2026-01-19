@@ -7,12 +7,13 @@ use std::{
 };
 
 use tokio::sync::{Notify, futures::OwnedNotified};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::{
     log_metadata::{
-        AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, FolioLocation,
-        GetLogLocationOptions, LogLocation, LogOffset, RejectedBatchInfo,
+        AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch,
+        CompactionOperation, CompactionTask, FileInfo, FolioLocation, GetLogLocationOptions,
+        LogLocation, LogOffset, RejectedBatchInfo, Task, TaskCompletionResult, TaskResult,
         error::Result,
         memory::candidate::CandidateTask,
         timestamp::{ValidateRequestResult, validate_timestamp_in_request},
@@ -36,6 +37,12 @@ pub struct PartitionLogState {
     next_offset: LogOffset,
     /// Maps start offset to page information for lookup.
     pages: BTreeMap<u64, PageInfo>,
+    /// Maps start offset to file information for parquet files created by compaction.
+    files: BTreeMap<u64, FileInfo>,
+    /// Last offset stored in parquet files (inclusive)
+    stored: Option<u64>,
+    /// In-progress compaction task to prevent duplicate tasks
+    in_progress_task: Option<Task>,
     /// Maps timestamp to the first offset containing that timestamp.
     /// Used for efficient timestamp-based queries.
     timestamp_index: BTreeMap<SystemTime, u64>,
@@ -57,6 +64,9 @@ impl PartitionLogState {
             key,
             next_offset: LogOffset::default(),
             pages: BTreeMap::new(),
+            files: BTreeMap::new(),
+            stored: None,
+            in_progress_task: None,
             timestamp_index: BTreeMap::new(),
             notify: Arc::new(Notify::new()),
             last_candidate_task_time: None,
@@ -88,6 +98,91 @@ impl PartitionLogState {
         );
 
         Some((task, config.freshness))
+    }
+
+    /// Generate a compaction task for this partition if there is data to compact
+    /// and no task is currently in progress.
+    pub fn candidate_task(&mut self, config: &CompactionConfiguration) -> Option<Task> {
+        // Check if there's already an in-progress task
+        if self.in_progress_task.is_some() {
+            return None;
+        }
+
+        // Only create task if there's data between stored and next_offset
+        let start_offset = self.stored.map(|s| s + 1).unwrap_or(0);
+        let end_offset = self.next_offset.previous().offset;
+
+        if start_offset > end_offset {
+            return None;
+        }
+
+        let task = CompactionTask {
+            topic_name: self.key.topic_name.clone(),
+            partition_value: self.key.partition_value.clone(),
+            start_offset,
+            end_offset,
+            operation: CompactionOperation::Append,
+            target_file_size: config.target_file_size.as_u64(),
+        };
+
+        let task = Task::new_compaction(task);
+
+        // Store the full task as in-progress
+        self.in_progress_task = Some(task.clone());
+
+        Some(task)
+    }
+
+    /// Complete a compaction task and update the partition state with the results.
+    /// Validates that the task matches the in-progress task and updates file tracking.
+    pub fn complete_task(
+        &mut self,
+        task_id: &str,
+        result: TaskCompletionResult,
+    ) -> Result<(bool, Vec<CandidateTask>)> {
+        let Some(in_progress) = &self.in_progress_task else {
+            return Ok((true, Vec::default()));
+        };
+
+        // Validate task matches in-progress task
+        if in_progress.task_id() != task_id {
+            warn!(
+                task_in_progress = ?in_progress,
+                task_completed = ?task_id,
+                "Task mismatch: clearing in-progress task without updating state"
+            );
+
+            self.in_progress_task = None;
+
+            return Ok((true, Vec::default()));
+        }
+
+        let TaskCompletionResult::Success(result) = result else {
+            // task failed, so we will try again.
+            self.in_progress_task = None;
+            return Ok((true, Vec::default()));
+        };
+
+        let TaskResult::Compaction(result) = result else {
+            // Ignore all other tasks. this should not happen.
+            return Ok((true, Vec::default()));
+        };
+
+        // Update stored offset to the highest end_offset from new files
+        if let Some(max_end_offset) = result.new_files.iter().map(|f| f.end_offset).max() {
+            debug!(partition = ?self.key, stored = max_end_offset, "updating partition log state");
+            self.stored = Some(max_end_offset);
+
+            // Add new files to files map (keyed by start offset)
+            for file_info in result.new_files.into_iter() {
+                debug!(partition = ?self.key, ?file_info, "adding partition log state parquet file");
+                self.files.insert(file_info.start_offset, file_info);
+            }
+        }
+
+        self.in_progress_task = None;
+
+        Ok((true, Vec::default()))
     }
 
     pub fn commit_page(

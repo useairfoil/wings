@@ -181,5 +181,8 @@ fn log_metadata_error_to_status(error: LogMetadataError) -> Status {
         LogMetadataError::TaskNotFound { task_id } => {
             Status::not_found(format!("task not found: task_id={task_id}"))
         }
+        LogMetadataError::TaskValidation { message } => {
+            Status::not_found(format!("task validation failed: {message}"))
+        }
     }
 }

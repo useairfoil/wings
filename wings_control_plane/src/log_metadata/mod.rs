@@ -237,6 +237,8 @@ pub struct CompactionTask {
     pub end_offset: u64,
     /// The operation type for this compaction.
     pub operation: CompactionOperation,
+    /// The target file size for the parquet writer.
+    pub target_file_size: u64,
 }
 
 /// A task to create a table.
@@ -253,10 +255,26 @@ pub struct CreateTableResult {
     pub table_id: String,
 }
 
+/// Information about a file created by compaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInfo {
+    /// File reference (path) - consistent with PageInfo
+    pub file_ref: String,
+    /// File size in bytes
+    pub file_size_bytes: u64,
+    /// First offset (inclusive) in this file
+    pub start_offset: u64,
+    /// Last offset (inclusive) in this file
+    pub end_offset: u64,
+}
+
 /// Result for a compaction task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionResult {
-    // Empty for now, will add fields later
+    /// Files created by compaction
+    pub new_files: Vec<FileInfo>,
+    /// The operation performed
+    pub operation: CompactionOperation,
 }
 
 /// Result for a create table task.
@@ -433,7 +451,40 @@ impl fmt::Debug for AcceptedBatchInfo {
     }
 }
 
+impl TaskMetadata {
+    pub fn new() -> Self {
+        let task_id = ulid::Ulid::new().to_string();
+
+        TaskMetadata {
+            task_id,
+            status: TaskStatus::Pending,
+            created_at: std::time::SystemTime::now(),
+            updated_at: std::time::SystemTime::now(),
+        }
+    }
+}
+
+impl Default for TaskMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Task {
+    pub fn new_compaction(task: CompactionTask) -> Self {
+        Self::Compaction {
+            metadata: Default::default(),
+            task,
+        }
+    }
+
+    pub fn new_create_table(task: CreateTableTask) -> Self {
+        Self::CreateTable {
+            metadata: Default::default(),
+            task,
+        }
+    }
+
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
