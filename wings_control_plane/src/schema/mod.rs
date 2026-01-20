@@ -83,6 +83,10 @@ impl Field {
         self.metadata = metadata;
         self
     }
+
+    pub fn into_arrow_field(self) -> ArrowField {
+        self.into()
+    }
 }
 
 impl From<Field> for ArrowField {

@@ -1,3 +1,6 @@
+pub mod error;
+mod stats;
 mod writer;
 
-pub use self::writer::{Error as ParquetWriterError, FileMetadata, ParquetWriter};
+pub use self::stats::FileMetadata;
+pub use self::writer::ParquetWriter;

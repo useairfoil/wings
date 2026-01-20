@@ -1,25 +1,12 @@
 use arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use bytesize::ByteSize;
-use parquet::{arrow::ArrowWriter, errors::ParquetError, file::properties::WriterProperties};
-use snafu::Snafu;
+use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-use crate::error_kind::ErrorKind;
+use crate::parquet::stats::{FileMetadata, parquet_metadata_to_file_metadata};
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(transparent)]
-    Parquet { source: ParquetError },
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+use super::error::Result;
 
 const DEFAULT_BUFFER_CAPACITY: usize = 32 * 1024 * 1024;
-
-#[derive(Debug, Clone)]
-pub struct FileMetadata {
-    pub file_size: bytesize::ByteSize,
-    pub num_rows: usize,
-}
 
 pub struct ParquetWriter {
     schema: SchemaRef,
@@ -64,21 +51,13 @@ impl ParquetWriter {
             let data = std::mem::take(&mut *writer.inner_mut());
             let file_size = ByteSize::b(data.len() as _);
 
-            let file_metadata = FileMetadata {
-                file_size,
-                num_rows: metadata.file_metadata().num_rows() as usize,
-            };
+            let file_metadata =
+                parquet_metadata_to_file_metadata(self.schema.clone(), file_size, metadata)?;
 
             Ok((data, file_metadata))
         } else {
             // No data was written, return empty result
-            Ok((
-                Vec::new(),
-                FileMetadata {
-                    file_size: bytesize::ByteSize(0),
-                    num_rows: 0,
-                },
-            ))
+            Ok((Vec::new(), FileMetadata::default()))
         }
     }
 
@@ -90,25 +69,19 @@ impl ParquetWriter {
     }
 }
 
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::Parquet { .. } => ErrorKind::Internal,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use arrow::array::{Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::datatypes::{DataType, Schema};
     use std::sync::Arc;
+
+    use crate::schema::Field;
 
     fn create_test_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, false),
-            Field::new("name", DataType::Utf8, false),
+            Field::new("id", 2, DataType::Int32, false).into_arrow_field(),
+            Field::new("name", 3, DataType::Utf8, false).into_arrow_field(),
         ]))
     }
 

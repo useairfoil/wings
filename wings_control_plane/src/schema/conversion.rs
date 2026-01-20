@@ -272,9 +272,9 @@ pub mod tests {
     #[test]
     fn test_struct() {
         let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
-            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
-            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
-            Arc::new(Field::new("c", 4, DataType::Float64, false).into()),
+            Arc::new(Field::new("a", 4, DataType::Int32, false).into()),
+            Arc::new(Field::new("b", 6, DataType::Utf8, true).into()),
+            Arc::new(Field::new("c", 5, DataType::Float64, false).into()),
         ];
         let data_type = DataType::Struct(fields.into());
         let field = Field::new("test_field", 1, data_type, false);
