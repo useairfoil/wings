@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use arrow::{array::RecordBatch, datatypes::DataType};
+use arrow::array::RecordBatch;
 use arrow_flight::{
     decode::FlightDataDecoder, error::FlightError, flight_service_client::FlightServiceClient,
 };
@@ -11,7 +11,7 @@ use tonic::transport::Channel;
 use tracing::debug;
 use wings_control_plane::{
     resources::{PartitionValue, Topic, TopicName},
-    schema::Field,
+    schema::{DataType, Field},
 };
 use wings_flight::FetchTicket;
 

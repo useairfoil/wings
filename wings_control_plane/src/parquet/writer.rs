@@ -73,16 +73,17 @@ impl ParquetWriter {
 mod tests {
     use super::*;
     use arrow::array::{Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Schema};
     use std::sync::Arc;
 
-    use crate::schema::Field;
+    use crate::schema::{DataType, Field, Schema};
 
     fn create_test_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
-            Field::new("id", 2, DataType::Int32, false).into_arrow_field(),
-            Field::new("name", 3, DataType::Utf8, false).into_arrow_field(),
-        ]))
+        let schema = Schema::new(vec![
+            Field::new("id", 2, DataType::Int32, false),
+            Field::new("name", 3, DataType::Utf8, false),
+        ]);
+
+        schema.arrow_schema().into()
     }
 
     fn create_test_batch() -> RecordBatch {

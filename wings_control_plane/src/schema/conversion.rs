@@ -1,12 +1,11 @@
 #[cfg(test)]
 pub mod tests {
-    use crate::schema::Field;
-    use datafusion::arrow::datatypes::{DataType, TimeUnit, UnionFields, UnionMode};
+    use crate::schema::{DataType, Field, TimeUnit};
     use std::sync::Arc;
 
     fn round_trip_field(field: &Field) -> Field {
-        let pb_field: crate::schema::pb::Field = field.try_into().unwrap();
-        (&pb_field).try_into().unwrap()
+        let pb_field: crate::schema::pb::Field = field.try_into().expect("to proto");
+        (&pb_field).try_into().expect("from proto")
     }
 
     #[test]
@@ -56,7 +55,7 @@ pub mod tests {
 
     #[test]
     fn test_string_types() {
-        let string_types = vec![DataType::Utf8, DataType::Utf8View, DataType::LargeUtf8];
+        let string_types = vec![DataType::Utf8];
 
         for data_type in string_types {
             let field = Field::new("test_field", 1, data_type.clone(), false);
@@ -67,26 +66,10 @@ pub mod tests {
 
     #[test]
     fn test_binary_types() {
-        let binary_types = vec![
-            DataType::Binary,
-            DataType::BinaryView,
-            DataType::LargeBinary,
-        ];
+        let binary_types = vec![DataType::Binary];
 
         for data_type in binary_types {
             let field = Field::new("test_field", 1, data_type.clone(), false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_fixed_size_binary() {
-        let sizes = vec![16, 32, 64];
-
-        for size in sizes {
-            let data_type = DataType::FixedSizeBinary(size);
-            let field = Field::new("test_field", 1, data_type, false);
             let result = round_trip_field(&field);
             assert_eq!(field, result);
         }
@@ -98,40 +81,6 @@ pub mod tests {
 
         for data_type in date_types {
             let field = Field::new("test_field", 1, data_type.clone(), false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_time32() {
-        let time_units = vec![
-            TimeUnit::Second,
-            TimeUnit::Millisecond,
-            TimeUnit::Microsecond,
-            TimeUnit::Nanosecond,
-        ];
-
-        for time_unit in time_units {
-            let data_type = DataType::Time32(time_unit);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_time64() {
-        let time_units = vec![
-            TimeUnit::Second,
-            TimeUnit::Millisecond,
-            TimeUnit::Microsecond,
-            TimeUnit::Nanosecond,
-        ];
-
-        for time_unit in time_units {
-            let data_type = DataType::Time64(time_unit);
-            let field = Field::new("test_field", 1, data_type, false);
             let result = round_trip_field(&field);
             assert_eq!(field, result);
         }
@@ -175,70 +124,6 @@ pub mod tests {
     }
 
     #[test]
-    fn test_interval() {
-        let interval_units = vec![
-            arrow::datatypes::IntervalUnit::YearMonth,
-            arrow::datatypes::IntervalUnit::DayTime,
-            arrow::datatypes::IntervalUnit::MonthDayNano,
-        ];
-
-        for interval_unit in interval_units {
-            let data_type = DataType::Interval(interval_unit);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_decimal32() {
-        let test_cases = vec![(5, 2), (9, 0), (9, -2)];
-
-        for (precision, scale) in test_cases {
-            let data_type = DataType::Decimal32(precision, scale);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_decimal64() {
-        let test_cases = vec![(10, 2), (18, 0), (18, -2)];
-
-        for (precision, scale) in test_cases {
-            let data_type = DataType::Decimal64(precision, scale);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_decimal128() {
-        let test_cases = vec![(10, 2), (20, 0), (28, -2)];
-
-        for (precision, scale) in test_cases {
-            let data_type = DataType::Decimal128(precision, scale);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
-    fn test_decimal256() {
-        let test_cases = vec![(10, 2), (40, 0), (76, -2)];
-
-        for (precision, scale) in test_cases {
-            let data_type = DataType::Decimal256(precision, scale);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
     fn test_list() {
         let item_field = Field::new("item", 2, DataType::Int32, false);
         let data_type = DataType::List(Arc::new(item_field.into()));
@@ -248,101 +133,16 @@ pub mod tests {
     }
 
     #[test]
-    fn test_large_list() {
-        let item_field = Field::new("item", 2, DataType::Int32, false);
-        let data_type = DataType::LargeList(Arc::new(item_field.into()));
-        let field = Field::new("test_field", 1, data_type, false);
-        let result = round_trip_field(&field);
-        assert_eq!(field, result);
-    }
-
-    #[test]
-    fn test_fixed_size_list() {
-        let sizes = vec![3, 10, 100];
-
-        for size in sizes {
-            let item_field = Field::new("item", 2, DataType::Int32, false);
-            let data_type = DataType::FixedSizeList(Arc::new(item_field.into()), size);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
-    }
-
-    #[test]
     fn test_struct() {
-        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
-            Arc::new(Field::new("a", 4, DataType::Int32, false).into()),
-            Arc::new(Field::new("b", 6, DataType::Utf8, true).into()),
-            Arc::new(Field::new("c", 5, DataType::Float64, false).into()),
+        let fields: Vec<Arc<Field>> = vec![
+            Field::new("a", 4, DataType::Int32, false).into(),
+            Field::new("b", 6, DataType::Utf8, true).into(),
+            Field::new("c", 5, DataType::Float64, false).into(),
         ];
         let data_type = DataType::Struct(fields.into());
         let field = Field::new("test_field", 1, data_type, false);
         let result = round_trip_field(&field);
         assert_eq!(field, result);
-    }
-
-    #[test]
-    fn test_union_sparse() {
-        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
-            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
-            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
-        ];
-        let type_ids = vec![0i8, 1i8];
-        let union_fields = UnionFields::new(type_ids.clone(), fields);
-        let data_type = DataType::Union(union_fields, UnionMode::Sparse);
-        let field = Field::new("test_field", 1, data_type, false);
-        let result = round_trip_field(&field);
-        assert_eq!(field, result);
-    }
-
-    #[test]
-    fn test_union_dense() {
-        let fields: Vec<Arc<arrow::datatypes::Field>> = vec![
-            Arc::new(Field::new("a", 2, DataType::Int32, false).into()),
-            Arc::new(Field::new("b", 3, DataType::Utf8, true).into()),
-        ];
-        let type_ids = vec![0i8, 1i8];
-        let union_fields = UnionFields::new(type_ids.clone(), fields);
-        let data_type = DataType::Union(union_fields, UnionMode::Dense);
-        let field = Field::new("test_field", 1, data_type, false);
-        let result = round_trip_field(&field);
-        assert_eq!(field, result);
-    }
-
-    #[test]
-    fn test_dictionary() {
-        let key_type = DataType::Int32;
-        let value_type = DataType::Utf8;
-        let data_type = DataType::Dictionary(Box::new(key_type), Box::new(value_type));
-        let field = Field::new("test_field", 1, data_type, false);
-        let result = round_trip_field(&field);
-        assert_eq!(field, result);
-    }
-
-    #[test]
-    fn test_map() {
-        let map_field = Field::new(
-            "entries",
-            2,
-            DataType::Struct(
-                vec![
-                    Arc::new(Field::new("key", 3, DataType::Utf8, false).into()),
-                    Arc::new(Field::new("value", 4, DataType::Int32, true).into()),
-                ]
-                .into_iter()
-                .collect::<Vec<Arc<arrow::datatypes::Field>>>()
-                .into(),
-            ),
-            false,
-        );
-
-        for keys_sorted in [true, false] {
-            let data_type = DataType::Map(Arc::new(map_field.clone().into()), keys_sorted);
-            let field = Field::new("test_field", 1, data_type, false);
-            let result = round_trip_field(&field);
-            assert_eq!(field, result);
-        }
     }
 
     #[test]

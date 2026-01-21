@@ -3,12 +3,12 @@ use std::{sync::Arc, time::Duration};
 use bytesize::ByteSize;
 
 use datafusion::common::arrow::datatypes::{
-    DataType, Field as ArrowField, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
+    Field as ArrowField, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
 };
 
 use crate::{
     resource_type,
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema},
 };
 
 use super::namespace::NamespaceName;
@@ -177,11 +177,9 @@ pub fn validate_compaction(compaction: &CompactionConfiguration) -> Result<(), V
 
 #[cfg(test)]
 mod tests {
-    use datafusion::common::arrow::datatypes::DataType;
-
     use crate::{
         resources::{NamespaceName, TenantName, Topic, TopicName, TopicOptions},
-        schema::{Field, Schema},
+        schema::{DataType, Field, Schema},
     };
 
     #[test]

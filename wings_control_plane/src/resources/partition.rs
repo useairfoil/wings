@@ -7,10 +7,11 @@
 use std::convert::TryFrom;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
-use datafusion::common::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
+
+use crate::schema::DataType;
 
 /// Errors that can occur when converting partition values.
 #[derive(Debug, Clone, PartialEq, Eq, Snafu)]
@@ -144,8 +145,8 @@ impl PartitionValue {
                 })?;
                 Ok(PartitionValue::Int64(parsed))
             }
-            DataType::Utf8 | DataType::LargeUtf8 => Ok(PartitionValue::String(value.to_string())),
-            DataType::Binary | DataType::LargeBinary => {
+            DataType::Utf8 => Ok(PartitionValue::String(value.to_string())),
+            DataType::Binary => {
                 let bytes = BASE64_STANDARD
                     .decode(value)
                     .context(InvalidBase64ValueSnafu {

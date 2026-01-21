@@ -18,13 +18,8 @@
 // under the License.
 use std::sync::Arc;
 
-use datafusion::arrow::datatypes::{
-    DataType, IntervalUnit as ArrowIntervalUnit, TimeUnit as ArrowTimeUnit, UnionFields,
-    UnionMode as ArrowUnionMode,
-};
-
 use crate::schema::{
-    Field, Schema,
+    DataType, Field, FieldRef, Schema, TimeUnit,
     error::{Result, SchemaError},
 };
 
@@ -91,12 +86,7 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
             ArrowTypeEnum::Float32(_) => DataType::Float32,
             ArrowTypeEnum::Float64(_) => DataType::Float64,
             ArrowTypeEnum::Utf8(_) => DataType::Utf8,
-            ArrowTypeEnum::Utf8View(_) => DataType::Utf8View,
-            ArrowTypeEnum::LargeUtf8(_) => DataType::LargeUtf8,
             ArrowTypeEnum::Binary(_) => DataType::Binary,
-            ArrowTypeEnum::BinaryView(_) => DataType::BinaryView,
-            ArrowTypeEnum::FixedSizeBinary(size) => DataType::FixedSizeBinary(*size),
-            ArrowTypeEnum::LargeBinary(_) => DataType::LargeBinary,
             ArrowTypeEnum::Date32(_) => DataType::Date32,
             ArrowTypeEnum::Date64(_) => DataType::Date64,
             ArrowTypeEnum::Duration(time_unit) => {
@@ -109,82 +99,15 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 };
                 DataType::Timestamp(parse_i32_to_time_unit(ts.time_unit)?, timezone)
             }
-            ArrowTypeEnum::Time32(time_unit) => {
-                DataType::Time32(parse_i32_to_time_unit(*time_unit)?)
-            }
-            ArrowTypeEnum::Time64(time_unit) => {
-                DataType::Time64(parse_i32_to_time_unit(*time_unit)?)
-            }
-            ArrowTypeEnum::Interval(interval_unit) => {
-                DataType::Interval(parse_i32_to_interval_unit(*interval_unit)?)
-            }
-            ArrowTypeEnum::Decimal32(decimal) => {
-                DataType::Decimal32(decimal.precision as u8, decimal.scale as i8)
-            }
-            ArrowTypeEnum::Decimal64(decimal) => {
-                DataType::Decimal64(decimal.precision as u8, decimal.scale as i8)
-            }
-            ArrowTypeEnum::Decimal128(decimal) => {
-                DataType::Decimal128(decimal.precision as u8, decimal.scale as i8)
-            }
-            ArrowTypeEnum::Decimal256(decimal) => {
-                DataType::Decimal256(decimal.precision as u8, decimal.scale as i8)
-            }
             ArrowTypeEnum::List(list) => {
                 let list_type: &crate::schema::pb::Field =
                     list.field_type.as_deref().required("field_type")?;
                 let field: Field = list_type.try_into()?;
                 DataType::List(Arc::new(field.into()))
             }
-            ArrowTypeEnum::LargeList(list) => {
-                let list_type: &crate::schema::pb::Field =
-                    list.field_type.as_deref().required("field_type")?;
-                let field: Field = list_type.try_into()?;
-                DataType::LargeList(Arc::new(field.into()))
-            }
-            ArrowTypeEnum::FixedSizeList(list) => {
-                let list_type: &crate::schema::pb::Field =
-                    list.field_type.as_deref().required("field_type")?;
-                let field: Field = list_type.try_into()?;
-                DataType::FixedSizeList(Arc::new(field.into()), list.list_size)
-            }
             ArrowTypeEnum::Struct(strct) => {
-                DataType::Struct(parse_proto_fields_to_fields(&strct.sub_field_types)?.into())
-            }
-            ArrowTypeEnum::Union(union) => {
-                let union_mode = match union.union_mode {
-                    0 => ArrowUnionMode::Sparse,
-                    1 => ArrowUnionMode::Dense,
-                    _ => {
-                        return Err(SchemaError::ConversionError {
-                            message: format!("Invalid union mode: {}", union.union_mode),
-                        });
-                    }
-                };
-                let union_fields = parse_proto_fields_to_fields(&union.union_types)?;
-
-                let type_ids: Vec<_> = match union.type_ids.is_empty() {
-                    true => (0..union_fields.len() as i8).collect(),
-                    false => union.type_ids.iter().map(|i| *i as i8).collect(),
-                };
-
-                DataType::Union(UnionFields::new(type_ids, union_fields), union_mode)
-            }
-            ArrowTypeEnum::Dictionary(dict) => {
-                let key_datatype: &crate::schema::pb::ArrowType =
-                    dict.key.as_deref().required("key")?;
-                let value_datatype: &crate::schema::pb::ArrowType =
-                    dict.value.as_deref().required("value")?;
-                DataType::Dictionary(
-                    Box::new(key_datatype.try_into()?),
-                    Box::new(value_datatype.try_into()?),
-                )
-            }
-            ArrowTypeEnum::Map(map) => {
-                let field: &crate::schema::pb::Field =
-                    map.field_type.as_deref().required("field_type")?;
-                let f: Field = field.try_into()?;
-                DataType::Map(Arc::new(f.into()), map.keys_sorted)
+                let fields = parse_proto_fields_to_fields(&strct.sub_field_types)?;
+                DataType::Struct(fields.into())
             }
         })
     }
@@ -202,38 +125,20 @@ impl<T> FromOptionalField<T> for Option<T> {
     }
 }
 
-#[allow(clippy::ptr_arg)]
-pub fn parse_i32_to_time_unit(value: i32) -> Result<ArrowTimeUnit> {
-    Ok(match value {
-        0 => ArrowTimeUnit::Second,
-        1 => ArrowTimeUnit::Millisecond,
-        2 => ArrowTimeUnit::Microsecond,
-        3 => ArrowTimeUnit::Nanosecond,
-        _ => {
-            return Err(SchemaError::ConversionError {
-                message: format!("Invalid time unit: {}", value),
-            });
-        }
-    })
+pub fn parse_i32_to_time_unit(value: i32) -> Result<TimeUnit> {
+    use crate::schema::pb::TimeUnit as ProtoTimeUnit;
+    match ProtoTimeUnit::try_from(value) {
+        Err(_) | Ok(ProtoTimeUnit::Unspecified) => Err(SchemaError::ConversionError {
+            message: format!("unspecified time unit: {value}"),
+        }),
+        Ok(ProtoTimeUnit::Second) => Ok(TimeUnit::Second),
+        Ok(ProtoTimeUnit::Millisecond) => Ok(TimeUnit::Millisecond),
+        Ok(ProtoTimeUnit::Microsecond) => Ok(TimeUnit::Microsecond),
+        Ok(ProtoTimeUnit::Nanosecond) => Ok(TimeUnit::Nanosecond),
+    }
 }
 
-#[allow(clippy::ptr_arg)]
-pub fn parse_i32_to_interval_unit(value: i32) -> Result<ArrowIntervalUnit> {
-    Ok(match value {
-        0 => ArrowIntervalUnit::YearMonth,
-        1 => ArrowIntervalUnit::DayTime,
-        2 => ArrowIntervalUnit::MonthDayNano,
-        _ => {
-            return Err(SchemaError::ConversionError {
-                message: format!("Invalid interval unit: {}", value),
-            });
-        }
-    })
-}
-
-pub fn parse_proto_fields_to_fields(
-    fields: &[crate::schema::pb::Field],
-) -> Result<Vec<arrow::datatypes::Field>> {
+pub fn parse_proto_fields_to_fields(fields: &[crate::schema::pb::Field]) -> Result<Vec<FieldRef>> {
     fields
         .iter()
         .map(|field| {

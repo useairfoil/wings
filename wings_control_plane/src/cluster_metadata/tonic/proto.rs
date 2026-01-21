@@ -916,8 +916,7 @@ impl TryFrom<pb::DeleteDataLakeRequest> for DataLakeName {
 mod tests {
     use super::*;
 
-    use crate::schema::{Field, Schema};
-    use datafusion::common::arrow::datatypes::DataType;
+    use crate::schema::{DataType, Field, Schema};
 
     #[test]
     fn test_tenant_conversion() {

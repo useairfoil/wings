@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use datafusion::common::arrow::datatypes::DataType;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
@@ -11,7 +10,7 @@ use wings_control_plane::{
         DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
         TenantName, Topic, TopicName, TopicOptions,
     },
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema},
 };
 
 use crate::{
