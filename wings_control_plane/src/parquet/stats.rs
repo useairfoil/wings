@@ -138,7 +138,6 @@ impl MinMaxColAggregator {
 
     /// Update statistics
     fn update(&mut self, field_id: i32, value: Statistics) -> Result<()> {
-        println!("Field id {field_id} {:?}", value);
         let Some(field) = self.schema.field_by_id(field_id as _).cloned() else {
             // Following java implementation: https://github.com/apache/iceberg/blob/29a2c456353a6120b8c882ed2ab544975b168d7b/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L163
             // Ignore the field if it is not in schema.
@@ -224,9 +223,8 @@ fn get_parquet_stat_min_as_datum(
         (DataType::Timestamp(unit, _), Statistics::Int64(stats)) => {
             stats.min_opt().map(|val| Datum::timestamp(*unit, *val))
         }
-        (DataType::Duration(_), _) => {
-            // TODO: check how it's represented
-            None
+        (DataType::Duration(unit), Statistics::Int64(stats)) => {
+            stats.min_opt().map(|val| Datum::duration(*unit, *val))
         }
 
         (DataType::Date32, Statistics::Int32(stats)) => {
@@ -298,9 +296,8 @@ fn get_parquet_stat_max_as_datum(
         (DataType::Timestamp(unit, _), Statistics::Int64(stats)) => {
             stats.max_opt().map(|val| Datum::timestamp(*unit, *val))
         }
-        (DataType::Duration(_), _) => {
-            // TODO: check how it's represented
-            None
+        (DataType::Duration(unit), Statistics::Int64(stats)) => {
+            stats.max_opt().map(|val| Datum::duration(*unit, *val))
         }
 
         (DataType::Date32, Statistics::Int32(stats)) => {

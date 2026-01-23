@@ -19,6 +19,7 @@ pub enum Datum {
     Date32(i32),
     Date64(i64),
     Timestamp(TimeUnit, i64),
+    Duration(TimeUnit, i64),
 }
 
 impl Datum {
@@ -86,6 +87,10 @@ impl Datum {
         Self::Timestamp(unit, val)
     }
 
+    pub fn duration(unit: TimeUnit, val: i64) -> Self {
+        Self::Duration(unit, val)
+    }
+
     pub fn data_type(&self) -> DataType {
         match self {
             Self::Null => DataType::Null,
@@ -106,6 +111,7 @@ impl Datum {
             Self::Date64(_) => DataType::Date64,
             // TODO: should we drop the timezone or not?
             Self::Timestamp(unit, _) => DataType::Timestamp(*unit, None),
+            Self::Duration(unit, _) => DataType::Duration(*unit),
         }
     }
 }
