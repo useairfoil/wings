@@ -151,7 +151,7 @@ impl MinMaxColAggregator {
         }
 
         if value.min_is_exact() {
-            let Some(min_datum) = get_parquet_stat_min_as_datum(&ty, &value)? else {
+            let Some(min_datum) = get_parquet_stat_min_as_datum(ty, &value)? else {
                 return Err(super::error::Error::InvalidStatisticsType {
                     field_id: field.id,
                     field_name: field.name().to_string(),
@@ -162,7 +162,7 @@ impl MinMaxColAggregator {
         }
 
         if value.max_is_exact() {
-            let Some(max_datum) = get_parquet_stat_max_as_datum(&ty, &value)? else {
+            let Some(max_datum) = get_parquet_stat_max_as_datum(ty, &value)? else {
                 return Err(super::error::Error::InvalidStatisticsType {
                     field_id: field.id,
                     field_name: field.name().to_string(),

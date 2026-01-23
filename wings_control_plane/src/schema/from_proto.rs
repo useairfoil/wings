@@ -102,7 +102,7 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 let list_type: &crate::schema::pb::Field =
                     list.field_type.as_deref().required("field_type")?;
                 let field: Field = list_type.try_into()?;
-                DataType::List(Arc::new(field.into()))
+                DataType::List(Arc::new(field))
             }
             ArrowTypeEnum::Struct(strct) => {
                 let fields = parse_proto_fields_to_fields(&strct.sub_field_types)?;
