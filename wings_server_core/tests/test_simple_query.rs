@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_topic,
     schema_without_partition,
@@ -53,7 +51,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
     {
         let records = RecordBatch::try_new(
-            Arc::new(schema_without_partition().into()),
+            schema_without_partition().arrow_schema().into(),
             vec![
                 create_array!(Int32, vec![1, 2, 3]),
                 create_array!(
@@ -83,7 +81,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
     {
         let records = RecordBatch::try_new(
-            Arc::new(schema_without_partition().into()),
+            schema_without_partition().arrow_schema().into(),
             vec![
                 create_array!(Int32, vec![4, 5]),
                 create_array!(Utf8, vec!["Dylan".to_string(), "Erik".to_string(),]),

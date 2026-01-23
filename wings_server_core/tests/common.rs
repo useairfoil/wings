@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 use std::{sync::Arc, time::Duration};
 
-use datafusion::common::arrow::datatypes::DataType;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane::{
@@ -13,7 +12,7 @@ use wings_control_plane::{
         NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Topic, TopicName,
         TopicOptions,
     },
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema, SchemaBuilder},
 };
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_observability::MetricsExporter;
@@ -133,18 +132,22 @@ pub fn default_flush_interval() -> Duration {
 }
 
 pub fn schema_without_partition() -> Schema {
-    Schema::new(vec![
+    SchemaBuilder::new(vec![
         Field::new("id", 1, DataType::Int32, false),
         Field::new("name", 2, DataType::Utf8, false),
         Field::new("age", 3, DataType::Int32, false),
     ])
+    .build()
+    .unwrap()
 }
 
 pub fn schema_with_partition() -> Schema {
-    Schema::new(vec![
+    SchemaBuilder::new(vec![
         Field::new("region_id", 0, DataType::Int64, false),
         Field::new("id", 1, DataType::Int32, false),
         Field::new("name", 2, DataType::Utf8, false),
         Field::new("age", 3, DataType::Int32, false),
     ])
+    .build()
+    .unwrap()
 }

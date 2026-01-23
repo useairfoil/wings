@@ -916,7 +916,7 @@ impl TryFrom<pb::DeleteDataLakeRequest> for DataLakeName {
 mod tests {
     use super::*;
 
-    use crate::schema::{DataType, Field, Schema};
+    use crate::schema::{DataType, Field, SchemaBuilder};
 
     #[test]
     fn test_tenant_conversion() {
@@ -968,7 +968,9 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let schema = Schema::new(vec![Field::new("test", 0, DataType::Utf8, false)]);
+        let schema = SchemaBuilder::new(vec![Field::new("test", 0, DataType::Utf8, false)])
+            .build()
+            .unwrap();
         let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let domain_topic = Topic::new(topic_name.clone(), options);
 

@@ -6,6 +6,7 @@ use wings_control_plane::{
     ErrorKind,
     cluster_metadata::ClusterMetadataError,
     resources::{PartitionValueParseError, ResourceError},
+    schema::SchemaError,
 };
 use wings_observability::ObservabilityError;
 
@@ -34,6 +35,8 @@ pub enum CliError {
     InvalidPartitionValue,
     #[snafu(display("Failed to parse partition value"))]
     PartitionValueParse { source: PartitionValueParseError },
+    #[snafu(display("Invalid schema"))]
+    InvalidSchema { source: SchemaError },
     #[snafu(display("Invalid timestamp format"))]
     InvalidTimestampFormat { source: chrono::ParseError },
     #[snafu(display("Invalid remote URL"))]
@@ -73,6 +76,7 @@ impl CliError {
             | Self::InvalidArgument { .. }
             | Self::InvalidPartitionValue
             | Self::PartitionValueParse { .. }
+            | Self::InvalidSchema { .. }
             | Self::InvalidTimestampFormat { .. } => ErrorKind::Validation,
             Self::InvalidRemoteUrl { .. } | Self::InvalidServerUrl { .. } => {
                 ErrorKind::Configuration

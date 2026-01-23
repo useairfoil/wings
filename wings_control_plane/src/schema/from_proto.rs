@@ -19,7 +19,7 @@
 use std::sync::Arc;
 
 use crate::schema::{
-    DataType, Field, FieldRef, Schema, TimeUnit,
+    DataType, Field, FieldRef, Schema, SchemaBuilder, TimeUnit,
     error::{Result, SchemaError},
 };
 
@@ -30,13 +30,12 @@ impl TryFrom<&crate::schema::pb::Schema> for Schema {
         let fields = schema
             .fields
             .iter()
-            .map(TryInto::try_into)
+            .map(|f| f.try_into().map(Arc::new))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self {
-            fields,
-            metadata: schema.metadata.clone(),
-        })
+        SchemaBuilder::new(fields)
+            .with_metadata(schema.metadata.clone())
+            .build()
     }
 }
 

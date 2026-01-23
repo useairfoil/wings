@@ -1,37 +1,40 @@
 use std::sync::Arc;
 
 use common::{create_batch_ingestor, initialize_test_namespace};
-use datafusion::common::{
-    arrow::{array::RecordBatch, datatypes::DataType},
-    create_array,
-};
+use datafusion::common::{arrow::array::RecordBatch, create_array};
 use wings_control_plane::{
     cluster_metadata::ClusterMetadata,
     resources::{Namespace, PartitionValue, Topic, TopicName, TopicOptions},
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema, SchemaBuilder},
 };
 use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
 fn partitioned_ingestion_schema() -> Schema {
-    Schema::new(vec![
+    SchemaBuilder::new(vec![
         Field::new("region_code", 0, DataType::Int32, false),
         Field::new("name", 1, DataType::Utf8, false),
         Field::new("age", 2, DataType::Int32, false),
     ])
+    .build()
+    .unwrap()
 }
 
 fn partitioned_ingestion_schema_without_region_code() -> Schema {
-    Schema::new(vec![
+    SchemaBuilder::new(vec![
         Field::new("name", 1, DataType::Utf8, false),
         Field::new("age", 2, DataType::Int32, false),
     ])
+    .build()
+    .unwrap()
 }
 
 fn partitioned_ingestion_records() -> RecordBatch {
     RecordBatch::try_new(
-        Arc::new(partitioned_ingestion_schema_without_region_code().into()),
+        partitioned_ingestion_schema_without_region_code()
+            .arrow_schema()
+            .into(),
         vec![
             create_array!(Utf8, vec!["Alice", "Bob", "Charlie"]),
             create_array!(Int32, vec![25, 30, 35]),

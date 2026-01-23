@@ -52,7 +52,7 @@ impl FolioExec {
         let partition_value_column = match (partition_column, partition_value) {
             (None, None) => None,
             (Some(column), Some(value)) => {
-                let column: Arc<_> = Arc::new(column.into());
+                let column: Arc<_> = column.to_arrow_field().into();
                 Some((column, value))
             }
             _ => {

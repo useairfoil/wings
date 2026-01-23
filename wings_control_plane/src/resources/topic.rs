@@ -2,9 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 
-use datafusion::common::arrow::datatypes::{
-    Field as ArrowField, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
-};
+use datafusion::common::arrow::datatypes::{Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
 
 use crate::{
     resource_type,
@@ -60,8 +58,7 @@ impl Topic {
     }
 
     pub fn arrow_schema(&self) -> ArrowSchemaRef {
-        let schema = self.schema().clone().into();
-        Arc::new(schema)
+        self.schema().arrow_schema().into()
     }
 
     /// Returns the topic's schema without the partition field.
@@ -78,7 +75,7 @@ impl Topic {
             .fields_iter()
             .filter(|field| field.id != partition_key)
             .cloned()
-            .map(ArrowField::from)
+            .map(|f| f.into_arrow_field())
             .collect::<Vec<_>>();
 
         Arc::new(ArrowSchema::new(fields))
@@ -179,7 +176,7 @@ pub fn validate_compaction(compaction: &CompactionConfiguration) -> Result<(), V
 mod tests {
     use crate::{
         resources::{NamespaceName, TenantName, Topic, TopicName, TopicOptions},
-        schema::{DataType, Field, Schema},
+        schema::{DataType, Field, SchemaBuilder},
     };
 
     #[test]
@@ -187,7 +184,9 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-        let schema = Schema::new(vec![Field::new("test", 1, DataType::Utf8, false)]);
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
         let options = TopicOptions::new(schema);
         let topic = Topic::new(topic_name.clone(), options);
 
@@ -207,10 +206,12 @@ mod tests {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
-        let schema = Schema::new(vec![
+        let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
-        ]);
+        ])
+        .build()
+        .unwrap();
         let options = TopicOptions::new_with_partition_key(schema, Some(0));
         let topic = Topic::new(topic_name.clone(), options);
 

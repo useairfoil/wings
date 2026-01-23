@@ -8,19 +8,16 @@ use std::{
 use clap::ValueEnum;
 use datafusion::common::arrow::{
     array::{Date32Array, Int32Array, Int64Array, StringArray},
-    datatypes::DataType,
     record_batch::RecordBatch,
 };
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 use wings_client::WriteRequest;
 use wings_control_plane::{
     resources::{CompactionConfiguration, PartitionValue, TopicOptions},
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema, SchemaBuilder},
 };
 
-use crate::conversions::{
-    decimal128_array_from_iter, string_array_from_display_iter, to_arrow_date32,
-};
+use crate::conversions::{string_array_from_display_iter, to_arrow_date32};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug, Hash)]
 pub enum TopicType {
@@ -71,7 +68,9 @@ impl OrderRecordBatchGenerator {
             .filter(|field| field.id != Self::PARTITION_KEY)
             .collect::<Vec<_>>();
 
-        let schema = Schema::new(fields_without_partition_key);
+        let schema = SchemaBuilder::new(fields_without_partition_key)
+            .build()
+            .expect("valid order schema");
 
         Self {
             customer_id: 1,
@@ -87,7 +86,7 @@ impl OrderRecordBatchGenerator {
             Field::new("o_custkey", Self::PARTITION_KEY, DataType::Int64, false),
             Field::new("o_custkey_check", 2, DataType::Int64, false),
             Field::new("o_orderstatus", 3, DataType::Utf8, false),
-            Field::new("o_totalprice", 4, DataType::Decimal128(15, 2), false),
+            // Field::new("o_totalprice", 4, DataType::Decimal128(15, 2), false),
             Field::new("o_orderdate", 5, DataType::Date32, false),
             Field::new("o_orderpriority", 6, DataType::Utf8, false),
             Field::new("o_clerk", 7, DataType::Utf8, false),
@@ -132,7 +131,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                 Int64Array::from_iter_values(std::iter::repeat_n(customer_id, batch_size));
             let o_orderstatus =
                 string_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
-            let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
+            // let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
             let o_orderdate = Date32Array::from_iter_values(
                 rows.iter().map(|r| r.o_orderdate).map(to_arrow_date32),
             );
@@ -149,7 +148,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                     Arc::new(o_orderkey),
                     Arc::new(o_custkey_check),
                     Arc::new(o_orderstatus),
-                    Arc::new(o_totalprice),
+                    // Arc::new(o_totalprice),
                     Arc::new(o_orderdate),
                     Arc::new(o_orderpriority),
                     Arc::new(o_clerk),
@@ -183,7 +182,9 @@ impl TopicType {
     pub fn topic_options(&self) -> TopicOptions {
         match self {
             TopicType::Order => TopicOptions {
-                schema: Schema::new(OrderRecordBatchGenerator::fields()),
+                schema: SchemaBuilder::new(OrderRecordBatchGenerator::fields())
+                    .build()
+                    .expect("valid order schema"),
                 partition_key: OrderRecordBatchGenerator::partition_key(),
                 description: "TPC-H orders table".to_string().into(),
                 compaction: CompactionConfiguration {

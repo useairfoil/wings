@@ -30,7 +30,7 @@ impl TryFrom<&Schema> for crate::schema::pb::Schema {
         let fields = value
             .fields
             .iter()
-            .map(TryInto::try_into)
+            .map(|f| f.as_ref().try_into())
             .collect::<Result<Vec<_>>>()?;
 
         Ok(crate::schema::pb::Schema {

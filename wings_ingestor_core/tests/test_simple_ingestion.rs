@@ -1,30 +1,29 @@
 use std::{sync::Arc, time::Duration};
 
 use common::{create_batch_ingestor, initialize_test_namespace};
-use datafusion::common::{
-    arrow::{array::RecordBatch, datatypes::DataType},
-    create_array, record_batch,
-};
+use datafusion::common::{arrow::array::RecordBatch, create_array, record_batch};
 use wings_control_plane::{
     cluster_metadata::ClusterMetadata,
     resources::{Namespace, Topic, TopicName, TopicOptions},
-    schema::{Field, Schema},
+    schema::{DataType, Field, Schema, SchemaBuilder},
 };
 use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
 
 mod common;
 
 fn simple_ingestion_schema() -> Schema {
-    Schema::new(vec![
+    SchemaBuilder::new(vec![
         Field::new("id", 0, DataType::Int32, false),
         Field::new("name", 1, DataType::Utf8, false),
         Field::new("age", 2, DataType::Int32, false),
     ])
+    .build()
+    .unwrap()
 }
 
 fn simple_ingestion_records() -> RecordBatch {
     RecordBatch::try_new(
-        Arc::new(simple_ingestion_schema().into()),
+        simple_ingestion_schema().arrow_schema().into(),
         vec![
             create_array!(Int32, vec![1, 2, 3]),
             create_array!(Utf8, vec!["Alice", "Bob", "Charlie"]),

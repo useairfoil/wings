@@ -233,7 +233,7 @@ async fn ingest_some_data(
     partitioned_topic: Arc<Topic>,
 ) -> Result<(), WriteBatchError> {
     let records = RecordBatch::try_new(
-        Arc::new(schema_without_partition().into()),
+        schema_without_partition().arrow_schema().into(),
         vec![
             create_array!(Int32, vec![101, 102, 103]),
             create_array!(

@@ -11,6 +11,7 @@ use tpchgen::decimal::TPCHDecimal;
 
 /// Convert a TPCHDecimal to an Arrow Decimal(15,2)
 #[inline(always)]
+#[allow(unused)]
 pub fn to_arrow_decimal(value: TPCHDecimal) -> i128 {
     // TPCH decimals are stored as i64 with 2 decimal places, so
     // we can simply convert to i128 directly
@@ -38,6 +39,7 @@ pub fn to_arrow_date32(value: TPCHDate) -> i32 {
 }
 
 /// Converts an iterator of TPCH decimals to an Arrow Decimal128Array
+#[allow(unused)]
 pub fn decimal128_array_from_iter<I>(values: I) -> arrow::array::Decimal128Array
 where
     I: Iterator<Item = TPCHDecimal>,

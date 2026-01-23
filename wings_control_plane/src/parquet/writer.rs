@@ -1,8 +1,13 @@
-use arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use std::sync::Arc;
+
+use arrow::{datatypes::Schema as ArrowSchema, record_batch::RecordBatch};
 use bytesize::ByteSize;
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-use crate::parquet::stats::{FileMetadata, parquet_metadata_to_file_metadata};
+use crate::{
+    parquet::stats::{FileMetadata, parquet_metadata_to_file_metadata},
+    schema::SchemaRef,
+};
 
 use super::error::Result;
 
@@ -10,6 +15,7 @@ const DEFAULT_BUFFER_CAPACITY: usize = 32 * 1024 * 1024;
 
 pub struct ParquetWriter {
     schema: SchemaRef,
+    arrow_schema: Arc<ArrowSchema>,
     writer_properties: WriterProperties,
     inner_writer: Option<ArrowWriter<Vec<u8>>>,
 }
@@ -17,6 +23,7 @@ pub struct ParquetWriter {
 impl ParquetWriter {
     pub fn new(schema: SchemaRef, writer_properties: WriterProperties) -> Self {
         Self {
+            arrow_schema: Arc::new(schema.arrow_schema()),
             schema,
             writer_properties,
             inner_writer: None,
@@ -28,7 +35,7 @@ impl ParquetWriter {
             let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
             let writer = ArrowWriter::try_new(
                 buffer,
-                self.schema.clone(),
+                self.arrow_schema.clone(),
                 self.writer_properties.clone().into(),
             )?;
 
@@ -71,19 +78,24 @@ impl ParquetWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::array::{Int32Array, StringArray};
+    use arrow::array::{Int32Array, RecordBatch, StringArray};
+    use parquet::file::properties::WriterProperties;
     use std::sync::Arc;
 
-    use crate::schema::{DataType, Field, Schema};
+    use crate::{
+        parquet::ParquetWriter,
+        schema::{DataType, Field, SchemaBuilder, SchemaRef},
+    };
 
     fn create_test_schema() -> SchemaRef {
-        let schema = Schema::new(vec![
+        let schema = SchemaBuilder::new(vec![
             Field::new("id", 2, DataType::Int32, false),
             Field::new("name", 3, DataType::Utf8, false),
-        ]);
+        ])
+        .build()
+        .unwrap();
 
-        schema.arrow_schema().into()
+        Arc::new(schema)
     }
 
     fn create_test_batch() -> RecordBatch {
@@ -91,7 +103,7 @@ mod tests {
         let name_array = StringArray::from(vec!["alice", "bob", "charlie"]);
 
         RecordBatch::try_new(
-            create_test_schema(),
+            create_test_schema().arrow_schema().into(),
             vec![Arc::new(id_array), Arc::new(name_array)],
         )
         .unwrap()

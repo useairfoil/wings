@@ -10,11 +10,11 @@ use wings_control_plane::{
         DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
         TenantName, Topic, TopicName, TopicOptions,
     },
-    schema::{DataType, Field, Schema},
+    schema::{DataType, Field, SchemaBuilder},
 };
 
 use crate::{
-    error::{CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, Result},
+    error::{CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, InvalidSchemaSnafu, Result},
     remote::RemoteArgs,
 };
 
@@ -226,7 +226,9 @@ impl ClusterMetadataCommands {
                     None
                 };
 
-                let schema = Schema::new(parsed_fields);
+                let schema = SchemaBuilder::new(parsed_fields)
+                    .build()
+                    .context(InvalidSchemaSnafu {})?;
                 let topic_options = TopicOptions::new_with_partition_key(schema, partition_key);
 
                 let topic = client

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::arrow::{
-    datatypes::{Field as ArrowField, SchemaRef},
-    record_batch::RecordBatch,
-};
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use object_store::{ObjectStore, PutMode, PutOptions, PutPayload, path::Path};
 use parquet::{
     arrow::ArrowWriter,
@@ -72,7 +69,7 @@ impl DataLake for ParquetDataLake {
         let partition_field = topic
             .partition_field()
             .cloned()
-            .map(|field| Arc::new(ArrowField::from(field)));
+            .map(|field| field.to_arrow_field().into());
         let file_ref: Path = format_parquet_path(&topic.name.parent)
             .with_offset_range(start_offset, end_offset)
             .with_partition(partition_field.as_ref(), partition_value.as_ref())
