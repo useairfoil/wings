@@ -13,7 +13,7 @@ use datafusion::common::arrow::{
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 use wings_client::WriteRequest;
 use wings_control_plane::{
-    resources::{CompactionConfiguration, PartitionValue, TopicOptions},
+    resources::{CompactionConfiguration, TopicOptions},
     schema::{DataType, Field, Schema, SchemaBuilder},
 };
 
@@ -59,16 +59,10 @@ pub struct OrderRecordBatchGenerator {
 }
 
 impl OrderRecordBatchGenerator {
-    const PARTITION_KEY: u64 = 1;
-
     fn new(partitions: u64) -> Self {
         let generator = OrderGenerator::new(1.0, 1, 1);
-        let fields_without_partition_key = Self::fields()
-            .into_iter()
-            .filter(|field| field.id != Self::PARTITION_KEY)
-            .collect::<Vec<_>>();
 
-        let schema = SchemaBuilder::new(fields_without_partition_key)
+        let schema = SchemaBuilder::new(Self::fields())
             .build()
             .expect("valid order schema");
 
@@ -83,20 +77,18 @@ impl OrderRecordBatchGenerator {
     fn fields() -> Vec<Field> {
         vec![
             Field::new("o_orderkey", 0, DataType::Int64, false),
-            Field::new("o_custkey", Self::PARTITION_KEY, DataType::Int64, false),
-            Field::new("o_custkey_check", 2, DataType::Int64, false),
-            Field::new("o_orderstatus", 3, DataType::Utf8, false),
-            // Field::new("o_totalprice", 4, DataType::Decimal128(15, 2), false),
-            Field::new("o_orderdate", 5, DataType::Date32, false),
-            Field::new("o_orderpriority", 6, DataType::Utf8, false),
-            Field::new("o_clerk", 7, DataType::Utf8, false),
-            Field::new("o_shippriority", 8, DataType::Int32, false),
-            Field::new("o_comment", 9, DataType::Utf8, false),
+            Field::new("o_custkey", 1, DataType::Int64, false),
+            Field::new("o_orderstatus", 2, DataType::Utf8, false),
+            Field::new("o_orderdate", 3, DataType::Date32, false),
+            Field::new("o_orderpriority", 4, DataType::Utf8, false),
+            Field::new("o_clerk", 5, DataType::Utf8, false),
+            Field::new("o_shippriority", 6, DataType::Int32, false),
+            Field::new("o_comment", 7, DataType::Utf8, false),
         ]
     }
 
     fn partition_key() -> Option<u64> {
-        Some(Self::PARTITION_KEY)
+        None
     }
 
     fn topic_name() -> &'static str {
@@ -115,8 +107,6 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             None
         };
 
-        let partition_value = PartitionValue::Int64(customer_id);
-
         let rows: Vec<_> = self
             .order_generator_iter
             .by_ref()
@@ -127,11 +117,9 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
             RecordBatch::new_empty(self.schema.arrow_schema().into())
         } else {
             let o_orderkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_orderkey));
-            let o_custkey_check =
-                Int64Array::from_iter_values(std::iter::repeat_n(customer_id, batch_size));
+            let o_custkey = Int64Array::from_iter_values(rows.iter().map(|r| r.o_custkey));
             let o_orderstatus =
                 string_array_from_display_iter(rows.iter().map(|r| r.o_orderstatus));
-            // let o_totalprice = decimal128_array_from_iter(rows.iter().map(|r| r.o_totalprice));
             let o_orderdate = Date32Array::from_iter_values(
                 rows.iter().map(|r| r.o_orderdate).map(to_arrow_date32),
             );
@@ -146,9 +134,8 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
                 self.schema.arrow_schema().into(),
                 vec![
                     Arc::new(o_orderkey),
-                    Arc::new(o_custkey_check),
+                    Arc::new(o_custkey),
                     Arc::new(o_orderstatus),
-                    // Arc::new(o_totalprice),
                     Arc::new(o_orderdate),
                     Arc::new(o_orderpriority),
                     Arc::new(o_clerk),
@@ -166,7 +153,7 @@ impl RecordBatchGenerator for OrderRecordBatchGenerator {
 
         WriteRequest {
             data: batch,
-            partition_value: Some(partition_value),
+            partition_value: None,
             timestamp,
         }
     }
