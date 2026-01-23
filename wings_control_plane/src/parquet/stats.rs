@@ -31,15 +31,15 @@ use crate::{
 
 use super::error::Result;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct FileMetadata {
     pub file_size: bytesize::ByteSize,
     pub num_rows: usize,
-    pub column_sizes: HashMap<i32, u64>,
-    pub value_counts: HashMap<i32, u64>,
-    pub null_value_counts: HashMap<i32, u64>,
-    pub lower_bounds: HashMap<i32, Datum>,
-    pub upper_bounds: HashMap<i32, Datum>,
+    pub column_sizes: HashMap<u64, u64>,
+    pub value_counts: HashMap<u64, u64>,
+    pub null_value_counts: HashMap<u64, u64>,
+    pub lower_bounds: HashMap<u64, Datum>,
+    pub upper_bounds: HashMap<u64, Datum>,
 }
 
 pub fn parquet_metadata_to_file_metadata(
@@ -50,9 +50,9 @@ pub fn parquet_metadata_to_file_metadata(
     let index_by_parquet_path = create_parquet_path_index(schema.as_ref())?;
 
     let (column_sizes, value_counts, null_value_counts, (lower_bounds, upper_bounds)) = {
-        let mut per_col_size: HashMap<i32, u64> = HashMap::new();
-        let mut per_col_val_num: HashMap<i32, u64> = HashMap::new();
-        let mut per_col_null_val_num: HashMap<i32, u64> = HashMap::new();
+        let mut per_col_size: HashMap<u64, u64> = HashMap::new();
+        let mut per_col_val_num: HashMap<u64, u64> = HashMap::new();
+        let mut per_col_null_val_num: HashMap<u64, u64> = HashMap::new();
         let mut min_max_agg = MinMaxColAggregator::new(schema);
 
         for row_group in metadata.row_groups() {
@@ -100,8 +100,8 @@ pub fn parquet_metadata_to_file_metadata(
 /// Used to aggregate min and max value of each column.
 struct MinMaxColAggregator {
     schema: SchemaRef,
-    lower_bounds: HashMap<i32, Datum>,
-    upper_bounds: HashMap<i32, Datum>,
+    lower_bounds: HashMap<u64, Datum>,
+    upper_bounds: HashMap<u64, Datum>,
 }
 
 impl MinMaxColAggregator {
@@ -114,7 +114,7 @@ impl MinMaxColAggregator {
         }
     }
 
-    fn update_state_min(&mut self, field_id: i32, datum: Datum) {
+    fn update_state_min(&mut self, field_id: u64, datum: Datum) {
         self.lower_bounds
             .entry(field_id)
             .and_modify(|e| {
@@ -125,7 +125,7 @@ impl MinMaxColAggregator {
             .or_insert(datum);
     }
 
-    fn update_state_max(&mut self, field_id: i32, datum: Datum) {
+    fn update_state_max(&mut self, field_id: u64, datum: Datum) {
         self.upper_bounds
             .entry(field_id)
             .and_modify(|e| {
@@ -137,8 +137,8 @@ impl MinMaxColAggregator {
     }
 
     /// Update statistics
-    fn update(&mut self, field_id: i32, value: Statistics) -> Result<()> {
-        let Some(field) = self.schema.field_by_id(field_id as _).cloned() else {
+    fn update(&mut self, field_id: u64, value: Statistics) -> Result<()> {
+        let Some(field) = self.schema.field_by_id(field_id).cloned() else {
             // Following java implementation: https://github.com/apache/iceberg/blob/29a2c456353a6120b8c882ed2ab544975b168d7b/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L163
             // Ignore the field if it is not in schema.
             return Ok(());
@@ -176,7 +176,7 @@ impl MinMaxColAggregator {
     }
 
     /// Returns lower and upper bounds
-    fn produce(self) -> (HashMap<i32, Datum>, HashMap<i32, Datum>) {
+    fn produce(self) -> (HashMap<u64, Datum>, HashMap<u64, Datum>) {
         (self.lower_bounds, self.upper_bounds)
     }
 }

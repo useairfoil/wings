@@ -4,6 +4,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use tracing::{debug, warn};
+
 use crate::{
     log_metadata::{
         CommitPageRequest, CommitPageResponse, CreateTableTask, GetLogLocationOptions, LogLocation,
@@ -126,12 +128,16 @@ impl TopicLogState {
                 _ => None,
             },
             CandidateTask::Partition(topic_name, partition_value) => match &mut self.table_status {
-                TableStatus::Created { .. } => {
+                TableStatus::Created {
+                    partition_tasks, ..
+                } => {
                     let partition_key = PartitionKey::new(topic_name, partition_value);
 
                     let partition_state = self.partitions.get_mut(&partition_key)?;
 
-                    partition_state.candidate_task(&self.compaction_config)
+                    let task = partition_state.candidate_task(&self.compaction_config)?;
+                    partition_tasks.insert(task.task_id().to_string(), partition_key);
+                    Some(task)
                 }
                 TableStatus::InProgress {
                     pending_candidates, ..
@@ -152,6 +158,8 @@ impl TopicLogState {
         task_id: &str,
         result: TaskCompletionResult,
     ) -> Result<(bool, Vec<CandidateTask>)> {
+        debug!(task_id, "Received task completion result in topci state");
+
         // First check if this is a table creation task in progress
         match &mut self.table_status {
             TableStatus::InProgress {
@@ -169,6 +177,8 @@ impl TopicLogState {
                                     // Take the pending candidates before changing the state
                                     let pending_candidates = std::mem::take(pending_candidates);
 
+                                    debug!(table_id, "Table created successfully");
+
                                     self.table_status = TableStatus::Created {
                                         table_id,
                                         partition_tasks: Default::default(),
@@ -182,7 +192,8 @@ impl TopicLogState {
                                 }
                             }
                         }
-                        TaskCompletionResult::Failure(_error_message) => {
+                        TaskCompletionResult::Failure(error_message) => {
+                            warn!("Table creation failed: {}", error_message);
                             // For now, we don't change the state on failure
                             // In a real implementation, we might want to retry the task or mark it as failed
                             Ok((false, Vec::new()))
@@ -195,14 +206,16 @@ impl TopicLogState {
             TableStatus::Created {
                 partition_tasks, ..
             } => {
-                // TODO: if it's a topic task we can track it ind the create struct
+                // TODO: if it's a topic task we can track it in the create struct
                 // and handle it locally.
                 // For now assume it's always to be forwarded to the partition.
                 let Some(partition_key) = partition_tasks.get(task_id) else {
+                    debug!(task_id, "Task is not assigned to any partition");
                     return Ok((false, Vec::new()));
                 };
 
                 let Some(partition_state) = self.partitions.get_mut(partition_key) else {
+                    debug!(task_id, ?partition_key, "Task partition does not exist");
                     return Ok((false, Vec::new()));
                 };
 

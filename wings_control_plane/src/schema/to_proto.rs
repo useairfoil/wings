@@ -18,69 +18,65 @@
 // under the License.
 use std::sync::Arc;
 
-use crate::schema::{
-    DataType, Field, Schema, TimeUnit,
-    error::{Result, SchemaError},
-};
+use crate::schema::{DataType, Datum, Field, Schema, TimeUnit, pb};
 
-impl TryFrom<&Schema> for crate::schema::pb::Schema {
-    type Error = SchemaError;
-
-    fn try_from(value: &Schema) -> Result<Self> {
+impl From<&Schema> for pb::Schema {
+    fn from(value: &Schema) -> Self {
         let fields = value
             .fields
             .iter()
-            .map(|f| f.as_ref().try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .map(|f| f.as_ref().into())
+            .collect::<Vec<_>>();
 
-        Ok(crate::schema::pb::Schema {
+        pb::Schema {
             fields,
             metadata: value.metadata.clone(),
-        })
+        }
     }
 }
 
-impl TryFrom<&Field> for crate::schema::pb::Field {
-    type Error = SchemaError;
-
-    fn try_from(value: &Field) -> Result<Self> {
-        let arrow_type: crate::schema::pb::ArrowType = (&value.data_type).try_into()?;
-        Ok(crate::schema::pb::Field {
+impl From<&Field> for pb::Field {
+    fn from(value: &Field) -> Self {
+        let arrow_type: pb::ArrowType = (&value.data_type).into();
+        pb::Field {
             name: value.name.clone(),
             id: value.id,
             arrow_type: Some(Box::new(arrow_type)),
             nullable: value.nullable,
             metadata: value.metadata.clone(),
-        })
+        }
     }
 }
 
-impl TryFrom<DataType> for crate::schema::pb::ArrowType {
-    type Error = SchemaError;
-
-    fn try_from(value: DataType) -> std::result::Result<Self, Self::Error> {
-        (&value).try_into()
+impl From<DataType> for pb::ArrowType {
+    fn from(value: DataType) -> Self {
+        (&value).into()
     }
 }
 
-impl TryFrom<&DataType> for crate::schema::pb::ArrowType {
-    type Error = SchemaError;
-
-    fn try_from(value: &DataType) -> Result<Self> {
-        let arrow_type_enum = value.try_into()?;
-        Ok(crate::schema::pb::ArrowType {
+impl From<&DataType> for pb::ArrowType {
+    fn from(value: &DataType) -> Self {
+        let arrow_type_enum = value.into();
+        pb::ArrowType {
             arrow_type_enum: Some(arrow_type_enum),
-        })
+        }
     }
 }
 
-impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
-    type Error = SchemaError;
+impl From<&Datum> for pb::Datum {
+    fn from(datum: &Datum) -> Self {
+        pb::Datum {
+            r#type: Some(datum.data_type().into()),
+            content: datum.to_bytes(),
+        }
+    }
+}
 
-    fn try_from(value: &DataType) -> Result<Self> {
+impl From<&DataType> for pb::arrow_type::ArrowTypeEnum {
+    fn from(value: &DataType) -> Self {
         use crate::schema::pb::{self as pb, arrow_type::ArrowTypeEnum};
 
-        let res = match value {
+        match value {
             DataType::Null => ArrowTypeEnum::None(pb::EmptyMessage {}),
             DataType::Boolean => ArrowTypeEnum::Bool(pb::EmptyMessage {}),
             DataType::Int8 => ArrowTypeEnum::Int8(pb::EmptyMessage {}),
@@ -120,27 +116,21 @@ impl TryFrom<&DataType> for crate::schema::pb::arrow_type::ArrowTypeEnum {
             DataType::Binary => ArrowTypeEnum::Binary(pb::EmptyMessage {}),
             DataType::Utf8 => ArrowTypeEnum::Utf8(pb::EmptyMessage {}),
             DataType::List(item_type) => ArrowTypeEnum::List(Box::new(pb::List {
-                field_type: Some(Box::new(field_to_proto_field(item_type.as_ref())?)),
+                field_type: Some(Box::new(item_type.as_ref().into())),
             })),
             DataType::Struct(struct_fields) => ArrowTypeEnum::Struct(pb::Struct {
-                sub_field_types: arc_fields_to_proto_fields(struct_fields.into_iter())?,
+                sub_field_types: arc_fields_to_proto_fields(struct_fields),
             }),
-        };
-
-        Ok(res)
+        }
     }
 }
 
-fn field_to_proto_field(field: &Field) -> Result<crate::schema::pb::Field> {
-    field.try_into()
-}
-
-pub fn arc_fields_to_proto_fields<'a, I>(fields: I) -> Result<Vec<crate::schema::pb::Field>>
+pub fn arc_fields_to_proto_fields<'a, I>(fields: I) -> Vec<pb::Field>
 where
     I: IntoIterator<Item = &'a Arc<Field>>,
 {
     fields
         .into_iter()
-        .map(|field| field_to_proto_field(field.as_ref()))
+        .map(|field| field.as_ref().into())
         .collect()
 }

@@ -19,5 +19,6 @@ pub use self::object_store::{
 pub use self::partition::{PartitionValue, PartitionValueError, PartitionValueParseError};
 pub use self::tenant::{Tenant, TenantName, TenantRef};
 pub use self::topic::{
-    CompactionConfiguration, Topic, TopicName, TopicOptions, TopicRef, validate_compaction,
+    CompactionConfiguration, OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME, Topic, TopicName,
+    TopicOptions, TopicRef, validate_compaction,
 };

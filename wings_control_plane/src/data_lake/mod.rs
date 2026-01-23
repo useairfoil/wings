@@ -1,16 +1,15 @@
 mod error;
 mod parquet;
 
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use bytesize::ByteSize;
+use datafusion::arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 use std::sync::Arc;
 
 use crate::{
     cluster_metadata::ClusterMetadata,
-    data_lake::{
-        error::{ClusterMetadataSnafu, ObjectStoreSnafu},
-        parquet::ParquetDataLake,
-    },
+    data_lake::{error::ClusterMetadataSnafu, parquet::ParquetDataLake},
+    log_metadata::FileInfo,
     object_store::ObjectStoreFactory,
     resources::{DataLakeConfiguration, NamespaceRef, PartitionValue, TopicRef},
 };
@@ -22,7 +21,7 @@ use self::error::Result;
 #[async_trait::async_trait]
 pub trait BatchWriter: Send + Sync {
     async fn write_batch(&mut self, data: RecordBatch) -> Result<()>;
-    async fn commit(&mut self) -> Result<()>;
+    async fn finish(&mut self) -> Result<Vec<FileInfo>>;
 }
 
 #[async_trait::async_trait]
@@ -31,10 +30,10 @@ pub trait DataLake: Send + Sync {
     async fn batch_writer(
         &self,
         topic: TopicRef,
-        schema: SchemaRef,
         partition_value: Option<PartitionValue>,
         start_offset: u64,
         end_offset: u64,
+        target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>>;
 }
 
@@ -62,8 +61,7 @@ impl DataLakeFactory {
         let object_store = self
             .object_store_factory
             .create_object_store(namespace.object_store.clone())
-            .await
-            .context(ObjectStoreSnafu {})?;
+            .await?;
 
         let data_lake = self
             .cluster_meta

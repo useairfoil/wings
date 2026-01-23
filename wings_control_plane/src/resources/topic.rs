@@ -2,14 +2,19 @@ use std::{sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 
-use datafusion::common::arrow::datatypes::{Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
+use datafusion::common::arrow::datatypes::SchemaRef as ArrowSchemaRef;
 
 use crate::{
     resource_type,
-    schema::{DataType, Field, Schema},
+    schema::{DataType, Field, Schema, SchemaBuilder, SchemaError, TimeUnit},
 };
 
 use super::namespace::NamespaceName;
+
+pub const OFFSET_COLUMN_NAME: &str = "__offset__";
+pub const OFFSET_COLUMN_ID: u64 = u64::MAX;
+pub const TIMESTAMP_COLUMN_NAME: &str = "__timestamp__";
+pub const TIMESTAMP_COLUMN_ID: u64 = u64::MAX - 1;
 
 resource_type!(Topic, "topics", Namespace);
 
@@ -52,6 +57,19 @@ impl Topic {
         }
     }
 
+    /// Returns the partition field, if any.
+    pub fn partition_field(&self) -> Option<&Field> {
+        let partition_key = self.partition_key?;
+        self.schema()
+            .fields_iter()
+            .find(|field| field.id == partition_key)
+    }
+
+    /// Returns the data type of the partition field, if any.
+    pub fn partition_field_data_type(&self) -> Option<&DataType> {
+        self.partition_field().map(|col| &col.data_type)
+    }
+
     /// The topic's schema.
     pub fn schema(&self) -> &Schema {
         &self.schema
@@ -65,9 +83,9 @@ impl Topic {
     ///
     /// Since partition fields are usually not stored in the physical Parquet
     /// file, this method returns a schema that excludes the partition field.
-    pub fn arrow_schema_without_partition_field(&self) -> ArrowSchemaRef {
+    pub fn schema_without_partition_field(&self) -> Schema {
         let Some(partition_key) = self.partition_key else {
-            return self.arrow_schema();
+            return self.schema().clone();
         };
 
         let fields = self
@@ -75,23 +93,65 @@ impl Topic {
             .fields_iter()
             .filter(|field| field.id != partition_key)
             .cloned()
-            .map(|f| f.into_arrow_field())
             .collect::<Vec<_>>();
-
-        Arc::new(ArrowSchema::new(fields))
+        // PANIC: if the current schema is valid, then a schema without the partition field is also valid
+        SchemaBuilder::new(fields)
+            .build()
+            .expect("derived schema is valid")
     }
 
-    /// Returns the partition field, if any.
-    pub fn partition_field(&self) -> Option<&Field> {
-        let partition_key = self.partition_key?;
-        self.schema()
-            .fields_iter()
-            .find(|field| field.id == partition_key)
+    /// Returns the topic's schema without the partition field.
+    ///
+    /// Since partition fields are usually not stored in the physical Parquet
+    /// file, this method returns a schema that excludes the partition field.
+    pub fn arrow_schema_without_partition_field(&self) -> ArrowSchemaRef {
+        self.schema_without_partition_field().arrow_schema().into()
     }
 
-    /// Returns the data type of the partition field, if any.
-    pub fn partition_field_data_type(&self) -> Option<&DataType> {
-        self.partition_field().map(|col| &col.data_type)
+    /// Returns the topic's schema with the extra metadata columns (e.g. offset and timestamp).
+    ///
+    /// Optionally, include the partition column (if any).
+    ///
+    /// Notice that this method can fail if the topic's columns include one with
+    /// the same id as the metadata columns.
+    pub fn schema_with_metadata(
+        &self,
+        include_partition_field: bool,
+    ) -> Result<Schema, SchemaError> {
+        let mut fields = if let Some(partition_key) = self.partition_key
+            && !include_partition_field
+        {
+            self.schema()
+                .fields_iter()
+                .filter(|field| field.id != partition_key)
+                .cloned()
+                .map(Arc::new)
+                .collect::<Vec<_>>()
+        } else {
+            self.schema.fields.to_vec()
+        };
+
+        fields
+            .push(Field::new(OFFSET_COLUMN_NAME, OFFSET_COLUMN_ID, DataType::UInt64, true).into());
+        fields.push(
+            Field::new(
+                TIMESTAMP_COLUMN_NAME,
+                TIMESTAMP_COLUMN_ID,
+                DataType::Timestamp(TimeUnit::Millisecond, None),
+                true,
+            )
+            .into(),
+        );
+
+        SchemaBuilder::new(fields).build()
+    }
+
+    pub fn arrow_schema_with_metadata(
+        &self,
+        include_partition_field: bool,
+    ) -> Result<ArrowSchemaRef, SchemaError> {
+        let schema = self.schema_with_metadata(include_partition_field)?;
+        Ok(schema.arrow_schema().into())
     }
 }
 

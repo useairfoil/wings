@@ -19,14 +19,15 @@
 use std::sync::Arc;
 
 use crate::schema::{
-    DataType, Field, FieldRef, Schema, SchemaBuilder, TimeUnit,
+    DataType, Datum, Field, FieldRef, Schema, SchemaBuilder, TimeUnit,
     error::{Result, SchemaError},
+    pb,
 };
 
-impl TryFrom<&crate::schema::pb::Schema> for Schema {
+impl TryFrom<&pb::Schema> for Schema {
     type Error = SchemaError;
 
-    fn try_from(schema: &crate::schema::pb::Schema) -> Result<Self> {
+    fn try_from(schema: &pb::Schema) -> Result<Self> {
         let fields = schema
             .fields
             .iter()
@@ -39,12 +40,11 @@ impl TryFrom<&crate::schema::pb::Schema> for Schema {
     }
 }
 
-impl TryFrom<&crate::schema::pb::Field> for Field {
+impl TryFrom<&pb::Field> for Field {
     type Error = SchemaError;
 
-    fn try_from(field: &crate::schema::pb::Field) -> Result<Self> {
-        let datatype: &crate::schema::pb::ArrowType =
-            field.arrow_type.as_ref().required("arrow_type")?;
+    fn try_from(field: &pb::Field) -> Result<Self> {
+        let datatype: &pb::ArrowType = field.arrow_type.as_ref().required("arrow_type")?;
         let datatype = datatype.try_into()?;
         let field = Self::new(field.name.as_str(), field.id, datatype, field.nullable)
             .with_metadata(field.metadata.clone());
@@ -52,10 +52,19 @@ impl TryFrom<&crate::schema::pb::Field> for Field {
     }
 }
 
-impl TryFrom<&crate::schema::pb::ArrowType> for DataType {
+impl TryFrom<&pb::Datum> for Datum {
     type Error = SchemaError;
 
-    fn try_from(arrow_type: &crate::schema::pb::ArrowType) -> Result<Self> {
+    fn try_from(datum: &pb::Datum) -> Result<Self> {
+        let data_type: DataType = datum.r#type.as_ref().required("type")?.try_into()?;
+        Datum::try_from_bytes(data_type, &datum.content)
+    }
+}
+
+impl TryFrom<&pb::ArrowType> for DataType {
+    type Error = SchemaError;
+
+    fn try_from(arrow_type: &pb::ArrowType) -> Result<Self> {
         let arrow_type_enum = arrow_type
             .arrow_type_enum
             .as_ref()
@@ -64,10 +73,10 @@ impl TryFrom<&crate::schema::pb::ArrowType> for DataType {
     }
 }
 
-impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
+impl TryFrom<&pb::arrow_type::ArrowTypeEnum> for DataType {
     type Error = SchemaError;
 
-    fn try_from(arrow_type_enum: &crate::schema::pb::arrow_type::ArrowTypeEnum) -> Result<Self> {
+    fn try_from(arrow_type_enum: &pb::arrow_type::ArrowTypeEnum) -> Result<Self> {
         use crate::schema::pb::arrow_type::ArrowTypeEnum;
 
         Ok(match arrow_type_enum {
@@ -99,8 +108,7 @@ impl TryFrom<&crate::schema::pb::arrow_type::ArrowTypeEnum> for DataType {
                 DataType::Timestamp(parse_i32_to_time_unit(ts.time_unit)?, timezone)
             }
             ArrowTypeEnum::List(list) => {
-                let list_type: &crate::schema::pb::Field =
-                    list.field_type.as_deref().required("field_type")?;
+                let list_type: &pb::Field = list.field_type.as_deref().required("field_type")?;
                 let field: Field = list_type.try_into()?;
                 DataType::List(Arc::new(field))
             }
@@ -137,7 +145,7 @@ pub fn parse_i32_to_time_unit(value: i32) -> Result<TimeUnit> {
     }
 }
 
-pub fn parse_proto_fields_to_fields(fields: &[crate::schema::pb::Field]) -> Result<Vec<FieldRef>> {
+pub fn parse_proto_fields_to_fields(fields: &[pb::Field]) -> Result<Vec<FieldRef>> {
     fields
         .iter()
         .map(|field| {

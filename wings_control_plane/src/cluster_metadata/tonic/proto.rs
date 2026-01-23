@@ -269,7 +269,7 @@ impl TryFrom<Topic> for pb::Topic {
     type Error = ClusterMetadataError;
 
     fn try_from(topic: Topic) -> AdminResult<Self> {
-        let schema = topic.schema().try_into().context(SchemaSnafu {})?;
+        let schema = topic.schema().into();
         let compaction = topic.compaction.into();
 
         Ok(Self {
@@ -359,7 +359,7 @@ impl TryFrom<TopicOptions> for pb::Topic {
 
     fn try_from(options: TopicOptions) -> AdminResult<Self> {
         let compaction = options.compaction.into();
-        let schema = (&options.schema).try_into().context(SchemaSnafu {})?;
+        let schema = (&options.schema).into();
 
         Ok(pb::Topic {
             name: String::new(),

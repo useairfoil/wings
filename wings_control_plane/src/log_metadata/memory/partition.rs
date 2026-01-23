@@ -122,7 +122,7 @@ impl PartitionLogState {
             start_offset,
             end_offset,
             operation: CompactionOperation::Append,
-            target_file_size: config.target_file_size.as_u64(),
+            target_file_size: config.target_file_size,
         };
 
         let task = Task::new_compaction(task);
@@ -140,6 +140,8 @@ impl PartitionLogState {
         task_id: &str,
         result: TaskCompletionResult,
     ) -> Result<(bool, Vec<CandidateTask>)> {
+        debug!(task_id, partition = ?self.key, "Received task completion result");
+
         let Some(in_progress) = &self.in_progress_task else {
             return Ok((true, Vec::default()));
         };
@@ -170,12 +172,12 @@ impl PartitionLogState {
 
         // Update stored offset to the highest end_offset from new files
         if let Some(max_end_offset) = result.new_files.iter().map(|f| f.end_offset).max() {
-            debug!(partition = ?self.key, stored = max_end_offset, "updating partition log state");
+            debug!(partition = ?self.key, end_offset = max_end_offset, "Updating partition log state");
             self.stored = Some(max_end_offset);
 
             // Add new files to files map (keyed by start offset)
             for file_info in result.new_files.into_iter() {
-                debug!(partition = ?self.key, ?file_info, "adding partition log state parquet file");
+                debug!(partition = ?self.key, ?file_info, "Adding partition log state parquet file");
                 self.files.insert(file_info.start_offset, file_info);
             }
         }

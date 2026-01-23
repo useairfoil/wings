@@ -10,8 +10,8 @@ use crate::schema::{FieldRef, Schema, SchemaVisitor, visit_schema};
 ))]
 pub struct DuplicateFieldNameError {
     pub full_name: String,
-    pub field_id: i32,
-    pub existing_field_id: i32,
+    pub field_id: u64,
+    pub existing_field_id: u64,
 }
 
 pub fn create_parquet_path_index(
@@ -24,7 +24,7 @@ pub fn create_parquet_path_index(
 
 /// A mapping from Parquet column path names to internal field id
 pub struct IndexByParquetPathName {
-    name_to_id: HashMap<String, i32>,
+    name_to_id: HashMap<String, u64>,
     field_names: Vec<String>,
 }
 
@@ -38,7 +38,7 @@ impl IndexByParquetPathName {
     }
 
     /// Retrieves the internal field ID
-    pub fn get(&self, name: &str) -> Option<&i32> {
+    pub fn get(&self, name: &str) -> Option<&u64> {
         self.name_to_id.get(name)
     }
 }

@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use datafusion::{
     catalog::{Session, TableProvider},
-    common::arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit},
+    common::arrow::datatypes::SchemaRef,
     datasource::TableType,
     error::DataFusionError,
     logical_expr::TableProviderFilterPushDown,
@@ -24,9 +24,6 @@ use crate::{
         helpers::{find_partition_column_value, validate_offset_filters},
     },
 };
-
-pub const OFFSET_COLUMN_NAME: &str = "__offset__";
-pub const TIMESTAMP_COLUMN_NAME: &str = "__timestamp__";
 
 pub struct TopicTableProvider {
     log_meta: Arc<dyn LogMetadata>,
@@ -50,20 +47,6 @@ impl TopicTableProvider {
     ) -> Arc<dyn TableProvider> {
         Arc::new(Self::new(log_meta, namespace, topic))
     }
-
-    pub fn output_schema(topic_schema: SchemaRef) -> SchemaRef {
-        let mut fields = topic_schema.fields().to_vec();
-        fields.push(Field::new(OFFSET_COLUMN_NAME, DataType::UInt64, true).into());
-        fields.push(
-            Field::new(
-                TIMESTAMP_COLUMN_NAME,
-                DataType::Timestamp(TimeUnit::Millisecond, None),
-                true,
-            )
-            .into(),
-        );
-        Schema::new(fields).into()
-    }
 }
 
 #[async_trait]
@@ -77,7 +60,9 @@ impl TableProvider for TopicTableProvider {
     }
 
     fn schema(&self) -> SchemaRef {
-        Self::output_schema(self.topic.arrow_schema())
+        self.topic
+            .arrow_schema_with_metadata(false)
+            .expect("schema should be valid")
     }
 
     fn supports_filters_pushdown(

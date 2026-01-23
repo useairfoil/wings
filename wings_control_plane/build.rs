@@ -18,6 +18,7 @@ fn main() -> Result<()> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join(LOG_METADATA_DESCRIPTOR_FILE))
+        .extern_path(".wings.schema", "crate::schema::pb")
         .compile_protos(&["proto/wings/v1/log_metadata.proto"], &["proto/"])?;
 
     tonic_prost_build::configure()

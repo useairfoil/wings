@@ -20,14 +20,11 @@ use datafusion::{
 use futures::StreamExt;
 use wings_control_plane::{
     log_metadata::{CommittedBatch, FolioLocation},
-    resources::PartitionValue,
+    resources::{OFFSET_COLUMN_NAME, PartitionValue, TIMESTAMP_COLUMN_NAME},
     schema::Field,
 };
 
-use crate::{
-    folio_reader::FolioParquetFileReaderFactory,
-    query::topic::{OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME},
-};
+use crate::folio_reader::FolioParquetFileReaderFactory;
 
 pub struct FolioExec {
     partition_value_column: Option<(FieldRef, PartitionValue)>,

@@ -1,37 +1,38 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use bytesize::ByteSize;
+use datafusion::arrow::record_batch::RecordBatch;
 use object_store::{ObjectStore, PutMode, PutOptions, PutPayload, path::Path};
-use parquet::{
-    arrow::ArrowWriter,
-    file::{metadata::KeyValue, properties::WriterProperties},
-};
+use parquet::file::{metadata::KeyValue, properties::WriterProperties};
 use snafu::ResultExt;
-use tokio::sync::Mutex;
 use tracing::debug;
+use ulid::Ulid;
 
 use crate::{
     data_lake::{
         BatchWriter, DataLake,
-        error::{ObjectStoreSnafu, ParquetPathSnafu, ParquetSnafu},
+        error::{InternalSnafu, InvalidSchemaSnafu, UnsupportedOperationSnafu},
     },
-    paths::format_parquet_path,
-    resources::{PartitionValue, TopicRef},
+    log_metadata::FileInfo,
+    parquet::{FileMetadata, ParquetWriter},
+    paths::format_parquet_data_path,
+    resources::{PartitionValue, TopicName, TopicRef},
 };
 
 use super::error::Result;
-
-const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
 pub struct ParquetDataLake {
     object_store: Arc<dyn ObjectStore>,
 }
 
 pub struct ParquetBatchWriter {
-    // TODO: check if the mutex is held across async points. if not replace.
-    inner: Mutex<ArrowWriter<Vec<u8>>>,
-    file_ref: Path,
+    inner: Mutex<ParquetWriter>,
     object_store: Arc<dyn ObjectStore>,
+    written: Vec<FileInfo>,
+    target_file_size_bytes: u64,
+    topic_name: TopicName,
+    end_offset: u64,
+    current_file_start_offset: u64,
 }
 
 impl ParquetDataLake {
@@ -45,78 +46,145 @@ impl DataLake for ParquetDataLake {
     async fn batch_writer(
         &self,
         topic: TopicRef,
-        schema: SchemaRef,
         partition_value: Option<PartitionValue>,
         start_offset: u64,
         end_offset: u64,
+        target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>> {
-        let inner = {
+        if partition_value.is_some() {
+            return UnsupportedOperationSnafu {
+                operation: "Parquet data lake does not support partitioning",
+            }
+            .fail();
+        }
+
+        let writer_properties = {
             let partition_value = partition_value.as_ref().map(|v| v.to_string());
             let kv_metadata = vec![
                 KeyValue::new("WINGS:topic-name".to_string(), topic.name.to_string()),
                 KeyValue::new("WINGS:partition-value".to_string(), partition_value),
+                KeyValue::new("WINGS:start-offset".to_string(), start_offset.to_string()),
+                KeyValue::new("WINGS:end-offset".to_string(), end_offset.to_string()),
             ];
 
-            let write_properties = WriterProperties::builder()
+            WriterProperties::builder()
                 .set_key_value_metadata(kv_metadata.into())
-                .build();
-
-            let buffer = Vec::with_capacity(DEFAULT_BUFFER_CAPACITY);
-            ArrowWriter::try_new(buffer, schema, write_properties.into())
-                .context(ParquetSnafu {})?
+                .set_created_by("wings dev build".to_string())
+                .build()
         };
 
-        let partition_field = topic
-            .partition_field()
-            .cloned()
-            .map(|field| field.to_arrow_field().into());
-        let file_ref: Path = format_parquet_path(&topic.name.parent)
-            .with_offset_range(start_offset, end_offset)
-            .with_partition(partition_field.as_ref(), partition_value.as_ref())
-            .build()
-            .context(ParquetPathSnafu {})?
-            .into();
+        let output_schema = topic
+            .schema_with_metadata(false)
+            .context(InvalidSchemaSnafu {})?;
+        let inner = ParquetWriter::new(output_schema.into(), writer_properties);
 
         let writer = ParquetBatchWriter {
             inner: Mutex::new(inner),
-            file_ref,
             object_store: self.object_store.clone(),
+            written: Default::default(),
+            target_file_size_bytes: target_file_size.as_u64(),
+            topic_name: topic.name.clone(),
+            current_file_start_offset: start_offset,
+            end_offset,
         };
 
         Ok(Box::new(writer))
     }
 }
 
-#[async_trait::async_trait]
-impl BatchWriter for ParquetBatchWriter {
-    async fn write_batch(&mut self, data: RecordBatch) -> Result<()> {
-        let mut writer = self.inner.lock().await;
-        writer.write(&data).context(ParquetSnafu {})?;
-        Ok(())
-    }
+impl ParquetBatchWriter {
+    async fn upload_file(&mut self, data: Vec<u8>, metadata: FileMetadata) -> Result<()> {
+        let payload = PutPayload::from_bytes(data.into());
 
-    async fn commit(&mut self) -> Result<()> {
-        let mut writer = self.inner.lock().await;
-        let _parquet_metadata = writer.finish().context(ParquetSnafu {})?;
-        let output_bytes = std::mem::take(&mut *writer.inner_mut());
-        let payload = PutPayload::from_bytes(output_bytes.into());
+        let file_id = Ulid::new().to_string();
+        let file_ref = format_parquet_data_path(&self.topic_name, &file_id);
+
         debug!(
-            file_ref = %self.file_ref,
+            %file_ref,
+            file_start_offset = self.current_file_start_offset,
             "Uploading parquet file to storage"
         );
 
+        let path = Path::parse(&file_ref).unwrap();
+
         self.object_store
             .put_opts(
-                &self.file_ref,
+                &path,
                 payload,
                 PutOptions {
                     mode: PutMode::Create,
                     ..Default::default()
                 },
             )
-            .await
-            .context(ObjectStoreSnafu {})?;
+            .await?;
+
+        let num_rows = metadata.num_rows as u64;
+        assert!(num_rows > 0, "Parquet file with zero rows was uploaded");
+
+        let end_offset = self.current_file_start_offset + num_rows - 1;
+
+        self.written.push(FileInfo {
+            file_ref,
+            start_offset: self.current_file_start_offset,
+            end_offset,
+            metadata,
+        });
+
+        self.current_file_start_offset = end_offset + 1;
 
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl BatchWriter for ParquetBatchWriter {
+    async fn write_batch(&mut self, data: RecordBatch) -> Result<()> {
+        let (data, metadata) = {
+            let mut inner = self.inner.lock().map_err(|_| {
+                InternalSnafu {
+                    message: "poisoned lock".to_string(),
+                }
+                .build()
+            })?;
+
+            inner.write(&data)?;
+
+            if inner.current_file_size() < self.target_file_size_bytes {
+                return Ok(());
+            }
+
+            let (data, metadata) = inner.finish()?;
+            assert!(!data.is_empty(), "data should not be empty");
+            (data, metadata)
+        };
+
+        self.upload_file(data, metadata).await
+    }
+
+    async fn finish(&mut self) -> Result<Vec<FileInfo>> {
+        let (data, metadata) = {
+            let mut inner = self.inner.lock().map_err(|_| {
+                InternalSnafu {
+                    message: "poisoned lock".to_string(),
+                }
+                .build()
+            })?;
+
+            let (data, metadata) = inner.finish()?;
+            (data, metadata)
+        };
+
+        if !data.is_empty() {
+            self.upload_file(data, metadata).await?;
+        }
+
+        assert!(
+            self.current_file_start_offset == self.end_offset + 1,
+            "Parquet offset accounting is off"
+        );
+
+        let written = std::mem::take(&mut self.written);
+
+        Ok(written)
     }
 }

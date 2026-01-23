@@ -167,8 +167,6 @@ impl Worker {
 
         let df = ctx.sql(&query).await.context(DataFusionSnafu {})?;
 
-        let output_schema: Arc<_> = df.schema().as_arrow().clone().into();
-
         let mut stream = df.execute_stream().await.context(DataFusionSnafu {})?;
 
         let data_lake = self
@@ -182,10 +180,10 @@ impl Worker {
         let mut data_lake_writer = data_lake
             .batch_writer(
                 topic_ref.clone(),
-                output_schema,
                 task.partition_value.clone(),
                 task.start_offset,
                 task.end_offset,
+                task.target_file_size,
             )
             .await
             .context(DataLakeSnafu {
@@ -209,17 +207,18 @@ impl Worker {
             return Ok(());
         }
 
-        data_lake_writer.commit().await.context(DataLakeSnafu {
+        let new_files = data_lake_writer.finish().await.context(DataLakeSnafu {
             operation: "commit",
         })?;
 
-        // Later: update datalake catalog with this data.
-        // Notice that multiple partitions may be compacted at the same time
-        // so we need to be careful updating the catalog concurrently.
+        info!(
+            task_id = metadata.task_id,
+            new_files_count = new_files.len(),
+            "Compaction task completed"
+        );
 
-        // TODO: we should include the compacted range and file reference in the complete task request.
         let result = TaskResult::Compaction(CompactionResult {
-            new_files: Vec::default(),
+            new_files,
             operation: CompactionOperation::Append,
         });
 
@@ -232,12 +231,6 @@ impl Worker {
             .context(LogMetadataSnafu {
                 operation: "complete_task",
             })?;
-
-        info!(
-            task_id = metadata.task_id,
-            // file_ref = %file_ref,
-            "Compaction task completed"
-        );
 
         Ok(())
     }

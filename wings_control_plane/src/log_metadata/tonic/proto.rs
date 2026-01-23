@@ -1,7 +1,8 @@
 //! Conversions between log metadata domain types and protobuf types.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use bytesize::ByteSize;
 use snafu::{ResultExt, ensure};
 
 use crate::{
@@ -18,7 +19,9 @@ use crate::{
             InvalidTimestampSnafu,
         },
     },
+    parquet::FileMetadata,
     resources::{PartitionValue, TopicName},
+    schema::Datum,
 };
 
 use super::pb;
@@ -657,7 +660,7 @@ impl From<CompactionTask> for pb::CompactionTask {
             partition: task.partition_value.as_ref().map(Into::into),
             start_offset: task.start_offset,
             end_offset: task.end_offset,
-            target_file_size: task.target_file_size,
+            target_file_size: task.target_file_size.as_u64(),
             operation: match task.operation {
                 CompactionOperation::Append => pb::CompactionOperation::Append.into(),
                 CompactionOperation::Replace => pb::CompactionOperation::Replace.into(),
@@ -690,7 +693,7 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
             partition_value,
             start_offset: task.start_offset,
             end_offset: task.end_offset,
-            target_file_size: task.target_file_size,
+            target_file_size: ByteSize::b(task.target_file_size),
             operation,
         })
     }
@@ -846,25 +849,99 @@ impl From<RequestTaskResponse> for pb::RequestTaskResponse {
     }
 }
 
-impl From<FileInfo> for pb::FileInfo {
-    fn from(info: FileInfo) -> Self {
-        pb::FileInfo {
-            file_ref: info.file_ref,
-            file_size_bytes: info.file_size_bytes,
-            start_offset: info.start_offset,
-            end_offset: info.end_offset,
+impl From<FileMetadata> for pb::FileMetadata {
+    fn from(meta: FileMetadata) -> Self {
+        use crate::schema::pb::Datum as ProtoDatum;
+
+        let lower_bounds = meta
+            .lower_bounds
+            .into_iter()
+            .map(|(k, v)| (k, ProtoDatum::from(&v)))
+            .collect();
+        let upper_bounds = meta
+            .upper_bounds
+            .into_iter()
+            .map(|(k, v)| (k, ProtoDatum::from(&v)))
+            .collect();
+
+        pb::FileMetadata {
+            file_size_bytes: meta.file_size.as_u64(),
+            num_rows: meta.num_rows as _,
+            column_sizes: meta.column_sizes,
+            value_counts: meta.value_counts,
+            null_value_counts: meta.null_value_counts,
+            lower_bounds,
+            upper_bounds,
         }
     }
 }
 
-impl From<pb::FileInfo> for FileInfo {
-    fn from(info: pb::FileInfo) -> Self {
-        FileInfo {
+impl From<FileInfo> for pb::FileInfo {
+    fn from(info: FileInfo) -> Self {
+        pb::FileInfo {
             file_ref: info.file_ref,
-            file_size_bytes: info.file_size_bytes,
             start_offset: info.start_offset,
             end_offset: info.end_offset,
+            metadata: Some(info.metadata.into()),
         }
+    }
+}
+
+impl TryFrom<pb::FileMetadata> for FileMetadata {
+    type Error = LogMetadataError;
+
+    fn try_from(meta: pb::FileMetadata) -> Result<Self, Self::Error> {
+        let lower_bounds = {
+            let mut m = HashMap::<u64, Datum>::with_capacity(meta.lower_bounds.len());
+            for (k, v) in meta.lower_bounds.into_iter() {
+                let v = Datum::try_from(&v).map_err(|err| LogMetadataError::Internal {
+                    message: format!("invalid datum in lower bounds: {err}"),
+                })?;
+                m.insert(k, v);
+            }
+            m
+        };
+
+        let upper_bounds = {
+            let mut m = HashMap::<u64, Datum>::with_capacity(meta.upper_bounds.len());
+            for (k, v) in meta.upper_bounds.into_iter() {
+                let v = Datum::try_from(&v).map_err(|err| LogMetadataError::Internal {
+                    message: format!("invalid datum in upper bounds: {err}"),
+                })?;
+                m.insert(k, v);
+            }
+            m
+        };
+
+        Ok(FileMetadata {
+            file_size: ByteSize::b(meta.file_size_bytes),
+            num_rows: meta.num_rows as _,
+            column_sizes: meta.column_sizes,
+            value_counts: meta.value_counts,
+            null_value_counts: meta.null_value_counts,
+            lower_bounds,
+            upper_bounds,
+        })
+    }
+}
+
+impl TryFrom<pb::FileInfo> for FileInfo {
+    type Error = LogMetadataError;
+
+    fn try_from(info: pb::FileInfo) -> Result<Self, Self::Error> {
+        let metadata = info
+            .metadata
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing result in CompleteTaskRequest proto".to_string(),
+            })?
+            .try_into()?;
+
+        Ok(FileInfo {
+            file_ref: info.file_ref,
+            start_offset: info.start_offset,
+            end_offset: info.end_offset,
+            metadata,
+        })
     }
 }
 
@@ -905,8 +982,8 @@ impl TryFrom<pb::CompactionResult> for CompactionResult {
         let new_files = result
             .new_files
             .into_iter()
-            .map(Into::into)
-            .collect::<Vec<_>>();
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(CompactionResult {
             new_files,

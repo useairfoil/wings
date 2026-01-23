@@ -8,9 +8,11 @@ use std::fmt;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use object_store::path::Path;
 use time::UtcDateTime;
 
+use crate::parquet::FileMetadata;
 use crate::resources::{NamespaceName, PartitionValue, TopicName};
 
 pub use self::error::{LogMetadataError, Result};
@@ -238,7 +240,7 @@ pub struct CompactionTask {
     /// The operation type for this compaction.
     pub operation: CompactionOperation,
     /// The target file size for the parquet writer.
-    pub target_file_size: u64,
+    pub target_file_size: ByteSize,
 }
 
 /// A task to create a table.
@@ -256,20 +258,20 @@ pub struct CreateTableResult {
 }
 
 /// Information about a file created by compaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileInfo {
     /// File reference (path) - consistent with PageInfo
     pub file_ref: String,
-    /// File size in bytes
-    pub file_size_bytes: u64,
     /// First offset (inclusive) in this file
     pub start_offset: u64,
     /// Last offset (inclusive) in this file
     pub end_offset: u64,
+    /// Parquet file metadata
+    pub metadata: FileMetadata,
 }
 
 /// Result for a compaction task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompactionResult {
     /// Files created by compaction
     pub new_files: Vec<FileInfo>,
@@ -278,13 +280,13 @@ pub struct CompactionResult {
 }
 
 /// Result for a create table task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitResult {
     // Empty for now, will add fields later
 }
 
 /// Result for different task types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TaskResult {
     Compaction(CompactionResult),
     CreateTable(CreateTableResult),
@@ -292,7 +294,7 @@ pub enum TaskResult {
 }
 
 /// A task that can be assigned to a worker.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Task {
     Compaction {
         metadata: TaskMetadata,
@@ -309,25 +311,25 @@ pub enum Task {
 }
 
 /// Request to assign a task to a worker.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct RequestTaskRequest {}
 
 /// Response containing the assigned task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequestTaskResponse {
     /// The assigned task, if any.
     pub task: Option<Task>,
 }
 
 /// Result of task completion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TaskCompletionResult {
     Success(TaskResult),
     Failure(String),
 }
 
 /// Request to complete a task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompleteTaskRequest {
     /// The identifier of the task to complete.
     pub task_id: String,
@@ -336,7 +338,7 @@ pub struct CompleteTaskRequest {
 }
 
 /// Response indicating whether the task completion was successful.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompleteTaskResponse {
     /// Whether the task completion was successful.
     pub success: bool,

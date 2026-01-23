@@ -5,6 +5,7 @@ package wings.v1.log_metadata;
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "schema/arrow_type.proto";
 
 service LogMetadataService {
   rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
@@ -169,11 +170,21 @@ message CreateTableTask {
   string topic = 1;
 }
 
+message FileMetadata {
+  uint64 file_size_bytes = 1;
+  uint32 num_rows = 2;
+  map<uint64, uint64> column_sizes = 3;
+  map<uint64, uint64> value_counts = 4;
+  map<uint64, uint64> null_value_counts = 5;
+  map<uint64, wings.schema.Datum> lower_bounds = 6;
+  map<uint64, wings.schema.Datum> upper_bounds = 7;
+}
+
 message FileInfo {
   string file_ref = 1;
-  uint64 file_size_bytes = 2;
   uint64 start_offset = 3;
   uint64 end_offset = 4;
+  FileMetadata metadata = 5;
 }
 
 message CompactionTask {
