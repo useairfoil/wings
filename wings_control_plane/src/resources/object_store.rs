@@ -87,6 +87,8 @@ pub struct S3CompatibleConfiguration {
     pub endpoint: String,
     /// `AWS_DEFAULT_REGION`
     pub region: Option<String>,
+    /// Allow HTTP connections.
+    pub allow_http: bool,
 }
 
 pub type ObjectStoreRef = Arc<ObjectStore>;

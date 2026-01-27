@@ -644,6 +644,7 @@ impl From<S3CompatibleConfiguration> for pb::S3CompatibleConfiguration {
             secret_access_key: c.secret_access_key,
             endpoint: c.endpoint,
             region: c.region,
+            allow_http: c.allow_http,
         }
     }
 }
@@ -657,6 +658,7 @@ impl From<pb::S3CompatibleConfiguration> for S3CompatibleConfiguration {
             secret_access_key: c.secret_access_key,
             endpoint: c.endpoint,
             region: c.region,
+            allow_http: c.allow_http,
         }
     }
 }

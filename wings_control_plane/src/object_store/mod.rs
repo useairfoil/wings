@@ -9,6 +9,7 @@
 //! An implementation may, for example, load the secret configuration from an external
 //! vault service and then create the appropriate object store client.
 
+pub mod cloud;
 pub mod local;
 
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use object_store::ObjectStore;
 
 use crate::resources::ObjectStoreName;
 
+pub use self::cloud::{CloudObjectStoreFactory, Error as CloudObjectStoreError};
 pub use self::local::{LocalFileSystemFactory, TemporaryFileSystemFactory};
 
 /// Factory trait for creating ObjectStore instances from object store configurations.
