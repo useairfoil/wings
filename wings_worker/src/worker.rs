@@ -247,12 +247,48 @@ impl Worker {
             "Executing create table task"
         );
 
-        // TODO: Implement actual table creation logic
-        // For now, we'll just log and complete the task
+        let namespace_name = task.topic_name.parent().clone();
 
-        let result = TaskResult::CreateTable(CreateTableResult {
-            table_id: task.topic_name.id.clone(),
-        });
+        let topic_ref = match self.topic_cache.get(task.topic_name.clone()).await {
+            Ok(topic_ref) => topic_ref,
+            Err(err) => {
+                if err.is_not_found() {
+                    warn!(
+                        topic = %task.topic_name,
+                        "received create table task for non-existent topic"
+                    );
+                    return Ok(());
+                }
+                return Err(err).context(ClusterMetadataSnafu {
+                    operation: "get_topic",
+                });
+            }
+        };
+
+        let namespace_ref = self
+            .namespace_cache
+            .get(namespace_name.clone())
+            .await
+            .context(ClusterMetadataSnafu {
+                operation: "get_namespace",
+            })?;
+
+        let data_lake = self
+            .data_lake_factory
+            .create_data_lake(namespace_ref.clone())
+            .await
+            .context(DataLakeSnafu {
+                operation: "create",
+            })?;
+
+        let table_id = data_lake
+            .create_table(topic_ref)
+            .await
+            .context(DataLakeSnafu {
+                operation: "create_table",
+            })?;
+
+        let result = TaskResult::CreateTable(CreateTableResult { table_id });
 
         self.log_meta
             .complete_task(CompleteTaskRequest::new_completed(

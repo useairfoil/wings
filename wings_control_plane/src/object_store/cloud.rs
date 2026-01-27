@@ -6,7 +6,9 @@
 
 use std::sync::Arc;
 
-use object_store::{Error as ObjectStoreError, ObjectStore, prefix::PrefixStore};
+use object_store::{
+    Error as ObjectStoreError, ObjectStore, aws::S3CopyIfNotExists, prefix::PrefixStore,
+};
 use snafu::Snafu;
 
 use crate::{
@@ -97,7 +99,8 @@ async fn create_aws_s3_store(
     let mut builder = AmazonS3Builder::new()
         .with_bucket_name(&config.bucket_name)
         .with_access_key_id(&config.access_key_id)
-        .with_secret_access_key(&config.secret_access_key);
+        .with_secret_access_key(&config.secret_access_key)
+        .with_copy_if_not_exists(S3CopyIfNotExists::Multipart);
 
     // Add optional region
     if let Some(region) = &config.region {
@@ -172,7 +175,8 @@ async fn create_s3_compatible_store(
         .with_bucket_name(&config.bucket_name)
         .with_access_key_id(&config.access_key_id)
         .with_secret_access_key(&config.secret_access_key)
-        .with_endpoint(&config.endpoint);
+        .with_endpoint(&config.endpoint)
+        .with_copy_if_not_exists(S3CopyIfNotExists::Multipart);
 
     // Add optional region
     if let Some(region) = &config.region {

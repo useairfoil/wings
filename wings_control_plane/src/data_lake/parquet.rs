@@ -43,8 +43,32 @@ impl ParquetDataLake {
 
 #[async_trait::async_trait]
 impl DataLake for ParquetDataLake {
+    async fn create_table(&self, topic: TopicRef) -> Result<String> {
+        Ok(topic.name.to_string())
+    }
+
     async fn batch_writer(
         &self,
+        topic: TopicRef,
+        partition_value: Option<PartitionValue>,
+        start_offset: u64,
+        end_offset: u64,
+        target_file_size: ByteSize,
+    ) -> Result<Box<dyn BatchWriter>> {
+        ParquetBatchWriter::new_boxed(
+            self.object_store.clone(),
+            topic,
+            partition_value,
+            start_offset,
+            end_offset,
+            target_file_size,
+        )
+    }
+}
+
+impl ParquetBatchWriter {
+    pub fn new_boxed(
+        object_store: Arc<dyn ObjectStore>,
         topic: TopicRef,
         partition_value: Option<PartitionValue>,
         start_offset: u64,
@@ -80,7 +104,7 @@ impl DataLake for ParquetDataLake {
 
         let writer = ParquetBatchWriter {
             inner: Mutex::new(inner),
-            object_store: self.object_store.clone(),
+            object_store,
             written: Default::default(),
             target_file_size_bytes: target_file_size.as_u64(),
             topic_name: topic.name.clone(),
@@ -90,9 +114,7 @@ impl DataLake for ParquetDataLake {
 
         Ok(Box::new(writer))
     }
-}
 
-impl ParquetBatchWriter {
     async fn upload_file(&mut self, data: Vec<u8>, metadata: FileMetadata) -> Result<()> {
         let payload = PutPayload::from_bytes(data.into());
 

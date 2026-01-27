@@ -15,10 +15,10 @@ use crate::{
     },
     resources::{
         AwsConfiguration, AzureConfiguration, CompactionConfiguration, DataLake,
-        DataLakeConfiguration, DataLakeName, GoogleConfiguration, IcebergConfiguration, Namespace,
-        NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration, ObjectStoreName,
-        ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicName,
-        TopicOptions,
+        DataLakeConfiguration, DataLakeName, DeltaConfiguration, GoogleConfiguration,
+        IcebergConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStore,
+        ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration, S3CompatibleConfiguration,
+        Tenant, TenantName, Topic, TopicName, TopicOptions,
     },
 };
 
@@ -785,8 +785,9 @@ impl TryFrom<pb::DataLake> for DataLake {
 impl From<DataLakeConfiguration> for pb::data_lake::DataLakeConfig {
     fn from(config: DataLakeConfiguration) -> Self {
         match config {
-            DataLakeConfiguration::Iceberg(_) => Self::Iceberg(pb::IcebergConfiguration {}),
-            DataLakeConfiguration::Parquet(_) => Self::Parquet(pb::ParquetConfiguration {}),
+            DataLakeConfiguration::Parquet(config) => Self::Parquet(config.into()),
+            DataLakeConfiguration::Iceberg(config) => Self::Iceberg(config.into()),
+            DataLakeConfiguration::Delta(config) => Self::Delta(config.into()),
         }
     }
 }
@@ -796,14 +797,69 @@ impl TryFrom<pb::data_lake::DataLakeConfig> for DataLakeConfiguration {
 
     fn try_from(config: pb::data_lake::DataLakeConfig) -> AdminResult<Self> {
         use pb::data_lake::DataLakeConfig;
+
         match config {
-            DataLakeConfig::Iceberg(_) => Ok(DataLakeConfiguration::Iceberg(
-                IcebergConfiguration::default(),
-            )),
-            DataLakeConfig::Parquet(_) => Ok(DataLakeConfiguration::Parquet(
-                ParquetConfiguration::default(),
-            )),
+            DataLakeConfig::Parquet(config) => {
+                Ok(DataLakeConfiguration::Parquet(config.try_into()?))
+            }
+            DataLakeConfig::Iceberg(config) => {
+                Ok(DataLakeConfiguration::Iceberg(config.try_into()?))
+            }
+            DataLakeConfig::Delta(config) => Ok(DataLakeConfiguration::Delta(config.try_into()?)),
         }
+    }
+}
+
+impl From<ParquetConfiguration> for pb::ParquetConfiguration {
+    fn from(_config: ParquetConfiguration) -> Self {
+        pb::ParquetConfiguration {}
+    }
+}
+
+impl TryFrom<pb::ParquetConfiguration> for ParquetConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(_config: pb::ParquetConfiguration) -> AdminResult<Self> {
+        Ok(ParquetConfiguration {})
+    }
+}
+
+impl From<IcebergConfiguration> for pb::IcebergConfiguration {
+    fn from(_config: IcebergConfiguration) -> Self {
+        pb::IcebergConfiguration {}
+    }
+}
+
+impl TryFrom<pb::IcebergConfiguration> for IcebergConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(_config: pb::IcebergConfiguration) -> AdminResult<Self> {
+        Ok(IcebergConfiguration {})
+    }
+}
+
+impl From<DeltaConfiguration> for pb::DeltaConfiguration {
+    fn from(config: DeltaConfiguration) -> Self {
+        pb::DeltaConfiguration {
+            object_store: config.object_store.map(|s| s.to_string()),
+        }
+    }
+}
+
+impl TryFrom<pb::DeltaConfiguration> for DeltaConfiguration {
+    type Error = ClusterMetadataError;
+
+    fn try_from(config: pb::DeltaConfiguration) -> AdminResult<Self> {
+        let object_store = match &config.object_store {
+            None => None,
+            Some(name) => {
+                let name = ObjectStoreName::parse(name).context(InvalidResourceNameSnafu {
+                    resource: "object store",
+                })?;
+                Some(name)
+            }
+        };
+        Ok(DeltaConfiguration { object_store })
     }
 }
 

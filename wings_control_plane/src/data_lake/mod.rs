@@ -1,3 +1,4 @@
+mod delta;
 mod error;
 mod parquet;
 
@@ -8,7 +9,7 @@ use std::sync::Arc;
 
 use crate::{
     cluster_metadata::ClusterMetadata,
-    data_lake::{error::ClusterMetadataSnafu, parquet::ParquetDataLake},
+    data_lake::{delta::DeltaDataLake, error::ClusterMetadataSnafu, parquet::ParquetDataLake},
     log_metadata::FileInfo,
     object_store::ObjectStoreFactory,
     resources::{DataLakeConfiguration, NamespaceRef, PartitionValue, TopicRef},
@@ -26,6 +27,11 @@ pub trait BatchWriter: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait DataLake: Send + Sync {
+    /// Create a new table for a topic in the data lake.
+    ///
+    /// Returns the table id.
+    async fn create_table(&self, topic: TopicRef) -> Result<String>;
+
     /// Append data to a topic's table in the data lake.
     async fn batch_writer(
         &self,
@@ -78,6 +84,21 @@ impl DataLakeFactory {
             }
             DataLakeConfiguration::Iceberg(_config) => {
                 todo!()
+            }
+            DataLakeConfiguration::Delta(config) => {
+                let (name, object_store) = match &config.object_store {
+                    None => (namespace.object_store.clone(), object_store),
+                    Some(object_store_name) => {
+                        let object_store = self
+                            .object_store_factory
+                            .create_object_store(object_store_name.clone())
+                            .await?;
+                        (object_store_name.clone(), object_store)
+                    }
+                };
+
+                let data_lake: Arc<_> = DeltaDataLake::new(name, object_store).into();
+                Ok(data_lake)
             }
         }
     }

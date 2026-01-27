@@ -49,6 +49,7 @@ clap = { version = "4.5.40", features = [
 ctrlc = { version = "3.4.7", features = ["termination"] }
 dashmap = "6.1.0"
 datafusion = "52.1.0"
+deltalake-aws = "0.13.0"
 deltalake-core = "0.30.1"
 duration-str = "0.17.0"
 flatbuffers = "25.2.10"
@@ -91,4 +92,5 @@ tracing-subscriber = { version = "0.3.19", features = [
     "json",
 ] }
 ulid = "1.2.1"
+uuid = "1.19.0"
 url = "2.5.4"

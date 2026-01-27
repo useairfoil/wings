@@ -20,6 +20,7 @@ bytes.workspace = true
 bytesize.workspace = true
 dashmap.workspace = true
 datafusion.workspace = true
+deltalake-aws.workspace = true
 deltalake-core.workspace = true
 flatbuffers.workspace = true
 futures.workspace = true
@@ -44,7 +45,8 @@ tonic-prost.workspace = true
 tracing.workspace = true
 wings-observability = { path = "../wings_observability" }
 ulid.workspace = true
-uuid = "1.19.0"
+uuid.workspace = true
+url.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true

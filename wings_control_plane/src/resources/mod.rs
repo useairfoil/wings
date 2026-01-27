@@ -7,8 +7,8 @@ mod tenant;
 mod topic;
 
 pub use self::data_lake::{
-    DataLake, DataLakeConfiguration, DataLakeName, DataLakeRef, IcebergConfiguration,
-    ParquetConfiguration,
+    DataLake, DataLakeConfiguration, DataLakeName, DataLakeRef, DeltaConfiguration,
+    IcebergConfiguration, ParquetConfiguration,
 };
 pub use self::name::{ResourceError, ResourceResult, validate_resource_id};
 pub use self::namespace::{Namespace, NamespaceName, NamespaceOptions, NamespaceRef};

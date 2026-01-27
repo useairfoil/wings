@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::resource_type;
+use crate::{resource_type, resources::ObjectStoreName};
 
 use super::tenant::TenantName;
 
@@ -19,18 +19,29 @@ pub struct DataLake {
 /// This enum represents the various supported data lake types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataLakeConfiguration {
-    /// Iceberg data lake configuration.
-    Iceberg(IcebergConfiguration),
     /// Parquet data lake configuration.
     Parquet(ParquetConfiguration),
+    /// Iceberg data lake configuration.
+    Iceberg(IcebergConfiguration),
+    /// Delta data lake configuration.
+    Delta(DeltaConfiguration),
 }
+
+/// Parquet data lake configuration.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct ParquetConfiguration {}
 
 /// Iceberg data lake configuration.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct IcebergConfiguration {}
 
-/// Parquet data lake configuration.
+/// DeltaLake data lake configuration.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct ParquetConfiguration {}
+pub struct DeltaConfiguration {
+    /// The object store where to store the data lake data.
+    ///
+    /// If not specified, use the default object store for the namespace.
+    pub object_store: Option<ObjectStoreName>,
+}
 
 pub type DataLakeRef = Arc<DataLake>;

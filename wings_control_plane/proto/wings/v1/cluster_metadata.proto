@@ -434,11 +434,19 @@ message DataLake {
 
   // Data lake configuration.
   oneof data_lake_config {
-    IcebergConfiguration iceberg = 2;
-    ParquetConfiguration parquet = 3;
+    ParquetConfiguration parquet = 2;
+    IcebergConfiguration iceberg = 3;
+    DeltaConfiguration delta = 4;
   }
 }
 
 message IcebergConfiguration {}
 
 message ParquetConfiguration {}
+
+message DeltaConfiguration {
+  // The object store where to store the data lake data.
+  //
+  // If not specified, use the default object store for the namespace.
+  optional string object_store = 1;
+}

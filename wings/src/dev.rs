@@ -310,11 +310,15 @@ impl DevArgs {
         cluster: &Arc<InMemoryClusterMetadata>,
         tenant: &TenantName,
     ) -> DataLakeName {
+        info!(
+            "Creating default data lake of type {}",
+            self.default_data_lake
+        );
         let data_lake_name = DataLakeName::new_unchecked("default", tenant.clone());
         let data_lake_options = match self.default_data_lake {
             DataLakeType::Parquet => DataLakeConfiguration::Parquet(Default::default()),
             DataLakeType::Iceberg => todo!(),
-            DataLakeType::Delta => todo!(),
+            DataLakeType::Delta => DataLakeConfiguration::Delta(Default::default()),
         };
 
         cluster
@@ -423,4 +427,14 @@ async fn run_http_server(
     });
 
     server.await.context(IoSnafu {})
+}
+
+impl std::fmt::Display for DataLakeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataLakeType::Parquet => write!(f, "parquet"),
+            DataLakeType::Iceberg => write!(f, "iceberg"),
+            DataLakeType::Delta => write!(f, "delta"),
+        }
+    }
 }

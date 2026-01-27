@@ -17,6 +17,10 @@ pub enum DataLakeError {
     ObjectStore { source: object_store::Error },
     #[snafu(transparent)]
     Parquet { source: ParquetError },
+    #[snafu(transparent)]
+    DataFusion {
+        source: datafusion::error::DataFusionError,
+    },
     #[snafu(display("Failed to create file path"))]
     Path { source: object_store::path::Error },
     #[snafu(display("Unsupported operation: {}", operation))]
@@ -34,7 +38,9 @@ impl DataLakeError {
         match self {
             Self::ClusterMetadata { source, .. } => source.kind(),
             Self::Internal { .. } => ErrorKind::Internal,
-            Self::ObjectStore { .. } | Self::Parquet { .. } => ErrorKind::Temporary,
+            Self::ObjectStore { .. } | Self::Parquet { .. } | Self::DataFusion { .. } => {
+                ErrorKind::Temporary
+            }
             Self::Path { .. } | Self::UnsupportedOperation { .. } | Self::InvalidSchema { .. } => {
                 ErrorKind::Validation
             }

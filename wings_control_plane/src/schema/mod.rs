@@ -19,6 +19,7 @@
 mod conversion;
 mod data_type;
 mod datum;
+mod delta;
 pub mod error;
 mod from_proto;
 mod to_proto;
