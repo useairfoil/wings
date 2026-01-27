@@ -27,8 +27,6 @@ pub enum CliError {
     },
     #[snafu(display("Invalid {name} argument: {message}"))]
     InvalidArgument { name: &'static str, message: String },
-    #[snafu(display("Object store error"))]
-    ObjectStore { source: object_store::Error },
     #[snafu(display("IO error"))]
     Io { source: std::io::Error },
     #[snafu(display("Invalid partition value"))]
@@ -82,7 +80,7 @@ impl CliError {
                 ErrorKind::Configuration
             }
             Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::ObjectStore { .. } | Self::Io { .. } => ErrorKind::Temporary,
+            Self::Io { .. } => ErrorKind::Temporary,
             Self::Connection { .. }
             | Self::TonicReflection { .. }
             | Self::TonicServer { .. }

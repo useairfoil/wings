@@ -1,7 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use axum::Router;
-use clap::Args;
+use clap::{Args, ValueEnum};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -12,10 +12,13 @@ use wings_control_plane::{
         tonic::ClusterMetadataServer,
     },
     log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
-    object_store::TemporaryFileSystemFactory,
+    object_store::{
+        CloudObjectStoreFactory, LocalFileSystemFactory, ObjectStoreFactory,
+        TemporaryFileSystemFactory,
+    },
     resources::{
-        AwsConfiguration, DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
-        ObjectStoreConfiguration, ObjectStoreName, TenantName,
+        DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
+        ObjectStoreConfiguration, ObjectStoreName, S3CompatibleConfiguration, TenantName,
     },
 };
 use wings_flight::WingsFlightSqlServer;
@@ -26,23 +29,129 @@ use wings_server_core::query::NamespaceProviderFactory;
 use wings_worker::{WorkerPool, WorkerPoolOptions, run_worker_pool};
 
 use crate::error::{
-    InvalidServerUrlSnafu, IoSnafu, ObjectStoreSnafu, Result, TonicReflectionSnafu,
-    TonicServerSnafu,
+    InvalidServerUrlSnafu, IoSnafu, Result, TonicReflectionSnafu, TonicServerSnafu,
 };
 
 #[derive(Debug, Args)]
 pub struct DevArgs {
     /// The address of the gRPC metadata server.
-    #[arg(long, default_value = "127.0.0.1:7777")]
+    #[arg(
+        long("metadata.address"),
+        default_value = "127.0.0.1:7777",
+        env = "WINGS_METADATA_ADDRESS"
+    )]
     metadata_address: String,
     /// The address of the HTTP ingestor server.
-    #[arg(long, default_value = "127.0.0.1:7780")]
+    #[arg(
+        long("http.address"),
+        default_value = "127.0.0.1:7780",
+        env = "WINGS_HTTP_ADDRESS"
+    )]
     http_address: String,
+    /// The type of object store to use.
+    #[arg(long, default_value = "temp", env = "WINGS_OBJECT_STORE")]
+    object_store: ObjectStoreType,
+    /// The root path to use for local object storage.
+    #[arg(
+        long("object-store.local-path"),
+        required_if_eq("object_store", "local"),
+        env = "WINGS_OBJECT_STORE_LOCAL_PATH"
+    )]
+    object_store_local_path: Option<String>,
+    /// The S3 bucket to use for cloud object storage.
+    ///
+    /// This value is used to create the object store for the default tenant.
+    #[arg(
+        long("default.object-store.cloud-bucket"),
+        required_if_eq("object_store", "cloud"),
+        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_BUCKET"
+    )]
+    default_object_store_cloud_bucket: Option<String>,
+    /// The S3 access key ID to use for cloud object storage.
+    ///
+    /// This value is used to create the object store for the default tenant.
+    #[arg(
+        long("default.object-store.cloud-access-key-id"),
+        required_if_eq("object_store", "cloud"),
+        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_ACCESS_KEY_ID"
+    )]
+    default_object_store_cloud_access_key_id: Option<String>,
+    /// The S3 secret access key ID to use for cloud object storage.
+    ///
+    /// This value is used to create the object store for the default tenant.
+    #[arg(
+        long("default.object-store.cloud-secret-access-key-id"),
+        required_if_eq("object_store", "cloud"),
+        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_SECRET_ACCESS_KEY_ID"
+    )]
+    default_object_store_cloud_secret_access_key_id: Option<String>,
+    /// The S3 endpoint to use for cloud object storage.
+    ///
+    /// This value is used to create the object store for the default tenant.
+    #[arg(
+        long("default.object-store.cloud-endpoint"),
+        default_value = "http://localhost:9000",
+        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_ENDPOINT"
+    )]
+    default_object_store_cloud_endpoint: String,
+    /// The S3 prefix to use for the default object store.
+    #[arg(
+        long("default.object-store.cloud-prefix"),
+        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_PREFIX"
+    )]
+    default_object_store_cloud_prefix: Option<String>,
+    /// The data lake for the default namespace.
+    #[arg(long, default_value = "parquet", env = "WINGS_DEFAULT_DATA_LAKE")]
+    default_data_lake: DataLakeType,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum ObjectStoreType {
+    /// Use a temporary directory for object storage.
+    #[default]
+    #[clap(name = "temp")]
+    Temporary,
+    /// Use a local directory for object storage.
+    #[clap(name = "local")]
+    Local,
+    /// Use a cloud object store for object storage.
+    ///
+    /// By default, the endpoint is set to `http://localhost:9000` for use with RustFS and MinIO.
+    #[clap(name = "cloud")]
+    Cloud,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum DataLakeType {
+    /// Store files as plain Parquet files.
+    #[default]
+    #[clap(name = "parquet")]
+    Parquet,
+    /// Store files in an Iceberg table.
+    #[clap(name = "iceberg")]
+    Iceberg,
+    /// Store files in a Delta table.
+    #[clap(name = "delta")]
+    Delta,
 }
 
 impl DevArgs {
     pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
-        let (cluster_metadata, default_namespace) = new_dev_cluster_metadata_service().await;
+        let (cluster_metadata, default_tenant) = new_dev_cluster_metadata_service().await;
+
+        let (object_store_factory, default_object_store) = self
+            .new_object_store_factory(cluster_metadata.clone(), &default_tenant)
+            .await;
+
+        let default_data_lake = self.new_data_lake(&cluster_metadata, &default_tenant).await;
+        let default_namespace = self
+            .new_namespace(
+                &cluster_metadata,
+                &default_tenant,
+                &default_object_store,
+                &default_data_lake,
+            )
+            .await;
 
         let metadata_address = self
             .metadata_address
@@ -55,21 +164,19 @@ impl DevArgs {
             .context(InvalidServerUrlSnafu {})?;
 
         info!("Starting Wings in development mode");
-        info!("Default namespace: {}", default_namespace);
         info!("gRPC server listening on {}", metadata_address);
         info!("HTTP ingestor listening on {}", http_address);
+        info!("Default tenant: {}", default_tenant);
+        info!("Default namespace: {}", default_namespace);
+        info!("Default object store: {}", default_object_store);
+        info!("Default data lake: {}", default_data_lake);
+        info!(
+            "You can create new tenants, namespaces, object stores, data lakes, and topics using the CLI"
+        );
 
         let _ct_guard = ct.child_token().drop_guard();
-        let object_store_factory = TemporaryFileSystemFactory::new(cluster_metadata.clone())
-            .context(ObjectStoreSnafu {})?;
-        let object_store_factory = Arc::new(object_store_factory);
 
         let log_metadata = Arc::new(InMemoryLogMetadata::new(cluster_metadata.clone()));
-
-        info!(
-            "Object store root path: {}",
-            object_store_factory.root_path().display()
-        );
 
         let namespace_provider_factory = NamespaceProviderFactory::new(
             cluster_metadata.clone(),
@@ -129,9 +236,116 @@ impl DevArgs {
 
         Ok(())
     }
+
+    async fn new_object_store_factory(
+        &self,
+        cluster: Arc<InMemoryClusterMetadata>,
+        tenant: &TenantName,
+    ) -> (Arc<dyn ObjectStoreFactory>, ObjectStoreName) {
+        let object_store_name = ObjectStoreName::new_unchecked("default", tenant.clone());
+
+        let backend: Arc<dyn ObjectStoreFactory> = match self.object_store {
+            ObjectStoreType::Temporary => {
+                let factory = TemporaryFileSystemFactory::new(cluster.clone())
+                    .expect("TemporaryFileSystemFactory");
+                info!(
+                    "Using temporary directory for object store: {:?}",
+                    factory.root_path()
+                );
+                Arc::new(factory)
+            }
+            ObjectStoreType::Local => {
+                let path = self
+                    .object_store_local_path
+                    .clone()
+                    .expect("object-store.local-path");
+                let path: PathBuf = path.parse().expect("failed to parse path");
+                let factory = LocalFileSystemFactory::new(path, cluster.clone())
+                    .expect("LocalFileSystemFactory");
+                info!(
+                    "Using directory for object store: {:?}",
+                    factory.root_path()
+                );
+                Arc::new(factory)
+            }
+            ObjectStoreType::Cloud => {
+                let factory = CloudObjectStoreFactory::new(cluster.clone());
+                info!("Using cloud object store",);
+                Arc::new(factory)
+            }
+        };
+
+        let aws_config = S3CompatibleConfiguration {
+            bucket_name: self
+                .default_object_store_cloud_bucket
+                .clone()
+                .unwrap_or_else(|| "wings-root".to_string()),
+            access_key_id: self
+                .default_object_store_cloud_access_key_id
+                .clone()
+                .unwrap_or_default(),
+            secret_access_key: self
+                .default_object_store_cloud_secret_access_key_id
+                .clone()
+                .unwrap_or_default(),
+            endpoint: self.default_object_store_cloud_endpoint.clone(),
+            prefix: self.default_object_store_cloud_prefix.clone(),
+            allow_http: true,
+            region: None,
+        };
+
+        cluster
+            .create_object_store(
+                object_store_name.clone(),
+                ObjectStoreConfiguration::S3Compatible(aws_config),
+            )
+            .await
+            .expect("failed to create default aws s3 object store");
+
+        (backend, object_store_name)
+    }
+
+    async fn new_data_lake(
+        &self,
+        cluster: &Arc<InMemoryClusterMetadata>,
+        tenant: &TenantName,
+    ) -> DataLakeName {
+        let data_lake_name = DataLakeName::new_unchecked("default", tenant.clone());
+        let data_lake_options = match self.default_data_lake {
+            DataLakeType::Parquet => DataLakeConfiguration::Parquet(Default::default()),
+            DataLakeType::Iceberg => todo!(),
+            DataLakeType::Delta => todo!(),
+        };
+
+        cluster
+            .create_data_lake(data_lake_name.clone(), data_lake_options)
+            .await
+            .expect("failed to create default data lake");
+
+        data_lake_name
+    }
+
+    async fn new_namespace(
+        &self,
+        cluster: &Arc<InMemoryClusterMetadata>,
+        tenant: &TenantName,
+        object_store: &ObjectStoreName,
+        data_lake: &DataLakeName,
+    ) -> NamespaceName {
+        let namespace_name = NamespaceName::new_unchecked("default", tenant.clone());
+        let default_namespace_options =
+            NamespaceOptions::new(object_store.clone(), data_lake.clone());
+
+        cluster
+            .create_namespace(namespace_name.clone(), default_namespace_options)
+            .await
+            .expect("failed to create default namespace");
+
+        namespace_name
+    }
 }
 
-async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, NamespaceName) {
+async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, TenantName) {
     let cluster_meta = Arc::new(InMemoryClusterMetadata::default());
 
     let default_tenant = TenantName::new_unchecked("default");
@@ -140,40 +354,7 @@ async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, Na
         .await
         .expect("failed to create default tenant");
 
-    let default_object_store = ObjectStoreName::new_unchecked("default", default_tenant.clone());
-    let aws_config = AwsConfiguration {
-        bucket_name: "default".to_string(),
-        access_key_id: Default::default(),
-        secret_access_key: Default::default(),
-        prefix: None,
-        region: None,
-    };
-    cluster_meta
-        .create_object_store(
-            default_object_store.clone(),
-            ObjectStoreConfiguration::Aws(aws_config),
-        )
-        .await
-        .expect("failed to create default aws s3 object store");
-
-    let data_lake_name = DataLakeName::new_unchecked("default", default_tenant.clone());
-    cluster_meta
-        .create_data_lake(
-            data_lake_name.clone(),
-            DataLakeConfiguration::Parquet(Default::default()),
-        )
-        .await
-        .expect("failed to create default data lake");
-
-    let default_namespace = NamespaceName::new_unchecked("default", default_tenant);
-    let default_namespace_options = NamespaceOptions::new(default_object_store, data_lake_name);
-
-    cluster_meta
-        .create_namespace(default_namespace.clone(), default_namespace_options)
-        .await
-        .expect("failed to create default namespace");
-
-    (cluster_meta, default_namespace)
+    (cluster_meta, default_tenant)
 }
 
 async fn run_grpc_server(
