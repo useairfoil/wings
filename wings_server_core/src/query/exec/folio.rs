@@ -64,10 +64,10 @@ impl FolioExec {
             FolioParquetFileReaderFactory::new(object_store, location.clone()).into();
         let partitioned_file = folio_reader_factory.partitioned_file();
 
-        let file_source: Arc<_> = ParquetSource::default()
+        let file_source: Arc<_> = ParquetSource::new(file_schema)
             .with_parquet_file_reader_factory(folio_reader_factory)
             .into();
-        let config = FileScanConfigBuilder::new(object_store_url, file_schema, file_source)
+        let config = FileScanConfigBuilder::new(object_store_url, file_source)
             .with_file(partitioned_file)
             .build();
         let inner = DataSourceExec::from_data_source(config);

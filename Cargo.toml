@@ -48,8 +48,8 @@ clap = { version = "4.5.40", features = [
 ] }
 ctrlc = { version = "3.4.7", features = ["termination"] }
 dashmap = "6.1.0"
-datafusion = "51.0.0"
-deltalake-core = "0.29.4"
+datafusion = "52.1.0"
+deltalake-core = "0.30.1"
 duration-str = "0.17.0"
 flatbuffers = "25.2.10"
 futures = "0.3.31"
