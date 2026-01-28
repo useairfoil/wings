@@ -720,8 +720,15 @@ impl TryFrom<pb::CreateTableTask> for CreateTableTask {
 
 impl From<CommitTask> for pb::CommitTask {
     fn from(task: CommitTask) -> Self {
+        let new_files = task
+            .new_files
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+
         pb::CommitTask {
             topic: task.topic_name.to_string(),
+            new_files,
         }
     }
 }
@@ -733,7 +740,16 @@ impl TryFrom<pb::CommitTask> for CommitTask {
         let topic_name = TopicName::parse(&task.topic)
             .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-        Ok(CommitTask { topic_name })
+        let new_files = task
+            .new_files
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(CommitTask {
+            topic_name,
+            new_files,
+        })
     }
 }
 
@@ -1011,16 +1027,20 @@ impl TryFrom<pb::CreateTableResult> for CreateTableResult {
 }
 
 impl From<CommitResult> for pb::CommitResult {
-    fn from(_result: CommitResult) -> Self {
-        pb::CommitResult {}
+    fn from(result: CommitResult) -> Self {
+        pb::CommitResult {
+            table_version: result.table_version,
+        }
     }
 }
 
 impl TryFrom<pb::CommitResult> for CommitResult {
     type Error = LogMetadataError;
 
-    fn try_from(_result: pb::CommitResult) -> Result<Self, Self::Error> {
-        Ok(CommitResult {})
+    fn try_from(result: pb::CommitResult) -> Result<Self, Self::Error> {
+        Ok(CommitResult {
+            table_version: result.table_version,
+        })
     }
 }
 

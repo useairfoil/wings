@@ -198,6 +198,7 @@ message CompactionTask {
 
 message CommitTask {
   string topic = 1;
+  repeated FileInfo new_files = 2;
 }
 
 message CreateTableResult {
@@ -209,7 +210,9 @@ message CompactionResult {
   CompactionOperation operation = 2;
 }
 
-message CommitResult {}
+message CommitResult {
+  string table_version = 1;
+}
 
 message TaskResult {
   oneof result {

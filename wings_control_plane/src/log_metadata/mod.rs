@@ -185,7 +185,7 @@ pub struct PartitionMetadata {
 }
 
 /// The status of a task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TaskStatus {
     /// Task is pending to be assigned.
     Pending,
@@ -198,7 +198,7 @@ pub enum TaskStatus {
 }
 
 /// A task that can be assigned to a worker.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TaskMetadata {
     /// The unique identifier of the task.
     pub task_id: String,
@@ -211,7 +211,7 @@ pub struct TaskMetadata {
 }
 
 /// The operation type for a compaction task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CompactionOperation {
     /// Append new data to existing segments.
     Append,
@@ -220,14 +220,14 @@ pub enum CompactionOperation {
 }
 
 /// A task to create a table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CreateTableTask {
     /// The topic name for the table to create.
     pub topic_name: TopicName,
 }
 
 /// A compaction task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompactionTask {
     /// The topic name to compact.
     pub topic_name: TopicName,
@@ -244,14 +244,16 @@ pub struct CompactionTask {
 }
 
 /// A task to create a table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitTask {
     /// The topic name for the table to create.
     pub topic_name: TopicName,
+    /// Files to be committed.
+    pub new_files: Vec<FileInfo>,
 }
 
 /// Result for a create table task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CreateTableResult {
     /// The ID of the created table
     pub table_id: String,
@@ -282,7 +284,8 @@ pub struct CompactionResult {
 /// Result for a create table task.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommitResult {
-    // Empty for now, will add fields later
+    /// The version of the table after the commit
+    pub table_version: String,
 }
 
 /// Result for different task types.
