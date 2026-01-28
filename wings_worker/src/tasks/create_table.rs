@@ -1,16 +1,11 @@
 use snafu::ResultExt;
 use tracing::{info, warn};
-use wings_control_plane::{
-    log_metadata::{
-        CompleteTaskRequest, CreateTableResult, CreateTableTask, 
-        TaskMetadata, TaskResult,
-    },
+use wings_control_plane::log_metadata::{
+    CompleteTaskRequest, CreateTableResult, CreateTableTask, TaskMetadata, TaskResult,
 };
 
-use crate::error::{
-    ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result,
-};
 use crate::Worker;
+use crate::error::{ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result};
 
 impl Worker {
     pub async fn execute_create_table_task(

@@ -13,6 +13,7 @@ use tracing::info;
 
 use crate::{
     data_lake::{BatchWriter, DataLake, error::InvalidSchemaSnafu},
+    log_metadata::FileInfo,
     resources::{ObjectStoreName, PartitionValue, TopicName, TopicRef},
     schema::Field,
 };
@@ -88,6 +89,12 @@ impl DataLake for DeltaDataLake {
             end_offset,
             target_file_size,
         )
+    }
+
+    async fn commit_data(&self, _topic: TopicRef, _new_files: &[FileInfo]) -> Result<String> {
+        // TODO: Implement actual commit logic for Delta data lake
+        // For now, return a placeholder version
+        Ok("0".to_string())
     }
 }
 

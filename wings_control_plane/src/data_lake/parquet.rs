@@ -64,6 +64,10 @@ impl DataLake for ParquetDataLake {
             target_file_size,
         )
     }
+
+    async fn commit_data(&self, _topic: TopicRef, _new_files: &[FileInfo]) -> Result<String> {
+        Ok("0".to_string())
+    }
 }
 
 impl ParquetBatchWriter {

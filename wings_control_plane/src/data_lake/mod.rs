@@ -32,7 +32,7 @@ pub trait DataLake: Send + Sync {
     /// Returns the table id.
     async fn create_table(&self, topic: TopicRef) -> Result<String>;
 
-    /// Append data to a topic's table in the data lake.
+    /// append data to a topic's table in the data lake.
     async fn batch_writer(
         &self,
         topic: TopicRef,
@@ -41,6 +41,11 @@ pub trait DataLake: Send + Sync {
         end_offset: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>>;
+
+    /// Commit data files to a topic's table in the data lake.
+    ///
+    /// Returns the table version after the commit.
+    async fn commit_data(&self, topic: TopicRef, new_files: &[FileInfo]) -> Result<String>;
 }
 
 /// Factory for creating data lake instances.
