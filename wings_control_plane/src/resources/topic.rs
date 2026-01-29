@@ -137,7 +137,7 @@ impl Topic {
             Field::new(
                 TIMESTAMP_COLUMN_NAME,
                 TIMESTAMP_COLUMN_ID,
-                DataType::Timestamp(TimeUnit::Millisecond, None),
+                DataType::Timestamp(TimeUnit::Microsecond, None),
                 true,
             )
             .into(),

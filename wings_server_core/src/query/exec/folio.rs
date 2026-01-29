@@ -1,9 +1,10 @@
 use std::{any::Any, fmt, sync::Arc, time::SystemTime};
 
+use arrow::array::TimestampMicrosecondBuilder;
 use datafusion::{
     catalog::{Session, memory::DataSourceExec},
     common::arrow::{
-        array::{RecordBatch, TimestampMillisecondBuilder, UInt64Builder},
+        array::{RecordBatch, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
     datasource::physical_plan::{FileScanConfigBuilder, ParquetSource},
@@ -161,7 +162,7 @@ impl ExecutionPlan for FolioExec {
                     }
 
                     let mut offset_arr = UInt64Builder::new();
-                    let mut timestamp_arr = TimestampMillisecondBuilder::new();
+                    let mut timestamp_arr = TimestampMicrosecondBuilder::new();
                     for batch in location.batches.iter() {
                         match batch {
                             CommittedBatch::Rejected(info) => {
@@ -169,14 +170,14 @@ impl ExecutionPlan for FolioExec {
                                 timestamp_arr.append_nulls(info.num_messages as _);
                             }
                             CommittedBatch::Accepted(info) => {
-                                let ts_millis = info
+                                let ts_micros = info
                                     .timestamp
                                     .duration_since(SystemTime::UNIX_EPOCH)
                                     .expect("timestamp")
-                                    .as_millis();
+                                    .as_micros();
                                 offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
                                 timestamp_arr
-                                    .append_value_n(ts_millis as _, info.num_messages() as _);
+                                    .append_value_n(ts_micros as _, info.num_messages() as _);
                             }
                         }
                     }

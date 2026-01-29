@@ -100,7 +100,8 @@ impl LogMetadata for InMemoryLogMetadata {
                             ),
                         })?;
 
-                    let topic_state = TopicLogState::new(topic.compaction.clone());
+                    let topic_state =
+                        TopicLogState::new(topic_name.clone(), topic.compaction.clone());
 
                     // Queue table creation task since this is a new topic
                     let mut candidate_queue = self.candidate_queue.lock().await;

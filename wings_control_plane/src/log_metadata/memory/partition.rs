@@ -135,15 +135,16 @@ impl PartitionLogState {
 
     /// Complete a compaction task and update the partition state with the results.
     /// Validates that the task matches the in-progress task and updates file tracking.
+    /// Returns the new files added to the table.
     pub fn complete_task(
         &mut self,
         task_id: &str,
         result: TaskCompletionResult,
-    ) -> Result<(bool, Vec<CandidateTask>)> {
+    ) -> Result<Vec<FileInfo>> {
         debug!(task_id, partition = ?self.key, "Received task completion result");
 
         let Some(in_progress) = &self.in_progress_task else {
-            return Ok((true, Vec::default()));
+            return Ok(Vec::default());
         };
 
         // Validate task matches in-progress task
@@ -156,19 +157,22 @@ impl PartitionLogState {
 
             self.in_progress_task = None;
 
-            return Ok((true, Vec::default()));
+            return Ok(Vec::default());
         }
 
         let TaskCompletionResult::Success(result) = result else {
             // task failed, so we will try again.
             self.in_progress_task = None;
-            return Ok((true, Vec::default()));
+            return Ok(Vec::default());
         };
 
         let TaskResult::Compaction(result) = result else {
             // Ignore all other tasks. this should not happen.
-            return Ok((true, Vec::default()));
+            return Ok(Vec::default());
         };
+
+        // Collect new files to return
+        let new_files: Vec<FileInfo> = result.new_files.clone();
 
         // Update stored offset to the highest end_offset from new files
         if let Some(max_end_offset) = result.new_files.iter().map(|f| f.end_offset).max() {
@@ -184,7 +188,7 @@ impl PartitionLogState {
 
         self.in_progress_task = None;
 
-        Ok((true, Vec::default()))
+        Ok(new_files)
     }
 
     pub fn commit_page(

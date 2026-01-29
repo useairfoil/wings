@@ -490,11 +490,25 @@ impl Task {
         }
     }
 
+    pub fn new_commit(task: CommitTask) -> Self {
+        Self::Commit {
+            metadata: Default::default(),
+            task,
+        }
+    }
+
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
             Task::CreateTable { metadata, .. } => &metadata.task_id,
             Task::Commit { metadata, .. } => &metadata.task_id,
+        }
+    }
+
+    pub fn as_commit(&self) -> Option<&CommitTask> {
+        match self {
+            Task::Commit { task, .. } => Some(task),
+            _ => None,
         }
     }
 }

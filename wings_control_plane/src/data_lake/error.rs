@@ -1,3 +1,4 @@
+use deltalake_core::DeltaTableError;
 use snafu::Snafu;
 
 use crate::{
@@ -21,6 +22,8 @@ pub enum DataLakeError {
     DataFusion {
         source: datafusion::error::DataFusionError,
     },
+    #[snafu(transparent)]
+    Delta { source: DeltaTableError },
     #[snafu(display("Failed to create file path"))]
     Path { source: object_store::path::Error },
     #[snafu(display("Unsupported operation: {}", operation))]
@@ -38,9 +41,10 @@ impl DataLakeError {
         match self {
             Self::ClusterMetadata { source, .. } => source.kind(),
             Self::Internal { .. } => ErrorKind::Internal,
-            Self::ObjectStore { .. } | Self::Parquet { .. } | Self::DataFusion { .. } => {
-                ErrorKind::Temporary
-            }
+            Self::ObjectStore { .. }
+            | Self::Parquet { .. }
+            | Self::DataFusion { .. }
+            | Self::Delta { .. } => ErrorKind::Temporary,
             Self::Path { .. } | Self::UnsupportedOperation { .. } | Self::InvalidSchema { .. } => {
                 ErrorKind::Validation
             }

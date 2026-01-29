@@ -8,10 +8,11 @@ use tracing::{debug, warn};
 
 use crate::{
     log_metadata::{
-        CommitPageRequest, CommitPageResponse, CreateTableTask, GetLogLocationOptions, LogLocation,
-        Task, TaskCompletionResult, error::Result, memory::partition::GetLogLocationResult,
+        CommitPageRequest, CommitPageResponse, CommitTask, CreateTableTask, FileInfo,
+        GetLogLocationOptions, LogLocation, Task, TaskCompletionResult, TaskResult, error::Result,
+        memory::partition::GetLogLocationResult,
     },
-    resources::CompactionConfiguration,
+    resources::{CompactionConfiguration, TopicName},
 };
 
 use super::{
@@ -51,20 +52,28 @@ impl Default for TableStatus {
 
 #[derive(Debug, Clone)]
 pub struct TopicLogState {
+    topic_name: TopicName,
     /// Maps partition keys to their offset tracking
     partitions: BTreeMap<PartitionKey, PartitionLogState>,
     /// Status of table creation for this topic
     table_status: TableStatus,
     /// Topic compaction configuration, fetched when topic is first created
     compaction_config: CompactionConfiguration,
+    /// Files from compaction tasks that are not yet committed
+    pending_files: Vec<FileInfo>,
+    /// In-progress commit task to prevent duplicate commits
+    in_progress_commit_task: Option<Task>,
 }
 
 impl TopicLogState {
-    pub fn new(compaction_config: CompactionConfiguration) -> Self {
+    pub fn new(topic_name: TopicName, compaction_config: CompactionConfiguration) -> Self {
         Self {
+            topic_name,
             partitions: BTreeMap::new(),
             table_status: TableStatus::default(),
             compaction_config,
+            pending_files: Vec::new(),
+            in_progress_commit_task: None,
         }
     }
 
@@ -111,6 +120,18 @@ impl TopicLogState {
     /// Create a table creation task for this topic if needed.
     /// Returns the task and any pending partition candidates that should be processed.
     pub fn candidate_task(&mut self, candidate: CandidateTask) -> Option<Task> {
+        // Check if we should create a commit task first
+        if self.in_progress_commit_task.is_none() && !self.pending_files.is_empty() {
+            let topic_name = candidate.topic_name().clone();
+            let commit_task = CommitTask {
+                topic_name,
+                new_files: std::mem::take(&mut self.pending_files),
+            };
+            let task = Task::new_commit(commit_task);
+            self.in_progress_commit_task = Some(task.clone());
+            return Some(task);
+        }
+
         match candidate {
             CandidateTask::Topic(topic_name) => match &mut self.table_status {
                 TableStatus::NotCreated { pending_candidates } => {
@@ -158,7 +179,42 @@ impl TopicLogState {
         task_id: &str,
         result: TaskCompletionResult,
     ) -> Result<(bool, Vec<CandidateTask>)> {
-        debug!(task_id, "Received task completion result in topci state");
+        debug!(task_id, "Received task completion result in topic state");
+
+        // Check if this is a commit task
+        if let Some(commit_task) = &self.in_progress_commit_task
+            && commit_task.task_id() == task_id
+        {
+            match result {
+                TaskCompletionResult::Success(task_result) => {
+                    match task_result {
+                        TaskResult::Commit(_) => {
+                            debug!(task_id, "Commit task completed successfully");
+                            self.in_progress_commit_task = None;
+                            return Ok((true, Vec::new()));
+                        }
+                        _ => {
+                            // Wrong task result type
+                            self.in_progress_commit_task = None;
+                            return Ok((false, Vec::new()));
+                        }
+                    }
+                }
+                TaskCompletionResult::Failure(error_message) => {
+                    warn!(task_id, error = error_message, "Commit task failed");
+                    let Some(commit) = commit_task.as_commit() else {
+                        self.in_progress_commit_task = None;
+                        return Ok((false, Vec::new()));
+                    };
+
+                    // Add back the files to the pending files so that they can be committed.
+                    self.pending_files.extend(commit.new_files.clone());
+                    self.in_progress_commit_task = None;
+
+                    return Ok((false, Vec::new()));
+                }
+            }
+        }
 
         // First check if this is a table creation task in progress
         match &mut self.table_status {
@@ -170,9 +226,7 @@ impl TopicLogState {
                     match result {
                         TaskCompletionResult::Success(task_result) => {
                             match task_result {
-                                crate::log_metadata::TaskResult::CreateTable(
-                                    create_table_result,
-                                ) => {
+                                TaskResult::CreateTable(create_table_result) => {
                                     let table_id = create_table_result.table_id.clone();
                                     // Take the pending candidates before changing the state
                                     let pending_candidates = std::mem::take(pending_candidates);
@@ -219,7 +273,24 @@ impl TopicLogState {
                     return Ok((false, Vec::new()));
                 };
 
-                partition_state.complete_task(task_id, result)
+                // Remove the partition task since it's complete
+                partition_tasks.remove(task_id);
+
+                let new_files = partition_state.complete_task(task_id, result)?;
+
+                // Accumulate new files into pending_files
+                if !new_files.is_empty() {
+                    debug!(
+                        task_id,
+                        num_files = new_files.len(),
+                        "Partition task generated new files"
+                    );
+
+                    self.pending_files.extend(new_files);
+                    return Ok((true, vec![CandidateTask::Topic(self.topic_name.clone())]));
+                }
+
+                Ok((true, Vec::new()))
             }
             _ => {
                 // Table not created or other states, can't handle compaction tasks
@@ -242,8 +313,9 @@ mod tests {
 
     #[test]
     fn test_partition_candidate_pending_when_table_not_created() {
-        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
+        let mut topic_state =
+            TopicLogState::new(topic_name.clone(), CompactionConfiguration::default());
         let partition_value = Some(PartitionValue::String("partition-1".to_string()));
 
         let candidate = CandidateTask::Partition(topic_name.clone(), partition_value.clone());
@@ -267,8 +339,9 @@ mod tests {
 
     #[test]
     fn test_partition_candidate_pending_when_table_in_progress() {
-        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
+        let mut topic_state =
+            TopicLogState::new(topic_name.clone(), CompactionConfiguration::default());
 
         // First create a table creation task to set status to InProgress
         let topic_candidate = CandidateTask::Topic(topic_name.clone());
@@ -301,8 +374,9 @@ mod tests {
 
     #[test]
     fn test_pending_candidates_returned_on_table_creation_complete() {
-        let mut topic_state = TopicLogState::new(CompactionConfiguration::default());
         let topic_name = create_test_topic_name("test-topic");
+        let mut topic_state =
+            TopicLogState::new(topic_name.clone(), CompactionConfiguration::default());
 
         // Add some pending partition candidates
         let partition_value1 = Some(PartitionValue::String("partition-1".to_string()));
