@@ -1,8 +1,9 @@
 //! Conversions between admin domain types and protobuf types.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytesize::ByteSize;
+use prost_types::Timestamp;
 use snafu::ResultExt;
 
 use crate::{
@@ -18,7 +19,8 @@ use crate::{
         DataLakeConfiguration, DataLakeName, DeltaConfiguration, GoogleConfiguration,
         IcebergConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStore,
         ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration, S3CompatibleConfiguration,
-        Tenant, TenantName, Topic, TopicName, TopicOptions,
+        TableStatus, Tenant, TenantName, Topic, TopicCondition, TopicName, TopicOptions,
+        TopicStatus,
     },
 };
 
@@ -271,6 +273,7 @@ impl TryFrom<Topic> for pb::Topic {
     fn try_from(topic: Topic) -> AdminResult<Self> {
         let schema = topic.schema().into();
         let compaction = topic.compaction.into();
+        let status = topic.status.map(pb::TopicStatus::from);
 
         Ok(Self {
             name: topic.name.name(),
@@ -278,6 +281,7 @@ impl TryFrom<Topic> for pb::Topic {
             description: topic.description,
             partition_key: topic.partition_key,
             compaction: Some(compaction),
+            status,
         })
     }
 }
@@ -310,12 +314,15 @@ impl TryFrom<pb::Topic> for Topic {
             })?
             .into();
 
+        let status = topic.status.map(Into::into);
+
         Ok(Self {
             name,
             schema,
             description: topic.description,
             partition_key: topic.partition_key,
             compaction,
+            status,
         })
     }
 }
@@ -367,6 +374,7 @@ impl TryFrom<TopicOptions> for pb::Topic {
             partition_key: options.partition_key,
             description: options.description,
             compaction: Some(compaction),
+            status: None,
         })
     }
 }
@@ -387,6 +395,111 @@ impl From<pb::CompactionConfiguration> for CompactionConfiguration {
             freshness: Duration::from_secs(config.freshness_seconds),
             ttl: config.ttl_seconds.map(Duration::from_secs),
             target_file_size: ByteSize::b(config.target_file_size_bytes),
+        }
+    }
+}
+
+impl From<TopicStatus> for pb::TopicStatus {
+    fn from(status: TopicStatus) -> Self {
+        let table_status = pb::TableStatus::from(status.table_status);
+        let conditions = status.conditions.into_iter().map(Into::into).collect();
+
+        Self {
+            table_status: Some(table_status),
+            num_partitions: status.num_partitions,
+            conditions,
+        }
+    }
+}
+
+impl From<pb::TopicStatus> for TopicStatus {
+    fn from(status: pb::TopicStatus) -> Self {
+        let table_status = status
+            .table_status
+            .map(Into::into)
+            .unwrap_or(TableStatus::None);
+        let conditions = status.conditions.into_iter().map(Into::into).collect();
+
+        Self {
+            table_status,
+            num_partitions: status.num_partitions,
+            conditions,
+        }
+    }
+}
+
+impl From<TableStatus> for pb::TableStatus {
+    fn from(status: TableStatus) -> Self {
+        let status = match status {
+            TableStatus::None => pb::table_status::Status::None(()),
+            TableStatus::Pending => pb::table_status::Status::Pending(()),
+            TableStatus::Created { table_id } => {
+                pb::table_status::Status::Created(pb::TableCreated { table_id })
+            }
+            TableStatus::Error { message } => {
+                pb::table_status::Status::Error(pb::TableError { message })
+            }
+        };
+
+        Self {
+            status: Some(status),
+        }
+    }
+}
+
+impl From<pb::TableStatus> for TableStatus {
+    fn from(status: pb::TableStatus) -> Self {
+        match status.status {
+            Some(pb::table_status::Status::None(_)) | None => TableStatus::None,
+            Some(pb::table_status::Status::Pending(_)) => TableStatus::Pending,
+            Some(pb::table_status::Status::Created(created)) => TableStatus::Created {
+                table_id: created.table_id,
+            },
+            Some(pb::table_status::Status::Error(error)) => TableStatus::Error {
+                message: error.message,
+            },
+        }
+    }
+}
+
+impl From<TopicCondition> for pb::TopicCondition {
+    fn from(condition: TopicCondition) -> Self {
+        let duration = condition
+            .last_transition_time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
+        let last_transition_time = Timestamp {
+            seconds: duration.as_secs() as i64,
+            nanos: duration.subsec_nanos() as i32,
+        };
+
+        Self {
+            r#type: condition.condition_type,
+            status: condition.status,
+            reason: condition.reason,
+            message: condition.message,
+            last_transition_time: Some(last_transition_time),
+        }
+    }
+}
+
+impl From<pb::TopicCondition> for TopicCondition {
+    fn from(condition: pb::TopicCondition) -> Self {
+        let last_transition_time = condition
+            .last_transition_time
+            .map(|ts| {
+                SystemTime::UNIX_EPOCH
+                    + Duration::from_secs(ts.seconds as u64)
+                    + Duration::from_nanos(ts.nanos as u64)
+            })
+            .unwrap_or_else(SystemTime::now);
+
+        Self {
+            condition_type: condition.r#type,
+            status: condition.status,
+            reason: condition.reason,
+            message: condition.message,
+            last_transition_time,
         }
     }
 }

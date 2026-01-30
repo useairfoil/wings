@@ -3,6 +3,7 @@ syntax = "proto3";
 package wings.v1.cluster_metadata;
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 import "schema/arrow_type.proto";
 
 // Cluster metadata service to manage cluster resources.
@@ -246,6 +247,66 @@ message Topic {
 
   // The topic compaction configuration.
   CompactionConfiguration compaction = 5;
+
+  // The topic status.
+  TopicStatus status = 6;
+}
+
+// The status of a topic.
+message TopicStatus {
+  // The table status.
+  TableStatus table_status = 1;
+
+  // The number of partitions.
+  uint64 num_partitions = 2;
+
+  // The conditions of the topic.
+  repeated TopicCondition conditions = 3;
+}
+
+// The table status.
+message TableStatus {
+  // The table status.
+  oneof status {
+    // No table status.
+    google.protobuf.Empty none = 1;
+    // Table is pending creation.
+    google.protobuf.Empty pending = 2;
+    // Table has been created.
+    TableCreated created = 3;
+    // Table creation failed.
+    TableError error = 4;
+  }
+}
+
+// Table created status.
+message TableCreated {
+  // The table ID.
+  string table_id = 1;
+}
+
+// Table error status.
+message TableError {
+  // The error message.
+  string message = 1;
+}
+
+// A condition on a topic, similar to Kubernetes conditions.
+message TopicCondition {
+  // The condition type.
+  string type = 1;
+
+  // Whether the condition is operational.
+  bool status = 2;
+
+  // The cause of the current status.
+  string reason = 3;
+
+  // A human-friendly message.
+  string message = 4;
+
+  // When the state changed.
+  google.protobuf.Timestamp last_transition_time = 5;
 }
 
 message CompactionConfiguration {

@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use bytesize::ByteSize;
 
@@ -31,6 +34,53 @@ pub struct Topic {
     pub description: Option<String>,
     /// The topic compaction configuration.
     pub compaction: CompactionConfiguration,
+    /// The topic status.
+    pub status: Option<TopicStatus>,
+}
+
+/// The status of a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopicStatus {
+    /// The table status.
+    pub table_status: TableStatus,
+    /// The number of partitions.
+    pub num_partitions: u64,
+    /// The conditions of the topic.
+    pub conditions: Vec<TopicCondition>,
+}
+
+/// The table status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TableStatus {
+    /// No table status.
+    None,
+    /// Table is pending creation.
+    Pending,
+    /// Table has been created.
+    Created {
+        /// The table ID.
+        table_id: String,
+    },
+    /// Table creation failed.
+    Error {
+        /// The error message.
+        message: String,
+    },
+}
+
+/// A condition on a topic, similar to Kubernetes conditions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopicCondition {
+    /// The condition type.
+    pub condition_type: String,
+    /// Whether the condition is operational.
+    pub status: bool,
+    /// The cause of the current status.
+    pub reason: String,
+    /// A human-friendly message.
+    pub message: String,
+    /// When the state changed.
+    pub last_transition_time: SystemTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +104,14 @@ impl Topic {
             partition_key: options.partition_key,
             description: options.description,
             compaction: options.compaction,
+            status: None,
         }
+    }
+
+    /// Set the topic status.
+    pub fn with_status(mut self, status: TopicStatus) -> Self {
+        self.status = Some(status);
+        self
     }
 
     /// Returns the partition field, if any.
