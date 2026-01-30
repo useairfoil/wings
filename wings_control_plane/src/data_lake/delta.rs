@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 use bytesize::ByteSize;
 use deltalake_aws::logstore::default_s3_logstore;
@@ -114,9 +114,16 @@ impl DataLake for DeltaDataLake {
             // TODO: stats, partition values, file modification time etc.
             // Remove string prefix and create a new file ref relative to the topic's root dir.
             if let Some(file_ref) = file.file_ref.strip_prefix(&root_location) {
+                let modification_time = file
+                    .modification_time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_millis() as i64)
+                    .unwrap_or_default();
+
                 let add = Add {
                     path: file_ref.to_string(),
                     size: file.metadata.file_size.as_u64() as _,
+                    modification_time,
                     data_change: true,
                     ..Default::default()
                 };

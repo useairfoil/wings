@@ -270,6 +270,8 @@ pub struct FileInfo {
     pub end_offset: u64,
     /// Parquet file metadata
     pub metadata: FileMetadata,
+    /// Timestamp when the file was created
+    pub modification_time: SystemTime,
 }
 
 /// Result for a compaction task.

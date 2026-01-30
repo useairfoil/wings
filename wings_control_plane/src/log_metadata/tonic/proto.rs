@@ -899,6 +899,7 @@ impl From<FileInfo> for pb::FileInfo {
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             metadata: Some(info.metadata.into()),
+            modification_time: Some(info.modification_time.into()),
         }
     }
 }
@@ -951,12 +952,21 @@ impl TryFrom<pb::FileInfo> for FileInfo {
                 message: "missing result in CompleteTaskRequest proto".to_string(),
             })?
             .try_into()?;
+        let modification_time = info
+            .modification_time
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing modification_time in FileInfo proto".to_string(),
+            })?
+            .try_into()
+            .map_err(Arc::new)
+            .context(InvalidTimestampSnafu {})?;
 
         Ok(FileInfo {
             file_ref: info.file_ref,
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             metadata,
+            modification_time,
         })
     }
 }

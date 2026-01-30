@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use bytesize::ByteSize;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -154,6 +155,7 @@ impl ParquetBatchWriter {
             start_offset: self.current_file_start_offset,
             end_offset,
             metadata,
+            modification_time: SystemTime::now(),
         });
 
         self.current_file_start_offset = end_offset + 1;

@@ -185,6 +185,7 @@ message FileInfo {
   uint64 start_offset = 3;
   uint64 end_offset = 4;
   FileMetadata metadata = 5;
+  google.protobuf.Timestamp modification_time = 6;
 }
 
 message CompactionTask {
