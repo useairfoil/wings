@@ -168,6 +168,7 @@
           nightly = pkgs.mkShell {
             buildInputs = [
               nightlyToolChain
+              pkgs.cargo-udeps
             ];
           };
         };
