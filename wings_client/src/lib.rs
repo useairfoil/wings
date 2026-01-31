@@ -3,7 +3,9 @@ use error::ClusterMetadataSnafu;
 use fetch::FetchClient;
 use snafu::ResultExt;
 use tonic::transport::Channel;
-use wings_control_plane_core::cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient};
+use wings_control_plane_core::cluster_metadata::{
+    ClusterMetadata, TopicView, tonic::ClusterMetadataClient,
+};
 use wings_resources::TopicName;
 
 mod encode;
@@ -42,7 +44,7 @@ impl WingsClient {
     pub async fn fetch_client(&self, topic_name: TopicName) -> Result<FetchClient> {
         let topic = self
             .cluster_meta
-            .get_topic(topic_name.clone())
+            .get_topic(topic_name.clone(), TopicView::Basic)
             .await
             .context(ClusterMetadataSnafu {})?;
 
@@ -53,7 +55,7 @@ impl WingsClient {
     pub async fn push_client(&self, topic_name: TopicName) -> Result<PushClient> {
         let topic = self
             .cluster_meta
-            .get_topic(topic_name.clone())
+            .get_topic(topic_name.clone(), TopicView::Basic)
             .await
             .context(ClusterMetadataSnafu {})?;
 

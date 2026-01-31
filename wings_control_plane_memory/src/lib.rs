@@ -4,12 +4,12 @@ mod log_metadata;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use wings_control_plane_core::{
-    ClusterMetadata,
+    ClusterMetadata, ClusterMetadataError,
     cluster_metadata::{
         ClusterMetadataMetrics, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
         ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
         ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse,
-        Result as ClusterResult,
+        Result as ClusterResult, TopicView,
     },
     log_metadata::{
         CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
@@ -106,9 +106,23 @@ impl ClusterMetadata for InMemoryControlPlane {
         store.create_topic(name, options, &self.cluster_metrics)
     }
 
-    async fn get_topic(&self, name: TopicName) -> ClusterResult<Topic> {
-        let store = self.cluster_store.read().await;
-        store.get_topic(name)
+    async fn get_topic(&self, name: TopicName, view: TopicView) -> ClusterResult<Topic> {
+        let topic = {
+            let store = self.cluster_store.read().await;
+            store.get_topic(name)
+        }?;
+
+        if view == TopicView::Basic {
+            return Ok(topic);
+        }
+
+        let status = self.log_store.topic_status(&topic).await.map_err(|_| {
+            ClusterMetadataError::Internal {
+                message: "failed to fetch topic status".to_string(),
+            }
+        })?;
+
+        Ok(topic.with_status(status))
     }
 
     async fn list_topics(&self, request: ListTopicsRequest) -> ClusterResult<ListTopicsResponse> {

@@ -56,20 +56,16 @@ impl Worker {
                 operation: "create",
             })?;
 
-        let table_id = data_lake
-            .create_table(topic_ref)
-            .await
-            .context(DataLakeSnafu {
-                operation: "create_table",
-            })?;
-
-        let result = TaskResult::CreateTable(CreateTableResult { table_id });
+        let complete = match data_lake.create_table(topic_ref).await {
+            Ok(table_id) => {
+                let result = TaskResult::CreateTable(CreateTableResult { table_id });
+                CompleteTaskRequest::new_completed(metadata.task_id.clone(), result)
+            }
+            Err(err) => CompleteTaskRequest::new_failed(metadata.task_id.clone(), err.to_string()),
+        };
 
         self.log_meta
-            .complete_task(CompleteTaskRequest::new_completed(
-                metadata.task_id.clone(),
-                result,
-            ))
+            .complete_task(complete)
             .await
             .context(LogMetadataSnafu {
                 operation: "complete_task",

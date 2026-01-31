@@ -21,7 +21,7 @@ use wings_control_plane_core::log_metadata::{
     GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
     LogMetadataError, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result,
 };
-use wings_resources::{NamespaceName, PartitionValue, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, Topic, TopicName, TopicStatus};
 
 use self::{
     candidate::{CandidateTask, CandidateTaskQueue},
@@ -250,6 +250,20 @@ impl LogMetadataStore {
         Ok(ListPartitionsResponse {
             partitions,
             next_page_token,
+        })
+    }
+
+    pub async fn topic_status(&self, topic: &Topic) -> Result<TopicStatus> {
+        let Some(topic_state) = self.topics.get(&topic.name) else {
+            return Ok(TopicStatus::default());
+        };
+
+        let num_partitions = topic_state.num_partitions();
+        let conditions = topic_state.conditions();
+
+        Ok(TopicStatus {
+            num_partitions,
+            conditions,
         })
     }
 

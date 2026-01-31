@@ -20,7 +20,7 @@ pub use self::{
     partition::{PartitionValue, PartitionValueError, PartitionValueParseError},
     tenant::{Tenant, TenantName, TenantRef},
     topic::{
-        CompactionConfiguration, OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME, TableStatus, Topic,
-        TopicCondition, TopicName, TopicOptions, TopicRef, TopicStatus, validate_compaction,
+        CompactionConfiguration, OFFSET_COLUMN_NAME, TIMESTAMP_COLUMN_NAME, Topic, TopicCondition,
+        TopicName, TopicOptions, TopicRef, TopicStatus, validate_compaction,
     },
 };

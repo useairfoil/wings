@@ -510,6 +510,14 @@ impl Task {
         }
     }
 
+    pub fn metadata(&self) -> &TaskMetadata {
+        match self {
+            Task::Compaction { metadata, .. } => metadata,
+            Task::CreateTable { metadata, .. } => metadata,
+            Task::Commit { metadata, .. } => metadata,
+        }
+    }
+
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
@@ -521,6 +529,29 @@ impl Task {
     pub fn as_commit(&self) -> Option<&CommitTask> {
         match self {
             Task::Commit { task, .. } => Some(task),
+            _ => None,
+        }
+    }
+}
+
+impl TaskResult {
+    pub fn take_compaction(self) -> Option<CompactionResult> {
+        match self {
+            TaskResult::Compaction(task) => Some(task),
+            _ => None,
+        }
+    }
+
+    pub fn take_create_table(self) -> Option<CreateTableResult> {
+        match self {
+            TaskResult::CreateTable(task) => Some(task),
+            _ => None,
+        }
+    }
+
+    pub fn take_commit(self) -> Option<CommitResult> {
+        match self {
+            TaskResult::Commit(task) => Some(task),
             _ => None,
         }
     }

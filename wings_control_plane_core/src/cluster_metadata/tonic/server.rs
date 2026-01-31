@@ -237,9 +237,11 @@ impl TonicService for ClusterMetadataServer {
             .context(InvalidResourceNameSnafu { resource: "topic" })
             .map_err(cluster_metadata_error_to_status)?;
 
+        let view = request.view().into();
+
         let topic = self
             .inner
-            .get_topic(topic_name)
+            .get_topic(topic_name, view)
             .await
             .map_err(cluster_metadata_error_to_status)?
             .try_into()

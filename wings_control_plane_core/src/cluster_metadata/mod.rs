@@ -68,7 +68,7 @@ pub trait ClusterMetadata: Send + Sync {
     async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic>;
 
     /// Return the specified topic.
-    async fn get_topic(&self, name: TopicName) -> Result<Topic>;
+    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic>;
 
     /// List all topics belonging to a namespace.
     async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse>;
@@ -118,6 +118,15 @@ pub trait ClusterMetadata: Send + Sync {
 
     /// Delete a data lake.
     async fn delete_data_lake(&self, name: DataLakeName) -> Result<()>;
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub enum TopicView {
+    // Only return the basic topic information.
+    #[default]
+    Basic,
+    // Include the topic status.
+    Full,
 }
 
 /// Request to list tenants.

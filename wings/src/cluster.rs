@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use snafu::ResultExt;
+use time::UtcDateTime;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
+    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, TopicView,
 };
 use wings_resources::{
     DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant, TenantName,
@@ -72,6 +73,16 @@ pub enum ClusterMetadataCommands {
     ListTopics {
         /// Namespace name in format 'tenant/namespace'
         namespace: String,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// Get a topic
+    GetTopic {
+        /// Topic name in format 'tenant/namespace/topic'
+        name: String,
+        /// Include full topic details
+        #[clap(long)]
+        full: bool,
         #[clap(flatten)]
         remote: RemoteArgs,
     },
@@ -261,6 +272,30 @@ impl ClusterMetadataCommands {
 
                 Ok(())
             }
+            ClusterMetadataCommands::GetTopic { name, full, remote } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let topic_name = TopicName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+                let view = if full {
+                    TopicView::Full
+                } else {
+                    TopicView::Basic
+                };
+
+                let topic =
+                    client
+                        .get_topic(topic_name, view)
+                        .await
+                        .context(ClusterMetadataSnafu {
+                            operation: "get_topic",
+                        })?;
+
+                print_topic(&topic);
+
+                Ok(())
+            }
             ClusterMetadataCommands::DeleteTopic {
                 name,
                 force,
@@ -364,5 +399,21 @@ fn print_topic(topic: &Topic) {
     println!("  fields:");
     for field in topic.schema().fields_iter() {
         println!("  - {}: {}", field.name, field.data_type);
+    }
+
+    let Some(status) = &topic.status else {
+        return;
+    };
+
+    println!("  status:");
+    println!("    num partitions: {}", status.num_partitions);
+    println!("    conditions:");
+    for condition in status.conditions.iter() {
+        let last_transition = UtcDateTime::from(condition.last_transition_time);
+        println!("    - Type: {}", condition.condition_type);
+        println!("      Last Transition Time: {}", last_transition);
+        println!("      Status: {:?}", condition.status);
+        println!("      Reason: {}", condition.reason);
+        println!("      Message: {}", condition.message);
     }
 }

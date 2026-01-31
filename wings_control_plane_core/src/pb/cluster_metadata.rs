@@ -9,8 +9,8 @@ use wings_resources::{
     AwsConfiguration, AzureConfiguration, CompactionConfiguration, DataLake, DataLakeConfiguration,
     DataLakeName, DeltaConfiguration, GoogleConfiguration, IcebergConfiguration, Namespace,
     NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration, ObjectStoreName,
-    ParquetConfiguration, S3CompatibleConfiguration, TableStatus, Tenant, TenantName, Topic,
-    TopicCondition, TopicName, TopicOptions, TopicStatus,
+    ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicCondition,
+    TopicName, TopicOptions, TopicStatus,
 };
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
         ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
         ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
         ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse,
-        Result as AdminResult,
+        Result as AdminResult, TopicView,
         error::{InternalSnafu, InvalidResourceNameSnafu, SchemaSnafu},
     },
     pb,
@@ -377,6 +377,25 @@ impl TryFrom<TopicOptions> for pb::Topic {
     }
 }
 
+impl From<TopicView> for pb::TopicView {
+    fn from(view: TopicView) -> Self {
+        match view {
+            TopicView::Basic => pb::TopicView::Basic,
+            TopicView::Full => pb::TopicView::Full,
+        }
+    }
+}
+
+impl From<pb::TopicView> for TopicView {
+    fn from(view: pb::TopicView) -> Self {
+        match view {
+            pb::TopicView::Unspecified => Default::default(),
+            pb::TopicView::Basic => TopicView::Basic,
+            pb::TopicView::Full => TopicView::Full,
+        }
+    }
+}
+
 impl From<CompactionConfiguration> for pb::CompactionConfiguration {
     fn from(config: CompactionConfiguration) -> Self {
         pb::CompactionConfiguration {
@@ -399,11 +418,9 @@ impl From<pb::CompactionConfiguration> for CompactionConfiguration {
 
 impl From<TopicStatus> for pb::TopicStatus {
     fn from(status: TopicStatus) -> Self {
-        let table_status = pb::TableStatus::from(status.table_status);
         let conditions = status.conditions.into_iter().map(Into::into).collect();
 
         Self {
-            table_status: Some(table_status),
             num_partitions: status.num_partitions,
             conditions,
         }
@@ -412,50 +429,11 @@ impl From<TopicStatus> for pb::TopicStatus {
 
 impl From<pb::TopicStatus> for TopicStatus {
     fn from(status: pb::TopicStatus) -> Self {
-        let table_status = status
-            .table_status
-            .map(Into::into)
-            .unwrap_or(TableStatus::None);
         let conditions = status.conditions.into_iter().map(Into::into).collect();
 
         Self {
-            table_status,
             num_partitions: status.num_partitions,
             conditions,
-        }
-    }
-}
-
-impl From<TableStatus> for pb::TableStatus {
-    fn from(status: TableStatus) -> Self {
-        let status = match status {
-            TableStatus::None => pb::table_status::Status::None(()),
-            TableStatus::Pending => pb::table_status::Status::Pending(()),
-            TableStatus::Created { table_id } => {
-                pb::table_status::Status::Created(pb::TableCreated { table_id })
-            }
-            TableStatus::Error { message } => {
-                pb::table_status::Status::Error(pb::TableError { message })
-            }
-        };
-
-        Self {
-            status: Some(status),
-        }
-    }
-}
-
-impl From<pb::TableStatus> for TableStatus {
-    fn from(status: pb::TableStatus) -> Self {
-        match status.status {
-            Some(pb::table_status::Status::None(_)) | None => TableStatus::None,
-            Some(pb::table_status::Status::Pending(_)) => TableStatus::Pending,
-            Some(pb::table_status::Status::Created(created)) => TableStatus::Created {
-                table_id: created.table_id,
-            },
-            Some(pb::table_status::Status::Error(error)) => TableStatus::Error {
-                message: error.message,
-            },
         }
     }
 }

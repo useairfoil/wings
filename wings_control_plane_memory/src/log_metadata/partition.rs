@@ -7,11 +7,11 @@ use std::{
 };
 
 use tokio::sync::{Notify, futures::OwnedNotified};
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, CompactionOperation,
-    CompactionTask, FileInfo, FolioLocation, GetLogLocationOptions, LogLocation, LogOffset,
-    RejectedBatchInfo, Result, Task, TaskCompletionResult, TaskResult,
+    CompactionResult, CompactionTask, FileInfo, FolioLocation, GetLogLocationOptions, LogLocation,
+    LogOffset, RejectedBatchInfo, Result, Task,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
 };
 use wings_resources::{CompactionConfiguration, PartitionValue, TopicName};
@@ -36,8 +36,6 @@ pub struct PartitionLogState {
     files: BTreeMap<u64, FileInfo>,
     /// Last offset stored in parquet files (inclusive)
     stored: Option<u64>,
-    /// In-progress compaction task to prevent duplicate tasks
-    in_progress_task: Option<Task>,
     /// Maps timestamp to the first offset containing that timestamp.
     /// Used for efficient timestamp-based queries.
     timestamp_index: BTreeMap<SystemTime, u64>,
@@ -61,7 +59,6 @@ impl PartitionLogState {
             pages: BTreeMap::new(),
             files: BTreeMap::new(),
             stored: None,
-            in_progress_task: None,
             timestamp_index: BTreeMap::new(),
             notify: Arc::new(Notify::new()),
             last_candidate_task_time: None,
@@ -98,11 +95,6 @@ impl PartitionLogState {
     /// Generate a compaction task for this partition if there is data to compact
     /// and no task is currently in progress.
     pub fn candidate_task(&mut self, config: &CompactionConfiguration) -> Option<Task> {
-        // Check if there's already an in-progress task
-        if self.in_progress_task.is_some() {
-            return None;
-        }
-
         // Only create task if there's data between stored and next_offset
         let start_offset = self.stored.map(|s| s + 1).unwrap_or(0);
         let end_offset = self.next_offset.previous().offset;
@@ -120,12 +112,7 @@ impl PartitionLogState {
             target_file_size: config.target_file_size,
         };
 
-        let task = Task::new_compaction(task);
-
-        // Store the full task as in-progress
-        self.in_progress_task = Some(task.clone());
-
-        Some(task)
+        Task::new_compaction(task).into()
     }
 
     /// Complete a compaction task and update the partition state with the results.
@@ -134,37 +121,9 @@ impl PartitionLogState {
     pub fn complete_task(
         &mut self,
         task_id: &str,
-        result: TaskCompletionResult,
+        result: CompactionResult,
     ) -> Result<Vec<FileInfo>> {
-        debug!(task_id, partition = ?self.key, "Received task completion result");
-
-        let Some(in_progress) = &self.in_progress_task else {
-            return Ok(Vec::default());
-        };
-
-        // Validate task matches in-progress task
-        if in_progress.task_id() != task_id {
-            warn!(
-                task_in_progress = ?in_progress,
-                task_completed = ?task_id,
-                "Task mismatch: clearing in-progress task without updating state"
-            );
-
-            self.in_progress_task = None;
-
-            return Ok(Vec::default());
-        }
-
-        let TaskCompletionResult::Success(result) = result else {
-            // task failed, so we will try again.
-            self.in_progress_task = None;
-            return Ok(Vec::default());
-        };
-
-        let TaskResult::Compaction(result) = result else {
-            // Ignore all other tasks. this should not happen.
-            return Ok(Vec::default());
-        };
+        debug!(task_id, partition = ?self.key, "Received compaction completion result");
 
         // Collect new files to return
         let new_files: Vec<FileInfo> = result.new_files.clone();
@@ -180,8 +139,6 @@ impl PartitionLogState {
                 self.files.insert(file_info.start_offset, file_info);
             }
         }
-
-        self.in_progress_task = None;
 
         Ok(new_files)
     }

@@ -113,7 +113,7 @@ fn gen_paginated_topic_stream_with_filter(
             let topic_name = TopicName::new(topic_id, namespace.clone())
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
-            match cluster_metadata.get_topic(topic_name).await {
+            match cluster_metadata.get_topic(topic_name, Default::default()).await {
                 Ok(topic) => {
                     yield Ok(vec![topic]);
                 }

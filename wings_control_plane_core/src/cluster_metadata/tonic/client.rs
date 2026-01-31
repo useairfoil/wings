@@ -14,7 +14,7 @@ use crate::{
         ClusterMetadata, ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse,
         ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
         ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse, ListTopicsRequest,
-        ListTopicsResponse, Result,
+        ListTopicsResponse, Result, TopicView,
     },
     pb::{self, cluster_metadata_service_client::ClusterMetadataServiceClient as TonicClient},
 };
@@ -188,9 +188,11 @@ where
             .try_into()
     }
 
-    async fn get_topic(&self, name: TopicName) -> Result<Topic> {
+    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
+        let view: pb::TopicView = view.into();
         let request = pb::GetTopicRequest {
             name: name.to_string(),
+            view: Some(view as i32),
         };
 
         self.client

@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_client::{PushClient, WingsClient};
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    cluster_metadata::{ClusterMetadata, TopicView, tonic::ClusterMetadataClient},
     log_metadata::CommittedBatch,
 };
 use wings_resources::{NamespaceName, TopicName};
@@ -190,7 +190,7 @@ async fn ensure_topic_exists(
     topic: &TopicType,
 ) -> Result<TopicName> {
     let topic_name = TopicName::new_unchecked(topic.topic_name(), namespace.clone());
-    match admin.get_topic(topic_name.clone()).await {
+    match admin.get_topic(topic_name.clone(), TopicView::Basic).await {
         Ok(_) => return Ok(topic_name),
         Err(err) if err.is_not_found() => {}
         Err(err) => {

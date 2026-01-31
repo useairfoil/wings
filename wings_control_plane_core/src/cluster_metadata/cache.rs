@@ -45,7 +45,10 @@ impl TopicCache {
         let topic = self
             .inner
             .try_get_with(name.clone(), async move {
-                cluster_meta.get_topic(name).await.map(Arc::new)
+                cluster_meta
+                    .get_topic(name, Default::default())
+                    .await
+                    .map(Arc::new)
             })
             .await
             .map_err(|err| {

@@ -34,33 +34,12 @@ pub struct Topic {
 }
 
 /// The status of a topic.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct TopicStatus {
-    /// The table status.
-    pub table_status: TableStatus,
     /// The number of partitions.
     pub num_partitions: u64,
     /// The conditions of the topic.
     pub conditions: Vec<TopicCondition>,
-}
-
-/// The table status.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TableStatus {
-    /// No table status.
-    None,
-    /// Table is pending creation.
-    Pending,
-    /// Table has been created.
-    Created {
-        /// The table ID.
-        table_id: String,
-    },
-    /// Table creation failed.
-    Error {
-        /// The error message.
-        message: String,
-    },
 }
 
 /// A condition on a topic, similar to Kubernetes conditions.

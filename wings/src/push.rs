@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_client::WriteRequest;
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
+    cluster_metadata::{ClusterMetadata, TopicView, tonic::ClusterMetadataClient},
     log_metadata::CommittedBatch,
 };
 use wings_resources::{NamespaceName, PartitionValue, TopicName};
@@ -115,7 +115,7 @@ impl PushArgs {
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
             let topic = cluster_meta
-                .get_topic(topic_name)
+                .get_topic(topic_name, TopicView::Basic)
                 .await
                 .context(ClusterMetadataSnafu {
                     operation: "get_topic",

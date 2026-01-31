@@ -194,6 +194,9 @@ message GetTopicRequest {
   //
   // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
   string name = 1;
+
+  // Which fields to include in the response.
+  optional TopicView view = 2;
 }
 
 message ListTopicsRequest {
@@ -230,6 +233,16 @@ message DeleteTopicRequest {
   bool force = 2;
 }
 
+// Which fields to include in the response.
+enum TopicView {
+  // Unspecified, use the default.
+  TOPIC_VIEW_UNSPECIFIED = 0;
+  // Only return the basic topic information.
+  TOPIC_VIEW_BASIC = 1;
+  // Include the topic status.
+  TOPIC_VIEW_FULL = 2;
+}
+
 message Topic {
   // The topic name.
   //
@@ -254,29 +267,11 @@ message Topic {
 
 // The status of a topic.
 message TopicStatus {
-  // The table status.
-  TableStatus table_status = 1;
-
   // The number of partitions.
-  uint64 num_partitions = 2;
+  uint64 num_partitions = 1;
 
   // The conditions of the topic.
-  repeated TopicCondition conditions = 3;
-}
-
-// The table status.
-message TableStatus {
-  // The table status.
-  oneof status {
-    // No table status.
-    google.protobuf.Empty none = 1;
-    // Table is pending creation.
-    google.protobuf.Empty pending = 2;
-    // Table has been created.
-    TableCreated created = 3;
-    // Table creation failed.
-    TableError error = 4;
-  }
+  repeated TopicCondition conditions = 2;
 }
 
 // Table created status.
