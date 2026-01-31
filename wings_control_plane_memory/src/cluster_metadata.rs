@@ -1,15 +1,13 @@
-//! In-memory implementation of the cluster metadata trait.
+//! In-memory implementation of the cluster metadata store.
 //!
 //! This implementation stores all data in memory and is suitable for testing
 //! and development. It uses a RwLock for thread-safe access.
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use tokio::sync::RwLock;
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, ClusterMetadataError, ClusterMetadataMetrics, ListDataLakesRequest,
-    ListDataLakesResponse, ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
+    ClusterMetadataError, ClusterMetadataMetrics, ListDataLakesRequest, ListDataLakesResponse,
+    ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
     ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse, ListTopicsRequest,
     ListTopicsResponse, Result,
 };
@@ -21,7 +19,7 @@ use wings_resources::{
 };
 
 #[derive(Debug, Default)]
-struct ClusterMetadataStore {
+pub struct ClusterMetadataStore {
     /// Map of tenant ID to tenant data.
     tenants: HashMap<String, Tenant>,
     /// Map of namespace name to namespace data.
@@ -34,26 +32,8 @@ struct ClusterMetadataStore {
     data_lakes: HashMap<String, DataLake>,
 }
 
-/// In-memory implementation of the cluster metadata service.
-///
-#[derive(Debug)]
-pub struct InMemoryClusterMetadata {
-    store: RwLock<ClusterMetadataStore>,
-    metrics: ClusterMetadataMetrics,
-}
-
-impl InMemoryClusterMetadata {
-    /// Create a new in-memory cluster metadata service.
-    pub fn new() -> Self {
-        Self {
-            store: RwLock::new(ClusterMetadataStore::default()),
-            metrics: ClusterMetadataMetrics::default(),
-        }
-    }
-}
-
 impl ClusterMetadataStore {
-    fn create_tenant(
+    pub fn create_tenant(
         &mut self,
         name: TenantName,
         metrics: &ClusterMetadataMetrics,
@@ -75,7 +55,7 @@ impl ClusterMetadataStore {
         Ok(tenant)
     }
 
-    fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
+    pub fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
         let tenant_id = name.id();
         self.tenants
             .get(tenant_id)
@@ -86,7 +66,7 @@ impl ClusterMetadataStore {
             })
     }
 
-    fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
+    pub fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1000) as usize;
         let page_token = request.page_token.as_deref().unwrap_or("");
 
@@ -125,7 +105,11 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_tenant(&mut self, name: TenantName, metrics: &ClusterMetadataMetrics) -> Result<()> {
+    pub fn delete_tenant(
+        &mut self,
+        name: TenantName,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<()> {
         let tenant_id = name.id();
 
         if !self.tenants.contains_key(tenant_id) {
@@ -154,7 +138,7 @@ impl ClusterMetadataStore {
         Ok(())
     }
 
-    fn create_namespace(
+    pub fn create_namespace(
         &mut self,
         name: NamespaceName,
         options: NamespaceOptions,
@@ -225,7 +209,7 @@ impl ClusterMetadataStore {
         Ok(namespace)
     }
 
-    fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
+    pub fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
         let namespace_key = name.name();
         self.namespaces
             .get(&namespace_key)
@@ -236,7 +220,10 @@ impl ClusterMetadataStore {
             })
     }
 
-    fn list_namespaces(&self, request: ListNamespacesRequest) -> Result<ListNamespacesResponse> {
+    pub fn list_namespaces(
+        &self,
+        request: ListNamespacesRequest,
+    ) -> Result<ListNamespacesResponse> {
         let tenant_id = request.parent.id();
 
         if !self.tenants.contains_key(tenant_id) {
@@ -292,7 +279,7 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_namespace(
+    pub fn delete_namespace(
         &mut self,
         name: NamespaceName,
         metrics: &ClusterMetadataMetrics,
@@ -328,7 +315,7 @@ impl ClusterMetadataStore {
         Ok(())
     }
 
-    fn create_topic(
+    pub fn create_topic(
         &mut self,
         name: TopicName,
         options: TopicOptions,
@@ -389,7 +376,7 @@ impl ClusterMetadataStore {
         Ok(topic)
     }
 
-    fn get_topic(&self, name: TopicName) -> Result<Topic> {
+    pub fn get_topic(&self, name: TopicName) -> Result<Topic> {
         let topic_key = name.name();
         self.topics
             .get(&topic_key)
@@ -400,7 +387,7 @@ impl ClusterMetadataStore {
             })
     }
 
-    fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
+    pub fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
         let namespace_key = request.parent.name();
 
         if !self.namespaces.contains_key(&namespace_key) {
@@ -456,7 +443,11 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_topic(&mut self, name: TopicName, metrics: &ClusterMetadataMetrics) -> Result<()> {
+    pub fn delete_topic(
+        &mut self,
+        name: TopicName,
+        metrics: &ClusterMetadataMetrics,
+    ) -> Result<()> {
         let topic_key = name.name();
 
         if !self.topics.contains_key(&topic_key) {
@@ -482,7 +473,7 @@ impl ClusterMetadataStore {
         Ok(())
     }
 
-    fn create_object_store(
+    pub fn create_object_store(
         &mut self,
         name: ObjectStoreName,
         configuration: ObjectStoreConfiguration,
@@ -513,7 +504,7 @@ impl ClusterMetadataStore {
         Ok(object_store)
     }
 
-    fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
+    pub fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
         let object_store_key = name.name();
 
         self.object_stores
@@ -525,7 +516,7 @@ impl ClusterMetadataStore {
             })
     }
 
-    fn list_object_stores(
+    pub fn list_object_stores(
         &self,
         request: ListObjectStoresRequest,
     ) -> Result<ListObjectStoresResponse> {
@@ -584,7 +575,7 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_object_store(
+    pub fn delete_object_store(
         &mut self,
         name: ObjectStoreName,
         metrics: &ClusterMetadataMetrics,
@@ -609,7 +600,7 @@ impl ClusterMetadataStore {
         Ok(())
     }
 
-    fn create_data_lake(
+    pub fn create_data_lake(
         &mut self,
         name: DataLakeName,
         configuration: DataLakeConfiguration,
@@ -640,7 +631,7 @@ impl ClusterMetadataStore {
         Ok(data_lake)
     }
 
-    fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+    pub fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
         let data_lake_key = name.name();
 
         self.data_lakes
@@ -652,7 +643,7 @@ impl ClusterMetadataStore {
             })
     }
 
-    fn list_data_lakes(&self, request: ListDataLakesRequest) -> Result<ListDataLakesResponse> {
+    pub fn list_data_lakes(&self, request: ListDataLakesRequest) -> Result<ListDataLakesResponse> {
         let tenant_id = request.parent.id();
 
         if !self.tenants.contains_key(tenant_id) {
@@ -708,7 +699,7 @@ impl ClusterMetadataStore {
         })
     }
 
-    fn delete_data_lake(
+    pub fn delete_data_lake(
         &mut self,
         name: DataLakeName,
         metrics: &ClusterMetadataMetrics,
@@ -731,135 +722,5 @@ impl ClusterMetadataStore {
             .add(-1, &[KeyValue::new("tenant", tenant_id)]);
 
         Ok(())
-    }
-}
-
-#[async_trait]
-impl ClusterMetadata for InMemoryClusterMetadata {
-    async fn create_tenant(&self, name: TenantName) -> Result<Tenant> {
-        let mut store = self.store.write().await;
-        store.create_tenant(name, &self.metrics)
-    }
-
-    async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
-        let store = self.store.read().await;
-        store.get_tenant(name)
-    }
-
-    async fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
-        let store = self.store.read().await;
-        store.list_tenants(request)
-    }
-
-    async fn delete_tenant(&self, name: TenantName) -> Result<()> {
-        let mut store = self.store.write().await;
-        store.delete_tenant(name, &self.metrics)
-    }
-
-    async fn create_namespace(
-        &self,
-        name: NamespaceName,
-        options: NamespaceOptions,
-    ) -> Result<Namespace> {
-        let mut store = self.store.write().await;
-        store.create_namespace(name, options, &self.metrics)
-    }
-
-    async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
-        let store = self.store.read().await;
-        store.get_namespace(name)
-    }
-
-    async fn list_namespaces(
-        &self,
-        request: ListNamespacesRequest,
-    ) -> Result<ListNamespacesResponse> {
-        let store = self.store.read().await;
-        store.list_namespaces(request)
-    }
-
-    async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
-        let mut store = self.store.write().await;
-        store.delete_namespace(name, &self.metrics)
-    }
-
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
-        let mut store = self.store.write().await;
-        store.create_topic(name, options, &self.metrics)
-    }
-
-    async fn get_topic(&self, name: TopicName) -> Result<Topic> {
-        let store = self.store.read().await;
-        store.get_topic(name)
-    }
-
-    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
-        let store = self.store.read().await;
-        store.list_topics(request)
-    }
-
-    async fn delete_topic(&self, name: TopicName, _force: bool) -> Result<()> {
-        let mut store = self.store.write().await;
-        store.delete_topic(name, &self.metrics)
-    }
-
-    async fn create_object_store(
-        &self,
-        name: ObjectStoreName,
-        configuration: ObjectStoreConfiguration,
-    ) -> Result<ObjectStore> {
-        let mut store = self.store.write().await;
-        store.create_object_store(name, configuration, &self.metrics)
-    }
-
-    async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
-        let store = self.store.read().await;
-        store.get_object_store(name)
-    }
-
-    async fn list_object_stores(
-        &self,
-        request: ListObjectStoresRequest,
-    ) -> Result<ListObjectStoresResponse> {
-        let store = self.store.read().await;
-        store.list_object_stores(request)
-    }
-
-    async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
-        let mut store = self.store.write().await;
-        store.delete_object_store(name, &self.metrics)
-    }
-
-    async fn create_data_lake(
-        &self,
-        name: DataLakeName,
-        configuration: DataLakeConfiguration,
-    ) -> Result<DataLake> {
-        let mut store = self.store.write().await;
-        store.create_data_lake(name, configuration, &self.metrics)
-    }
-
-    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
-        let store = self.store.read().await;
-        store.get_data_lake(name)
-    }
-
-    async fn list_data_lakes(
-        &self,
-        request: ListDataLakesRequest,
-    ) -> Result<ListDataLakesResponse> {
-        let store = self.store.read().await;
-        store.list_data_lakes(request)
-    }
-
-    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
-        let mut store = self.store.write().await;
-        store.delete_data_lake(name, &self.metrics)
-    }
-}
-
-impl Default for InMemoryClusterMetadata {
-    fn default() -> Self {
-        Self::new()
     }
 }

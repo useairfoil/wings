@@ -147,7 +147,7 @@ mod tests {
     use std::sync::Arc;
 
     use tempfile::TempDir;
-    use wings_control_plane_memory::InMemoryClusterMetadata;
+    use wings_control_plane_memory::InMemoryControlPlane;
     use wings_resources::{AwsConfiguration, ObjectStoreName, TenantName};
 
     use super::*;
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn test_factory_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         let factory = LocalFileSystemFactory::new(temp_dir.path(), cluster_metadata).unwrap();
 
         assert_eq!(factory.root_path(), temp_dir.path().canonicalize().unwrap());
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_factory_creation_invalid_path() {
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         let result = LocalFileSystemFactory::new("/this/path/does/not/exist", cluster_metadata);
         assert!(result.is_err());
     }
@@ -181,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_object_store() {
         let temp_dir = TempDir::new().unwrap();
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         // Create a tenant and credential for testing
         let tenant_name = TenantName::new("test-tenant").unwrap();
         cluster_metadata
@@ -208,7 +208,7 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_object_stores() {
         let temp_dir = TempDir::new().unwrap();
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         // Create a tenant and credentials for testing
         let tenant_name = TenantName::new("test-tenant").unwrap();
         cluster_metadata
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_temporary_factory_creation() {
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         let factory = TemporaryFileSystemFactory::new(cluster_metadata).unwrap();
 
         // The root path should exist and be a valid directory
@@ -248,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_create_object_store() {
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         // Create a tenant and credential for testing
         let tenant_name = TenantName::new("test-tenant").unwrap();
         cluster_metadata
@@ -273,7 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_cleanup() {
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
 
         let root_path = {
             let factory = TemporaryFileSystemFactory::new(cluster_metadata.clone()).unwrap();
@@ -310,7 +310,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_temporary_factory_multiple_stores() {
-        let cluster_metadata = Arc::new(InMemoryClusterMetadata::new());
+        let cluster_metadata = Arc::new(InMemoryControlPlane::new());
         let factory = TemporaryFileSystemFactory::new(cluster_metadata.clone()).unwrap();
 
         // Create a tenant and credentials for testing

@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::ClusterMetadata;
-use wings_control_plane_memory::{InMemoryClusterMetadata, InMemoryLogMetadata};
+use wings_control_plane_memory::InMemoryControlPlane;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
@@ -24,18 +24,17 @@ pub fn create_ingestor_and_provider() -> (
     CancellationToken,
 ) {
     let metrics_exporter = MetricsExporter::default();
-    let cluster_meta: Arc<_> = InMemoryClusterMetadata::new().into();
-    let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new(cluster_meta.clone())
+    let control_plane: Arc<_> = InMemoryControlPlane::new().into();
+    let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new(control_plane.clone())
         .expect("object store factory")
         .into();
-    let log_meta: Arc<_> = InMemoryLogMetadata::new(cluster_meta.clone()).into();
     let factory = NamespaceProviderFactory::new(
-        cluster_meta.clone(),
-        log_meta.clone(),
+        control_plane.clone(),
+        control_plane.clone(),
         metrics_exporter,
         object_store_factory.clone(),
     );
-    let ingestor = BatchIngestor::new(object_store_factory, log_meta);
+    let ingestor = BatchIngestor::new(object_store_factory, control_plane.clone());
 
     let client = ingestor.client();
     let ct = CancellationToken::new();
@@ -46,7 +45,7 @@ pub fn create_ingestor_and_provider() -> (
         }
     });
 
-    (task, client, factory, cluster_meta, ct)
+    (task, client, factory, control_plane, ct)
 }
 
 pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) -> Arc<Namespace> {

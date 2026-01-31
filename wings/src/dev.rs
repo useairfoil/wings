@@ -13,7 +13,7 @@ use wings_control_plane_core::{
     },
     log_metadata::tonic::LogMetadataServer,
 };
-use wings_control_plane_memory::{InMemoryClusterMetadata, InMemoryLogMetadata};
+use wings_control_plane_memory::InMemoryControlPlane;
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
@@ -137,16 +137,16 @@ pub enum DataLakeType {
 
 impl DevArgs {
     pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
-        let (cluster_metadata, default_tenant) = new_dev_cluster_metadata_service().await;
+        let (control_plane, default_tenant) = new_in_memory_service().await;
 
         let (object_store_factory, default_object_store) = self
-            .new_object_store_factory(cluster_metadata.clone(), &default_tenant)
+            .new_object_store_factory(control_plane.clone(), &default_tenant)
             .await;
 
-        let default_data_lake = self.new_data_lake(&cluster_metadata, &default_tenant).await;
+        let default_data_lake = self.new_data_lake(&control_plane, &default_tenant).await;
         let default_namespace = self
             .new_namespace(
-                &cluster_metadata,
+                &control_plane,
                 &default_tenant,
                 &default_object_store,
                 &default_data_lake,
@@ -176,24 +176,22 @@ impl DevArgs {
 
         let _ct_guard = ct.child_token().drop_guard();
 
-        let log_metadata = Arc::new(InMemoryLogMetadata::new(cluster_metadata.clone()));
-
         let namespace_provider_factory = NamespaceProviderFactory::new(
-            cluster_metadata.clone(),
-            log_metadata.clone(),
+            control_plane.clone(),
+            control_plane.clone(),
             metrics_exporter.clone(),
             object_store_factory.clone(),
         );
 
-        let ingestor = BatchIngestor::new(object_store_factory.clone(), log_metadata.clone());
+        let ingestor = BatchIngestor::new(object_store_factory.clone(), control_plane.clone());
         let worker_pool = {
-            let topic_cache = TopicCache::new(cluster_metadata.clone());
-            let namespace_cache = NamespaceCache::new(cluster_metadata.clone());
+            let topic_cache = TopicCache::new(control_plane.clone());
+            let namespace_cache = NamespaceCache::new(control_plane.clone());
             WorkerPool::new(
                 topic_cache,
                 namespace_cache,
-                log_metadata.clone(),
-                cluster_metadata.clone(),
+                control_plane.clone(),
+                control_plane.clone(),
                 object_store_factory.clone(),
                 namespace_provider_factory.clone(),
                 WorkerPoolOptions::default(),
@@ -201,20 +199,15 @@ impl DevArgs {
         };
 
         let grpc_server_fut = run_grpc_server(
-            cluster_metadata.clone(),
-            log_metadata,
+            control_plane.clone(),
             namespace_provider_factory,
             ingestor.client(),
             metadata_address,
             ct.clone(),
         );
 
-        let http_ingestor_fut = run_http_server(
-            cluster_metadata,
-            ingestor.client(),
-            http_address,
-            ct.clone(),
-        );
+        let http_ingestor_fut =
+            run_http_server(control_plane, ingestor.client(), http_address, ct.clone());
 
         let ingestor_fut = run_background_ingestor(ingestor, ct.clone());
         let worker_pool_fut = run_worker_pool(worker_pool, ct);
@@ -239,14 +232,14 @@ impl DevArgs {
 
     async fn new_object_store_factory(
         &self,
-        cluster: Arc<InMemoryClusterMetadata>,
+        control_plane: Arc<InMemoryControlPlane>,
         tenant: &TenantName,
     ) -> (Arc<dyn ObjectStoreFactory>, ObjectStoreName) {
         let object_store_name = ObjectStoreName::new_unchecked("default", tenant.clone());
 
         let backend: Arc<dyn ObjectStoreFactory> = match self.object_store {
             ObjectStoreType::Temporary => {
-                let factory = TemporaryFileSystemFactory::new(cluster.clone())
+                let factory = TemporaryFileSystemFactory::new(control_plane.clone())
                     .expect("TemporaryFileSystemFactory");
                 info!(
                     "Using temporary directory for object store: {:?}",
@@ -260,7 +253,7 @@ impl DevArgs {
                     .clone()
                     .expect("object-store.local-path");
                 let path: PathBuf = path.parse().expect("failed to parse path");
-                let factory = LocalFileSystemFactory::new(path, cluster.clone())
+                let factory = LocalFileSystemFactory::new(path, control_plane.clone())
                     .expect("LocalFileSystemFactory");
                 info!(
                     "Using directory for object store: {:?}",
@@ -269,7 +262,7 @@ impl DevArgs {
                 Arc::new(factory)
             }
             ObjectStoreType::Cloud => {
-                let factory = CloudObjectStoreFactory::new(cluster.clone());
+                let factory = CloudObjectStoreFactory::new(control_plane.clone());
                 info!("Using cloud object store",);
                 Arc::new(factory)
             }
@@ -294,7 +287,7 @@ impl DevArgs {
             region: None,
         };
 
-        cluster
+        control_plane
             .create_object_store(
                 object_store_name.clone(),
                 ObjectStoreConfiguration::S3Compatible(aws_config),
@@ -307,7 +300,7 @@ impl DevArgs {
 
     async fn new_data_lake(
         &self,
-        cluster: &Arc<InMemoryClusterMetadata>,
+        control_plane: &Arc<InMemoryControlPlane>,
         tenant: &TenantName,
     ) -> DataLakeName {
         info!(
@@ -321,7 +314,7 @@ impl DevArgs {
             DataLakeType::Delta => DataLakeConfiguration::Delta(Default::default()),
         };
 
-        cluster
+        control_plane
             .create_data_lake(data_lake_name.clone(), data_lake_options)
             .await
             .expect("failed to create default data lake");
@@ -331,7 +324,7 @@ impl DevArgs {
 
     async fn new_namespace(
         &self,
-        cluster: &Arc<InMemoryClusterMetadata>,
+        control_plane: &Arc<InMemoryControlPlane>,
         tenant: &TenantName,
         object_store: &ObjectStoreName,
         data_lake: &DataLakeName,
@@ -340,7 +333,7 @@ impl DevArgs {
         let default_namespace_options =
             NamespaceOptions::new(object_store.clone(), data_lake.clone());
 
-        cluster
+        control_plane
             .create_namespace(namespace_name.clone(), default_namespace_options)
             .await
             .expect("failed to create default namespace");
@@ -349,21 +342,20 @@ impl DevArgs {
     }
 }
 
-async fn new_dev_cluster_metadata_service() -> (Arc<InMemoryClusterMetadata>, TenantName) {
-    let cluster_meta = Arc::new(InMemoryClusterMetadata::default());
+async fn new_in_memory_service() -> (Arc<InMemoryControlPlane>, TenantName) {
+    let control_plane = Arc::new(InMemoryControlPlane::default());
 
     let default_tenant = TenantName::new_unchecked("default");
-    cluster_meta
+    control_plane
         .create_tenant(default_tenant.clone())
         .await
         .expect("failed to create default tenant");
 
-    (cluster_meta, default_tenant)
+    (control_plane, default_tenant)
 }
 
 async fn run_grpc_server(
-    cluster_meta: Arc<InMemoryClusterMetadata>,
-    log_meta: Arc<InMemoryLogMetadata>,
+    control_plane: Arc<InMemoryControlPlane>,
     namespace_provider_factory: NamespaceProviderFactory,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,
@@ -380,11 +372,12 @@ async fn run_grpc_server(
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let topic_cache = TopicCache::new(cluster_meta.clone());
-    let namespace_cache = NamespaceCache::new(cluster_meta.clone());
+    let topic_cache = TopicCache::new(control_plane.clone());
+    let namespace_cache = NamespaceCache::new(control_plane.clone());
 
-    let admin_service = ClusterMetadataServer::new(cluster_meta).into_tonic_server();
-    let offset_registry_service = LogMetadataServer::new(log_meta).into_tonic_server();
+    let admin_service = ClusterMetadataServer::new(control_plane.clone()).into_tonic_server();
+    let offset_registry_service = LogMetadataServer::new(control_plane).into_tonic_server();
+
     let sql_service = WingsFlightSqlServer::new(
         namespace_cache,
         topic_cache,

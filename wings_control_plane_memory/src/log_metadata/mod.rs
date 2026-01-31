@@ -10,22 +10,16 @@ mod topic;
 
 use std::{
     ops::Bound,
-    sync::Arc,
     time::{Duration, SystemTime},
 };
 
-use async_trait::async_trait;
 use dashmap::DashMap;
 use tokio::time::Instant;
 use tracing::{debug, trace};
-use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, cache::TopicCache},
-    log_metadata::{
-        CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
-        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-        LogMetadata, LogMetadataError, PartitionMetadata, RequestTaskRequest, RequestTaskResponse,
-        Result,
-    },
+use wings_control_plane_core::log_metadata::{
+    CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
+    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
+    LogMetadataError, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result,
 };
 use wings_resources::{NamespaceName, PartitionValue, TopicName};
 
@@ -34,37 +28,35 @@ use self::{
     partition::{GetLogLocationResult, PartitionKey},
     topic::TopicLogState,
 };
+use crate::cluster_metadata::ClusterMetadataStore;
 
-#[derive(Clone)]
-pub struct InMemoryLogMetadata {
+#[derive(Debug)]
+pub struct LogMetadataStore {
     /// Maps topic names to their log state
-    topics: Arc<DashMap<TopicName, TopicLogState>>,
-    topic_cache: TopicCache,
+    topics: DashMap<TopicName, TopicLogState>,
     /// Candidate task queue for managing task polling
-    candidate_queue: Arc<tokio::sync::Mutex<CandidateTaskQueue>>,
+    candidate_queue: tokio::sync::Mutex<CandidateTaskQueue>,
     /// Maps task IDs to topic names for task completion
-    task_to_topic: Arc<DashMap<String, TopicName>>,
+    task_to_topic: DashMap<String, TopicName>,
 }
 
-impl InMemoryLogMetadata {
-    pub fn new(cluster_meta: Arc<dyn ClusterMetadata>) -> Self {
-        let topic_cache = TopicCache::new(cluster_meta);
+impl LogMetadataStore {
+    pub fn new() -> Self {
         Self {
             topics: Default::default(),
-            topic_cache,
-            candidate_queue: Arc::new(tokio::sync::Mutex::new(CandidateTaskQueue::new())),
-            task_to_topic: Arc::new(DashMap::new()),
+            candidate_queue: tokio::sync::Mutex::new(CandidateTaskQueue::new()),
+            task_to_topic: DashMap::new(),
         }
     }
 }
 
-#[async_trait]
-impl LogMetadata for InMemoryLogMetadata {
-    async fn commit_folio(
+impl LogMetadataStore {
+    pub async fn commit_folio(
         &self,
         namespace: NamespaceName,
         file_ref: String,
         pages: &[CommitPageRequest],
+        cluster_metadata: &ClusterMetadataStore,
     ) -> Result<Vec<CommitPageResponse>> {
         page::validate_pages_to_commit(pages)?;
 
@@ -89,10 +81,8 @@ impl LogMetadata for InMemoryLogMetadata {
                     debug!(topic = %topic_name, "New topic detected, fetching compaction config");
 
                     // Fetch the topic to get compaction configuration - fail if we can't get it
-                    let topic = self
-                        .topic_cache
-                        .get(topic_name.clone())
-                        .await
+                    let topic = cluster_metadata
+                        .get_topic(topic_name.clone())
                         .map_err(|err| LogMetadataError::InvalidArgument {
                             message: format!(
                                 "Failed to fetch topic {} for compaction config: {}",
@@ -141,7 +131,10 @@ impl LogMetadata for InMemoryLogMetadata {
         Ok(committed_pages)
     }
 
-    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
+    pub async fn get_log_location(
+        &self,
+        request: GetLogLocationRequest,
+    ) -> Result<Vec<LogLocation>> {
         trace!(?request, "InMemoryLogMetadata::get_log_location");
         let partition_key = PartitionKey::new(request.topic_name.clone(), request.partition_value);
         let mut locations = Vec::new();
@@ -181,9 +174,10 @@ impl LogMetadata for InMemoryLogMetadata {
         }
     }
 
-    async fn list_partitions(
+    pub async fn list_partitions(
         &self,
         request: ListPartitionsRequest,
+        cluster_metadata: &ClusterMetadataStore,
     ) -> Result<ListPartitionsResponse> {
         let Some(topic_state) = self.topics.get(&request.topic_name) else {
             return Ok(ListPartitionsResponse {
@@ -192,10 +186,8 @@ impl LogMetadata for InMemoryLogMetadata {
             });
         };
 
-        let topic = self
-            .topic_cache
-            .get(request.topic_name.clone())
-            .await
+        let topic = cluster_metadata
+            .get_topic(request.topic_name.clone())
             .map_err(|_| LogMetadataError::InvalidArgument {
                 message: "could not get topic".to_string(),
             })?;
@@ -261,7 +253,7 @@ impl LogMetadata for InMemoryLogMetadata {
         })
     }
 
-    async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
+    pub async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
         trace!("Received task request");
 
         let start_time = std::time::Instant::now();
@@ -307,7 +299,10 @@ impl LogMetadata for InMemoryLogMetadata {
         }
     }
 
-    async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
+    pub async fn complete_task(
+        &self,
+        request: CompleteTaskRequest,
+    ) -> Result<CompleteTaskResponse> {
         let task_id = &request.task_id;
 
         // Look up the topic name for this task
