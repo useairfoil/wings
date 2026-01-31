@@ -1,21 +1,27 @@
-use std::collections::HashSet;
-use std::time::{Duration, SystemTime};
-
-use datafusion::common::arrow::{
-    compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime},
 };
 
 use arrow_json::ReaderBuilder;
-use axum::response::{IntoResponse, Response};
-use axum::{Json as JsonExtractor, extract::State, http::StatusCode, response::Json};
-use futures::StreamExt;
-use futures::stream::FuturesOrdered;
-use wings_control_plane::resources::{NamespaceName, TopicName};
+use axum::{
+    Json as JsonExtractor,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Json, Response},
+};
+use datafusion::common::arrow::{
+    compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
+};
+use futures::{StreamExt, stream::FuturesOrdered};
 use wings_ingestor_core::WriteBatchRequest;
+use wings_resources::{NamespaceName, TopicName};
 
-use crate::HttpIngestorState;
-use crate::error::{HttpIngestorError, Result};
-use crate::types::{BatchResponse, ErrorResponse, PushRequest, PushResponse};
+use crate::{
+    HttpIngestorState,
+    error::{HttpIngestorError, Result},
+    types::{BatchResponse, ErrorResponse, PushRequest, PushResponse},
+};
 
 /// Handler for the /v1/push endpoint.
 pub async fn push_handler(

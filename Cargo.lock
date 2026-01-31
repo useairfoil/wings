@@ -6765,11 +6765,15 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "wings-client",
- "wings-control-plane",
+ "wings-control-plane-core",
+ "wings-control-plane-memory",
  "wings-flight",
  "wings-ingestor-core",
  "wings-ingestor-http",
+ "wings-object-store",
  "wings-observability",
+ "wings-resources",
+ "wings-schema",
  "wings-server-core",
  "wings-worker",
 ]
@@ -6789,13 +6793,16 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
- "wings-control-plane",
+ "wings-control-plane-core",
  "wings-flight",
  "wings-ingestor-core",
+ "wings-observability",
+ "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
-name = "wings-control-plane"
+name = "wings-control-plane-core"
 version = "0.1.0"
 dependencies = [
  "arrow",
@@ -6835,6 +6842,47 @@ dependencies = [
  "url",
  "uuid",
  "wings-observability",
+ "wings-resources",
+ "wings-schema",
+]
+
+[[package]]
+name = "wings-control-plane-memory"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "object_store",
+ "snafu",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "wings-control-plane-core",
+ "wings-observability",
+ "wings-resources",
+]
+
+[[package]]
+name = "wings-data-lake"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "bytesize",
+ "datafusion",
+ "deltalake-aws",
+ "deltalake-core",
+ "iceberg",
+ "object_store",
+ "parquet",
+ "snafu",
+ "tracing",
+ "ulid",
+ "wings-control-plane-core",
+ "wings-object-store",
+ "wings-observability",
+ "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
@@ -6861,9 +6909,10 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tracing",
- "wings-control-plane",
+ "wings-control-plane-core",
  "wings-ingestor-core",
  "wings-observability",
+ "wings-resources",
  "wings-server-core",
 ]
 
@@ -6885,8 +6934,12 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ulid",
- "wings-control-plane",
+ "wings-control-plane-core",
+ "wings-control-plane-memory",
+ "wings-object-store",
  "wings-observability",
+ "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
@@ -6903,8 +6956,25 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower",
- "wings-control-plane",
+ "wings-control-plane-core",
  "wings-ingestor-core",
+ "wings-observability",
+ "wings-resources",
+]
+
+[[package]]
+name = "wings-object-store"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "object_store",
+ "snafu",
+ "tempfile",
+ "tokio",
+ "wings-control-plane-core",
+ "wings-control-plane-memory",
+ "wings-observability",
+ "wings-resources",
 ]
 
 [[package]]
@@ -6920,6 +6990,31 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "wings-resources"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytesize",
+ "datafusion",
+ "paste",
+ "serde",
+ "snafu",
+ "wings-observability",
+ "wings-schema",
+]
+
+[[package]]
+name = "wings-schema"
+version = "0.1.0"
+dependencies = [
+ "datafusion",
+ "deltalake-core",
+ "parquet",
+ "snafu",
+ "wings-observability",
 ]
 
 [[package]]
@@ -6943,9 +7038,13 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "wings-control-plane",
+ "wings-control-plane-core",
+ "wings-control-plane-memory",
  "wings-ingestor-core",
+ "wings-object-store",
  "wings-observability",
+ "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
@@ -6975,9 +7074,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wings-client",
- "wings-control-plane",
+ "wings-control-plane-core",
  "wings-ingestor-core",
  "wings-ingestor-http",
+ "wings-observability",
+ "wings-resources",
+ "wings-schema",
  "wings-server-core",
 ]
 
@@ -7005,7 +7107,9 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
- "wings-control-plane",
+ "wings-control-plane-core",
+ "wings-data-lake",
+ "wings-object-store",
  "wings-observability",
  "wings-server-core",
 ]

@@ -12,10 +12,10 @@ use datafusion::{
 };
 use futures::TryStreamExt;
 use tracing::debug;
-use wings_control_plane::{
-    log_metadata::{LogLocation, LogMetadata, stream::PaginatedLogLocationStream},
-    resources::{Namespace, PartitionValue, Topic},
+use wings_control_plane_core::log_metadata::{
+    LogLocation, LogMetadata, stream::PaginatedLogLocationStream,
 };
+use wings_resources::{Namespace, PartitionValue, Topic};
 
 use crate::{
     options::SessionConfigExt,

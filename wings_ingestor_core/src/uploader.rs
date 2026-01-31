@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
-use wings_control_plane::{
-    log_metadata::{CommitBatchRequest, CommitPageRequest},
-    object_store::ObjectStoreFactory,
-    paths::format_folio_path,
-    resources::{NamespaceName, NamespaceRef},
-};
+use wings_control_plane_core::log_metadata::{CommitBatchRequest, CommitPageRequest};
+use wings_object_store::{ObjectStoreFactory, paths::format_folio_path};
+use wings_resources::{NamespaceName, NamespaceRef};
 
 use crate::{
     WriteBatchError,

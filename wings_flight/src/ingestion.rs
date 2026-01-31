@@ -66,11 +66,9 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::debug;
-use wings_control_plane::{
-    log_metadata::{CommittedBatch, RejectedBatchInfo},
-    resources::{Namespace, Topic},
-};
+use wings_control_plane_core::log_metadata::{CommittedBatch, RejectedBatchInfo};
 use wings_ingestor_core::{BatchIngestorClient, WriteBatchRequest};
+use wings_resources::{Namespace, Topic};
 
 use crate::{IngestionRequestMetadata, IngestionResponseMetadata, error::FlightServerError};
 

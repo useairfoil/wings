@@ -5,17 +5,14 @@ use parquet::{
     arrow::ArrowWriter,
     file::{metadata::KeyValue, properties::WriterProperties},
 };
-use wings_control_plane::{
-    log_metadata::CommitBatchRequest,
-    resources::{PartitionValue, TopicName},
-};
+use wings_control_plane_core::log_metadata::CommitBatchRequest;
+use wings_resources::{PartitionValue, TopicName};
 
+use super::{FolioPage, metrics::IngestionMetrics};
 use crate::{
     WriteBatchError, WriteBatchRequest,
     write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
-
-use super::{FolioPage, metrics::IngestionMetrics};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 

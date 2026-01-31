@@ -2,7 +2,7 @@ use arrow::util::pretty::pretty_format_batches;
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::resources::{PartitionValue, TopicName};
+use wings_resources::{PartitionValue, TopicName};
 
 use crate::{
     error::{

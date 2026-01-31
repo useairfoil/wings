@@ -22,4 +22,6 @@ tokio.workspace = true
 tokio-util.workspace = true
 tower.workspace = true
 wings-ingestor-core = { path = "../wings_ingestor_core" }
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
+wings-observability = { path = "../wings_observability" }
+wings-resources = { path = "../wings_resources" }

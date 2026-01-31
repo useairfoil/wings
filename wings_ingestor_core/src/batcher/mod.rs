@@ -4,17 +4,14 @@ use std::{
 };
 
 use tokio_util::time::{DelayQueue, delay_queue};
-use wings_control_plane::{
-    log_metadata::CommitBatchRequest,
-    resources::{NamespaceName, NamespaceRef, PartitionValue, TopicName},
-};
+use wings_control_plane_core::log_metadata::CommitBatchRequest;
+use wings_resources::{NamespaceName, NamespaceRef, PartitionValue, TopicName};
 
+use self::{metrics::IngestionMetrics, partition::PartitionFolioWriter};
 use crate::{
     WriteBatchRequest,
     write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
-
-use self::{metrics::IngestionMetrics, partition::PartitionFolioWriter};
 
 mod metrics;
 mod partition;

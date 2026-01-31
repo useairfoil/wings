@@ -2,16 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::{
-    cluster_metadata::{ClusterMetadata, InMemoryClusterMetadata},
-    log_metadata::InMemoryLogMetadata,
-    object_store::TemporaryFileSystemFactory,
-    resources::{
-        AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
-        NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
-    },
-};
+use wings_control_plane_core::cluster_metadata::ClusterMetadata;
+use wings_control_plane_memory::{InMemoryClusterMetadata, InMemoryLogMetadata};
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
+use wings_object_store::TemporaryFileSystemFactory;
+use wings_resources::{
+    AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
+    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
+};
 
 pub fn create_batch_ingestor() -> (
     JoinHandle<()>,

@@ -10,11 +10,11 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::NamespaceName};
-
-use crate::datafusion_helpers::apply_projection;
+use wings_control_plane_core::cluster_metadata::ClusterMetadata;
+use wings_resources::NamespaceName;
 
 use super::{exec::TopicDiscoveryExec, helpers::find_topic_name_in_filters};
+use crate::datafusion_helpers::apply_projection;
 
 pub struct TopicSystemTable {
     cluster_meta: Arc<dyn ClusterMetadata>,

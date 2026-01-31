@@ -5,7 +5,7 @@ use clap::Args;
 use snafu::ResultExt;
 use tonic::transport::Channel;
 use wings_client::WingsClient;
-use wings_control_plane::cluster_metadata::tonic::ClusterMetadataClient;
+use wings_control_plane_core::cluster_metadata::tonic::ClusterMetadataClient;
 
 use crate::error::{ConnectionSnafu, InvalidRemoteUrlSnafu, Result};
 

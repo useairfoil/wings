@@ -19,11 +19,9 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use futures::StreamExt;
-use wings_control_plane::{
-    log_metadata::{CommittedBatch, FolioLocation},
-    resources::{OFFSET_COLUMN_NAME, PartitionValue, TIMESTAMP_COLUMN_NAME},
-    schema::Field,
-};
+use wings_control_plane_core::log_metadata::{CommittedBatch, FolioLocation};
+use wings_resources::{OFFSET_COLUMN_NAME, PartitionValue, TIMESTAMP_COLUMN_NAME};
+use wings_schema::Field;
 
 use crate::folio_reader::FolioParquetFileReaderFactory;
 

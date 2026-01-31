@@ -9,11 +9,9 @@ use snafu::ResultExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
-use wings_control_plane::{
-    resources::{PartitionValue, Topic, TopicName},
-    schema::{DataType, Field},
-};
 use wings_flight::FetchTicket;
+use wings_resources::{PartitionValue, Topic, TopicName};
+use wings_schema::{DataType, Field};
 
 use crate::{
     WingsClient,

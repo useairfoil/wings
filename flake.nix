@@ -41,6 +41,8 @@
           ];
         };
 
+        nightlyToolChain = (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default));
+
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         src = pkgs.lib.cleanSourceWith {
@@ -160,6 +162,12 @@
             buildInputs = [
               extractVersionFromRef
               publishDockerImage
+            ];
+          };
+
+          nightly = pkgs.mkShell {
+            buildInputs = [
+              nightlyToolChain
             ];
           };
         };

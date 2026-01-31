@@ -2,14 +2,14 @@ use futures::TryStreamExt;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use wings_control_plane::log_metadata::{
+use wings_control_plane_core::log_metadata::{
     CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest, TaskMetadata,
     TaskResult,
 };
 
-use crate::Worker;
-use crate::error::{
-    ClusterMetadataSnafu, DataFusionSnafu, DataLakeSnafu, LogMetadataSnafu, Result,
+use crate::{
+    Worker,
+    error::{ClusterMetadataSnafu, DataFusionSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
 };
 
 impl Worker {

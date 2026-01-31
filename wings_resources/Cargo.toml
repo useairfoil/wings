@@ -1,0 +1,21 @@
+[package]
+name = "wings-resources"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_resources"
+path = "src/lib.rs"
+
+[dependencies]
+base64.workspace = true
+bytesize.workspace = true
+datafusion.workspace = true
+paste.workspace = true
+serde.workspace = true
+snafu.workspace = true
+wings-observability.path = "../wings_observability"
+wings-schema.path = "../wings_schema"

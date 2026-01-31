@@ -22,6 +22,9 @@ tonic.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tracing.workspace = true
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-flight = { path = "../wings_flight" }
+wings-observability = { path = "../wings_observability" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
+wings-resources = { path = "../wings_resources" }
+wings-schema = { path = "../wings_schema" }

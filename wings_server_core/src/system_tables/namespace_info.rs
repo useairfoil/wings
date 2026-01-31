@@ -9,7 +9,8 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_control_plane::{cluster_metadata::ClusterMetadata, resources::NamespaceName};
+use wings_control_plane_core::cluster_metadata::ClusterMetadata;
+use wings_resources::NamespaceName;
 
 use super::provider::SystemTable;
 

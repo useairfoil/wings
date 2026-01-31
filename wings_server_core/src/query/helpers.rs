@@ -6,7 +6,7 @@ use datafusion::{
     prelude::{Expr, col},
     scalar::ScalarValue,
 };
-use wings_control_plane::resources::OFFSET_COLUMN_NAME;
+use wings_resources::OFFSET_COLUMN_NAME;
 
 pub type OffsetRangeInclusive = RangeInclusive<u64>;
 

@@ -1,27 +1,25 @@
-use std::borrow::Cow;
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::{global, InstrumentationScope};
-use opentelemetry_otlp::{ExporterBuildError, MetricExporter, SpanExporter};
-use opentelemetry_sdk::metrics::{MeterProviderBuilder, PeriodicReader};
-use opentelemetry_sdk::trace::SdkTracerProvider;
-use opentelemetry_sdk::Resource;
-use snafu::{ResultExt, Snafu};
-use tracing::Subscriber;
-use tracing_opentelemetry::MetricsLayer;
-use tracing_subscriber::{prelude::*, registry::LookupSpan};
-use tracing_subscriber::{EnvFilter, Layer};
-
+use opentelemetry::{global, trace::TracerProvider as _, InstrumentationScope};
 pub use opentelemetry::{
     metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter},
     KeyValue,
 };
-
-pub use crate::metrics::MetricsExporter;
+use opentelemetry_otlp::{ExporterBuildError, MetricExporter, SpanExporter};
+use opentelemetry_sdk::{
+    metrics::{MeterProviderBuilder, PeriodicReader},
+    trace::SdkTracerProvider,
+    Resource,
+};
+use snafu::{ResultExt, Snafu};
+use tracing::Subscriber;
+use tracing_opentelemetry::MetricsLayer;
+use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
 use crate::format::WingsFormat;
+pub use crate::{error::ErrorKind, metrics::MetricsExporter};
 
+mod error;
 mod format;
 mod metrics;
 

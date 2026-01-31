@@ -2,7 +2,7 @@ use tonic::{
     Request,
     metadata::{Ascii, MetadataValue},
 };
-use wings_control_plane::resources::NamespaceName;
+use wings_resources::NamespaceName;
 
 pub fn new_request_for_namespace<T>(namespace: &NamespaceName, message: T) -> Request<T> {
     let mut request = Request::new(message);

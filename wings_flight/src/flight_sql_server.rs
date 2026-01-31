@@ -23,11 +23,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
-use wings_control_plane::{
-    cluster_metadata::cache::{NamespaceCache, TopicCache},
-    resources::{NamespaceName, TopicName},
-};
+use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
 use wings_ingestor_core::BatchIngestorClient;
+use wings_resources::{NamespaceName, TopicName};
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{

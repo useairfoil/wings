@@ -28,6 +28,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
+time = { version = "0.3.41", features = ["formatting", "local-offset"] }
 tonic.workspace = true
 tonic-reflection.workspace = true
 tokio.workspace = true
@@ -37,8 +38,11 @@ wings-client = { path = "../wings_client" }
 wings-flight = { path = "../wings_flight" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
+wings-control-plane-memory = { path = "../wings_control_plane_memory" }
 wings-observability = { path = "../wings_observability" }
+wings-object-store = { path = "../wings_object_store" }
 wings-server-core = { path = "../wings_server_core" }
 wings-worker = { path = "../wings_worker" }
-time = { version = "0.3.41", features = ["formatting", "local-offset"] }
+wings-resources = { path = "../wings_resources" }
+wings-schema = { path = "../wings_schema" }

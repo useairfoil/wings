@@ -2,16 +2,14 @@ use std::time::Duration;
 
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_control_plane::{
-    cluster_metadata::{
-        ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
-    },
-    resources::{
-        DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant,
-        TenantName, Topic, TopicName, TopicOptions,
-    },
-    schema::{DataType, Field, SchemaBuilder},
+use wings_control_plane_core::cluster_metadata::{
+    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest,
 };
+use wings_resources::{
+    DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant, TenantName,
+    Topic, TopicName, TopicOptions,
+};
+use wings_schema::{DataType, Field, SchemaBuilder};
 
 use crate::{
     error::{CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, InvalidSchemaSnafu, Result},

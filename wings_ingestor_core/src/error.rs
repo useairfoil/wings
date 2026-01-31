@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_control_plane::{ErrorKind, log_metadata::LogMetadataError};
+use wings_control_plane_core::log_metadata::LogMetadataError;
+use wings_observability::ErrorKind;
 
 /// Ingestor error types.
 ///

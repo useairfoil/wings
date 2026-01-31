@@ -28,9 +28,13 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-observability = { path = "../wings_observability" }
+wings-object-store = { path = "../wings_object_store" }
+wings-resources = { path = "../wings_resources" }
+wings-schema = { path = "../wings_schema" }
 
 [dev-dependencies]
-wings-ingestor-core = { path = "../wings_ingestor_core" }
 tokio = { workspace = true, features = ["test-util"] }
+wings-control-plane-memory = { path = "../wings_control_plane_memory" }
+wings-ingestor-core = { path = "../wings_ingestor_core" }

@@ -15,10 +15,9 @@ use datafusion::{
     catalog::{SchemaProvider, TableProvider},
     error::DataFusionError,
 };
-use wings_control_plane::{
-    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
-};
+use wings_control_plane_core::{cluster_metadata::ClusterMetadata, log_metadata::LogMetadata};
 use wings_observability::MetricsExporter;
+use wings_resources::NamespaceName;
 
 use self::{
     metrics::MetricsSystemTable, namespace_info::NamespaceInfoTable, provider::SystemTableProvider,

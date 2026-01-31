@@ -1,4 +1,7 @@
-use std::{sync::Arc, sync::Weak, time::Duration};
+use std::{
+    sync::{Arc, Weak},
+    time::Duration,
+};
 
 use opentelemetry_sdk::{
     error::OTelSdkResult,

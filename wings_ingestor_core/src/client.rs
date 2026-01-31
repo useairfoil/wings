@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, oneshot};
-use wings_control_plane::log_metadata::AcceptedBatchInfo;
+use wings_control_plane_core::log_metadata::AcceptedBatchInfo;
 
 use crate::write::{Result, WithReplyChannel, WriteBatchError, WriteBatchRequest};
 

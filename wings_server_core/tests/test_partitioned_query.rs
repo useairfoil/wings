@@ -2,9 +2,9 @@ use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_partitioned_topic,
     schema_without_partition,
 };
-use datafusion::{common::arrow::array::RecordBatch, common::create_array};
-use wings_control_plane::resources::PartitionValue;
+use datafusion::common::{arrow::array::RecordBatch, create_array};
 use wings_ingestor_core::{Result, WriteBatchRequest};
+use wings_resources::PartitionValue;
 
 mod common;
 

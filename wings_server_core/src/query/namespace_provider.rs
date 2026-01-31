@@ -8,13 +8,13 @@ use datafusion::{
     prelude::{SessionConfig, SessionContext},
 };
 use tracing::debug;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
     log_metadata::LogMetadata,
-    object_store::ObjectStoreFactory,
-    resources::{Namespace, NamespaceName, Topic},
 };
+use wings_object_store::ObjectStoreFactory;
 use wings_observability::MetricsExporter;
+use wings_resources::{Namespace, NamespaceName, Topic};
 
 use crate::{
     options::FetchOptions, query::topic::TopicTableProvider, system_tables::SystemSchemaProvider,

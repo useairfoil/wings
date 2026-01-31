@@ -2,9 +2,9 @@ use axum::http::uri::InvalidUri;
 use snafu::Snafu;
 use tokio::task::JoinError;
 use wings_client::ClientError;
-use wings_control_plane::{
-    ErrorKind, cluster_metadata::ClusterMetadataError, resources::ResourceError,
-};
+use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
+use wings_observability::ErrorKind;
+use wings_resources::ResourceError;
 
 use crate::helpers::RangeParserError;
 

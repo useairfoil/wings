@@ -13,11 +13,9 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::debug;
-use wings_control_plane::{
-    log_metadata::CommittedBatch,
-    resources::{PartitionValue, Topic, TopicName},
-};
+use wings_control_plane_core::log_metadata::CommittedBatch;
 use wings_flight::IngestionResponseMetadata;
+use wings_resources::{PartitionValue, Topic, TopicName};
 
 use crate::{
     WingsClient,

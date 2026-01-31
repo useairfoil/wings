@@ -1,0 +1,18 @@
+[package]
+name = "wings-schema"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_schema"
+path = "src/lib.rs"
+
+[dependencies]
+datafusion.workspace = true
+deltalake-core.workspace = true
+parquet.workspace = true
+snafu.workspace = true
+wings-observability.path = "../wings_observability"

@@ -5,26 +5,26 @@ use clap::{Args, ValueEnum};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{
-        ClusterMetadata, InMemoryClusterMetadata,
+        ClusterMetadata,
         cache::{NamespaceCache, TopicCache},
         tonic::ClusterMetadataServer,
     },
-    log_metadata::{InMemoryLogMetadata, tonic::LogMetadataServer},
-    object_store::{
-        CloudObjectStoreFactory, LocalFileSystemFactory, ObjectStoreFactory,
-        TemporaryFileSystemFactory,
-    },
-    resources::{
-        DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
-        ObjectStoreConfiguration, ObjectStoreName, S3CompatibleConfiguration, TenantName,
-    },
+    log_metadata::tonic::LogMetadataServer,
 };
+use wings_control_plane_memory::{InMemoryClusterMetadata, InMemoryLogMetadata};
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
+use wings_object_store::{
+    CloudObjectStoreFactory, LocalFileSystemFactory, ObjectStoreFactory, TemporaryFileSystemFactory,
+};
 use wings_observability::MetricsExporter;
+use wings_resources::{
+    DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
+    ObjectStoreName, S3CompatibleConfiguration, TenantName,
+};
 use wings_server_core::query::NamespaceProviderFactory;
 use wings_worker::{WorkerPool, WorkerPoolOptions, run_worker_pool};
 
@@ -371,10 +371,10 @@ async fn run_grpc_server(
 ) -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
-            wings_control_plane::cluster_metadata::tonic::file_descriptor_set(),
+            wings_control_plane_core::pb::cluster_metadata_file_descriptor_set(),
         )
         .register_encoded_file_descriptor_set(
-            wings_control_plane::log_metadata::tonic::file_descriptor_set(),
+            wings_control_plane_core::pb::log_metadata_file_descriptor_set(),
         )
         .register_encoded_file_descriptor_set(WingsFlightSqlServer::file_descriptor_set())
         .build_v1()

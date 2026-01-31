@@ -1,5 +1,5 @@
 use snafu::Snafu;
-use wings_control_plane::ErrorKind;
+use wings_observability::ErrorKind;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]

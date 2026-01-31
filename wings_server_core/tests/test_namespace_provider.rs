@@ -5,10 +5,11 @@ use common::{
     initialize_test_topic, schema_without_partition,
 };
 use datafusion::{
-    assert_batches_sorted_eq, common::arrow::array::RecordBatch, common::create_array,
+    assert_batches_sorted_eq,
+    common::{arrow::array::RecordBatch, create_array},
 };
-use wings_control_plane::resources::{Namespace, PartitionValue, Topic};
 use wings_ingestor_core::{BatchIngestorClient, Result, WriteBatchError, WriteBatchRequest};
+use wings_resources::{Namespace, PartitionValue, Topic};
 
 mod common;
 

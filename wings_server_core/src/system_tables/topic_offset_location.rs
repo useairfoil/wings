@@ -10,13 +10,11 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_control_plane::{
-    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
-};
-
-use crate::{datafusion_helpers::apply_projection, options::SessionConfigExt};
+use wings_control_plane_core::{cluster_metadata::ClusterMetadata, log_metadata::LogMetadata};
+use wings_resources::NamespaceName;
 
 use super::{exec::TopicOffsetLocationDiscoveryExec, helpers::find_topic_name_in_filters};
+use crate::{datafusion_helpers::apply_projection, options::SessionConfigExt};
 
 pub struct TopicOffsetLocationSystemTable {
     cluster_meta: Arc<dyn ClusterMetadata>,

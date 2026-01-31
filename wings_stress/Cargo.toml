@@ -38,10 +38,13 @@ tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "json",
 ] }
-wings-ingestor-core = { path = "../wings_ingestor_core" }
-wings-ingestor-http = { path = "../wings_ingestor_http" }
-wings-control-plane = { path = "../wings_control_plane" }
-wings-client = { path = "../wings_client" }
-wings-server-core = { path = "../wings_server_core" }
 tpchgen = "2.0.0"
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }
+wings-ingestor-core = { path = "../wings_ingestor_core" }
+wings-ingestor-http = { path = "../wings_ingestor_http" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
+wings-observability = { path = "../wings_observability" }
+wings-client = { path = "../wings_client" }
+wings-server-core = { path = "../wings_server_core" }
+wings-resources = { path = "../wings_resources" }
+wings-schema = { path = "../wings_schema" }

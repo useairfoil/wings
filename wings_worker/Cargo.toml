@@ -30,7 +30,9 @@ snafu.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-uuid = "1.18.1"
-wings-control-plane = { path = "../wings_control_plane" }
+uuid.workspace = true
+wings-control-plane-core = { path = "../wings_control_plane_core" }
+wings-data-lake = { path = "../wings_data_lake" }
+wings-object-store = { path = "../wings_object_store" }
 wings-observability = { path = "../wings_observability" }
 wings-server-core = { path = "../wings_server_core" }

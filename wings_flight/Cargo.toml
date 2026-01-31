@@ -30,10 +30,11 @@ tokio-util.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true
 tracing.workspace = true
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-server-core = { path = "../wings_server_core" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-observability = { path = "../wings_observability" }
+wings-resources = { path = "../wings_resources" }
 
 [build-dependencies]
 tonic-prost-build.workspace = true

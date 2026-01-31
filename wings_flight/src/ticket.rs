@@ -7,10 +7,8 @@ use arrow_flight::{
 use prost::{DecodeError, Message, bytes::Bytes};
 use prost_types::{DurationError, TimestampError};
 use snafu::{ResultExt, Snafu};
-use wings_control_plane::{
-    log_metadata::{CommittedBatch, LogMetadataError},
-    resources::{PartitionValue, ResourceError, TopicName},
-};
+use wings_control_plane_core::log_metadata::{CommittedBatch, LogMetadataError};
+use wings_resources::{PartitionValue, ResourceError, TopicName};
 
 use crate::error::FlightServerError;
 
@@ -71,7 +69,7 @@ pub enum TicketEncodeError {
 }
 
 pub mod pb {
-    use wings_control_plane::log_metadata::tonic::pb;
+    use wings_control_plane_core::pb;
 
     #[derive(Clone, prost::Message)]
     pub struct IngestionRequestMetadata {

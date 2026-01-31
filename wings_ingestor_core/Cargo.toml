@@ -25,9 +25,13 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 ulid.workspace = true
-wings-control-plane = { path = "../wings_control_plane" }
+wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-observability = { path = "../wings_observability" }
+wings-object-store = { path = "../wings_object_store" }
+wings-resources = { path = "../wings_resources" }
 
 [dev-dependencies]
 bytesize.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+wings-control-plane-memory = { path = "../wings_control_plane_memory" }
+wings-schema = { path = "../wings_schema" }

@@ -3,9 +3,8 @@ use error::ClusterMetadataSnafu;
 use fetch::FetchClient;
 use snafu::ResultExt;
 use tonic::transport::Channel;
-use wings_control_plane::cluster_metadata::ClusterMetadata;
-use wings_control_plane::cluster_metadata::tonic::ClusterMetadataClient;
-use wings_control_plane::resources::TopicName;
+use wings_control_plane_core::cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient};
+use wings_resources::TopicName;
 
 mod encode;
 mod error;
@@ -13,8 +12,10 @@ mod fetch;
 mod metadata;
 mod push;
 
-pub use self::error::{ClientError, Result};
-pub use self::push::{PushClient, WriteRequest, WriteResponse};
+pub use self::{
+    error::{ClientError, Result},
+    push::{PushClient, WriteRequest, WriteResponse},
+};
 
 /// A high-level client to interact with Wings' data plane.
 #[derive(Debug, Clone)]

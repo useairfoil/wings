@@ -6,11 +6,10 @@ pub mod error;
 pub mod push;
 pub mod types;
 
+use axum::{Router, routing::post};
 pub use error::{HttpIngestorError, Result};
 pub use types::{Batch, PushRequest, PushResponse};
-
-use axum::{Router, routing::post};
-use wings_control_plane::cluster_metadata::cache::{NamespaceCache, TopicCache};
+use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
 use wings_ingestor_core::BatchIngestorClient;
 
 use crate::push::push_handler;

@@ -2,7 +2,7 @@ use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_topic,
     schema_without_partition,
 };
-use datafusion::{common::arrow::array::RecordBatch, common::create_array};
+use datafusion::common::{arrow::array::RecordBatch, create_array};
 use wings_ingestor_core::{Result, WriteBatchRequest};
 
 mod common;

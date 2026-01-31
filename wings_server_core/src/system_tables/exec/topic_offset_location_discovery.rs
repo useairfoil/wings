@@ -16,14 +16,14 @@ use datafusion::{
 };
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
     log_metadata::{
         LogLocation, LogMetadata,
         stream::{PaginatedLogLocationStream, PaginatedPartitionMetadataStream},
     },
-    resources::{NamespaceName, PartitionValue, TopicName},
 };
+use wings_resources::{NamespaceName, PartitionValue, TopicName};
 
 use crate::{options::FetchOptions, system_tables::helpers::TOPIC_NAME_COLUMN};
 

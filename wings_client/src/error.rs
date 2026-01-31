@@ -1,7 +1,8 @@
 use arrow_flight::error::FlightError;
 use snafu::Snafu;
-use wings_control_plane::ErrorKind;
+use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
 use wings_flight::{TicketDecodeError, TicketEncodeError};
+use wings_observability::ErrorKind;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -14,9 +15,7 @@ pub enum ClientError {
     #[snafu(display("Arrow error"))]
     Arrow { source: arrow::error::ArrowError },
     #[snafu(display("Cluster metadata request error"))]
-    ClusterMetadata {
-        source: wings_control_plane::cluster_metadata::ClusterMetadataError,
-    },
+    ClusterMetadata { source: ClusterMetadataError },
     #[snafu(display("Ticket decode error"))]
     TicketDecode { source: TicketDecodeError },
     #[snafu(display("Ticket encode error"))]

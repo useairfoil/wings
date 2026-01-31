@@ -2,13 +2,10 @@ use std::net::AddrParseError;
 
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
-use wings_control_plane::{
-    ErrorKind,
-    cluster_metadata::ClusterMetadataError,
-    resources::{PartitionValueParseError, ResourceError},
-    schema::SchemaError,
-};
-use wings_observability::ObservabilityError;
+use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
+use wings_observability::{ErrorKind, ObservabilityError};
+use wings_resources::{PartitionValueParseError, ResourceError};
+use wings_schema::SchemaError;
 
 /// CLI error types.
 #[derive(Debug, Snafu)]

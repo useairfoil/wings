@@ -4,15 +4,15 @@ use futures::{TryStreamExt, stream::FuturesUnordered};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{
         ClusterMetadata,
         cache::{NamespaceCache, TopicCache},
     },
-    data_lake::DataLakeFactory,
     log_metadata::{LogMetadata, RequestTaskRequest, RequestTaskResponse, Task},
-    object_store::ObjectStoreFactory,
 };
+use wings_data_lake::DataLakeFactory;
+use wings_object_store::ObjectStoreFactory;
 use wings_server_core::query::NamespaceProviderFactory;
 
 mod error;

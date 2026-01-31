@@ -9,10 +9,10 @@ use datafusion::{
     error::DataFusionError,
     prelude::Expr,
 };
-use wings_control_plane::{
-    cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
-    resources::{NamespaceName, Topic},
+use wings_control_plane_core::cluster_metadata::{
+    ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics,
 };
+use wings_resources::{NamespaceName, Topic};
 
 use super::{helpers::TOPIC_NAME_COLUMN, provider::SystemTable};
 

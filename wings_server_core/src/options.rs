@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use datafusion::{common::extensions_options, config::ConfigExtension, prelude::SessionConfig};
-use wings_control_plane::log_metadata::GetLogLocationOptions;
+use wings_control_plane_core::log_metadata::GetLogLocationOptions;
 
 extensions_options! {
     pub struct FetchOptions {

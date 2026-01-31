@@ -4,10 +4,10 @@ use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::mpsc;
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
 use tracing::debug;
-use wings_control_plane::{
-    log_metadata::{CommitPageRequest, CommitPageResponse, CommittedBatch, LogMetadata},
-    object_store::ObjectStoreFactory,
+use wings_control_plane_core::log_metadata::{
+    CommitPageRequest, CommitPageResponse, CommittedBatch, LogMetadata,
 };
+use wings_object_store::ObjectStoreFactory;
 
 use crate::{
     BatchIngestorClient, WriteBatchError,

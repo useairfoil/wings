@@ -16,11 +16,11 @@ use datafusion::{
 };
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
     log_metadata::{LogMetadata, PartitionMetadata, stream::PaginatedPartitionMetadataStream},
-    resources::{NamespaceName, TopicName},
 };
+use wings_resources::{NamespaceName, TopicName};
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 

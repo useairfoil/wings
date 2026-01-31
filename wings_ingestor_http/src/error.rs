@@ -1,5 +1,5 @@
 use snafu::Snafu;
-use wings_control_plane::ErrorKind;
+use wings_observability::ErrorKind;
 
 /// Errors that can occur in the HTTP ingestor.
 #[derive(Debug, Snafu)]

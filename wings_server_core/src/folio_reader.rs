@@ -19,7 +19,7 @@ use parquet::{
     file::metadata::{ParquetMetaData, ParquetMetaDataReader},
 };
 use tokio_util::bytes::Bytes;
-use wings_control_plane::log_metadata::FolioLocation;
+use wings_control_plane_core::log_metadata::FolioLocation;
 
 #[derive(Debug)]
 pub struct FolioParquetFileReaderFactory {

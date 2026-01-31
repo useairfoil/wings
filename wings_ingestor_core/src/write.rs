@@ -4,10 +4,10 @@ use datafusion::common::arrow::array::RecordBatch;
 use parquet::errors::ParquetError;
 use snafu::Snafu;
 use tokio::sync::oneshot;
-use wings_control_plane::{
-    log_metadata::{AcceptedBatchInfo, LogMetadataError, RejectedBatchInfo},
-    resources::{NamespaceRef, PartitionValue, TopicRef},
+use wings_control_plane_core::log_metadata::{
+    AcceptedBatchInfo, LogMetadataError, RejectedBatchInfo,
 };
+use wings_resources::{NamespaceRef, PartitionValue, TopicRef};
 
 #[derive(Debug, Clone)]
 pub struct WriteBatchRequest {

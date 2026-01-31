@@ -1,0 +1,85 @@
+use std::{sync::Arc, time::SystemTimeError};
+
+use datafusion::error::DataFusionError;
+use snafu::Snafu;
+use wings_observability::ErrorKind;
+use wings_resources::{NamespaceName, PartitionValue, ResourceError, TopicName};
+
+/// Errors related to log metadata operations.
+#[derive(Clone, Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum LogMetadataError {
+    #[snafu(display("duplicate partition value: {topic} {partition:?}"))]
+    DuplicatePartitionValue {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+    },
+    #[snafu(display("unordered page batches: {topic} {partition:?}"))]
+    UnorderedPageBatches {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+    },
+    #[snafu(display("namespace not found: {namespace}"))]
+    NamespaceNotFound { namespace: NamespaceName },
+    #[snafu(display(
+        "offset not found for topic: {topic}, partition: {partition:?}, offset: {offset}"
+    ))]
+    OffsetNotFound {
+        topic: TopicName,
+        partition: Option<PartitionValue>,
+        offset: u64,
+    },
+    #[snafu(display("invalid offset range"))]
+    InvalidOffsetRange,
+    #[snafu(display("internal error: {message}"))]
+    Internal { message: String },
+    #[snafu(display("invalid argument: {message}"))]
+    InvalidArgument { message: String },
+    #[snafu(display("invalid {resource} name"))]
+    InvalidResourceName {
+        resource: &'static str,
+        source: ResourceError,
+    },
+    #[snafu(display("invalid deadline"))]
+    InvalidDeadline { source: SystemTimeError },
+    #[snafu(display("invalid timestamp"))]
+    InvalidTimestamp {
+        source: Arc<prost_types::TimestampError>,
+    },
+    #[snafu(display("invalid duration"))]
+    InvalidDuration {
+        source: Arc<prost_types::DurationError>,
+    },
+    #[snafu(display("task not found: {task_id}"))]
+    TaskNotFound { task_id: String },
+    #[snafu(display("task validation failed: {message}"))]
+    TaskValidation { message: String },
+}
+
+pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;
+
+impl From<LogMetadataError> for DataFusionError {
+    fn from(err: LogMetadataError) -> Self {
+        DataFusionError::External(Box::new(err))
+    }
+}
+
+impl LogMetadataError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::DuplicatePartitionValue { .. }
+            | Self::InvalidArgument { .. }
+            | Self::InvalidResourceName { .. }
+            | Self::InvalidOffsetRange
+            | Self::InvalidDeadline { .. }
+            | Self::InvalidTimestamp { .. }
+            | Self::InvalidDuration { .. }
+            | Self::TaskValidation { .. } => ErrorKind::Validation,
+            Self::NamespaceNotFound { .. }
+            | Self::OffsetNotFound { .. }
+            | Self::TaskNotFound { .. } => ErrorKind::NotFound,
+            Self::UnorderedPageBatches { .. } => ErrorKind::Conflict,
+            Self::Internal { .. } => ErrorKind::Internal,
+        }
+    }
+}

@@ -2,12 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use common::{create_batch_ingestor, initialize_test_namespace};
 use datafusion::common::{arrow::array::RecordBatch, create_array, record_batch};
-use wings_control_plane::{
-    cluster_metadata::ClusterMetadata,
-    resources::{Namespace, Topic, TopicName, TopicOptions},
-    schema::{DataType, Field, Schema, SchemaBuilder},
-};
+use wings_control_plane_core::cluster_metadata::ClusterMetadata;
 use wings_ingestor_core::{Result, WriteBatchError, WriteBatchRequest};
+use wings_resources::{Namespace, Topic, TopicName, TopicOptions};
+use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 mod common;
 

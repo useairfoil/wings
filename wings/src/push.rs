@@ -10,11 +10,11 @@ use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_client::WriteRequest;
-use wings_control_plane::{
+use wings_control_plane_core::{
     cluster_metadata::{ClusterMetadata, tonic::ClusterMetadataClient},
     log_metadata::CommittedBatch,
-    resources::{NamespaceName, PartitionValue, TopicName},
 };
+use wings_resources::{NamespaceName, PartitionValue, TopicName};
 
 use crate::{
     error::{

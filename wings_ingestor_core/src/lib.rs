@@ -41,6 +41,8 @@ pub mod test_utils;
 
 pub use ingestor::{BatchIngestor, run_background_ingestor};
 
-pub use self::client::BatchIngestorClient;
-pub use self::error::{IngestorError, Result};
-pub use self::write::{WriteBatchError, WriteBatchRequest};
+pub use self::{
+    client::BatchIngestorClient,
+    error::{IngestorError, Result},
+    write::{WriteBatchError, WriteBatchRequest},
+};

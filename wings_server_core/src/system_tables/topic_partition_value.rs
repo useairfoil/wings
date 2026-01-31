@@ -10,9 +10,8 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_control_plane::{
-    cluster_metadata::ClusterMetadata, log_metadata::LogMetadata, resources::NamespaceName,
-};
+use wings_control_plane_core::{cluster_metadata::ClusterMetadata, log_metadata::LogMetadata};
+use wings_resources::NamespaceName;
 
 use crate::{
     datafusion_helpers::apply_projection,

@@ -4,10 +4,10 @@
 // Once they become compatible, we can use the crate directly.
 //! Routines to convert TPCH types to Arrow types
 
-use datafusion::common::arrow::array::{StringArray, StringBuilder};
 use std::fmt::Write;
-use tpchgen::dates::TPCHDate;
-use tpchgen::decimal::TPCHDecimal;
+
+use datafusion::common::arrow::array::{StringArray, StringBuilder};
+use tpchgen::{dates::TPCHDate, decimal::TPCHDecimal};
 
 /// Convert a TPCHDecimal to an Arrow Decimal(15,2)
 #[inline(always)]

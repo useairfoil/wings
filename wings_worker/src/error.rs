@@ -1,9 +1,10 @@
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
-use wings_control_plane::{
-    ErrorKind, cluster_metadata::ClusterMetadataError, data_lake::DataLakeError,
-    log_metadata::LogMetadataError,
+use wings_control_plane_core::{
+    cluster_metadata::ClusterMetadataError, log_metadata::LogMetadataError,
 };
+use wings_data_lake::DataLakeError;
+use wings_observability::ErrorKind;
 
 /// Errors that can occur in the worker pool.
 #[derive(Debug, Snafu)]

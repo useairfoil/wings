@@ -26,8 +26,8 @@ use arrow::{
 };
 use arrow_flight::{FlightData, FlightDescriptor, SchemaAsIpc, flight_descriptor::DescriptorType};
 use snafu::ResultExt;
-use wings_control_plane::resources::TopicName;
 use wings_flight::IngestionRequestMetadata;
+use wings_resources::TopicName;
 
 use crate::{
     WriteRequest,

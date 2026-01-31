@@ -12,10 +12,8 @@ use datafusion::common::arrow::{
 };
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 use wings_client::WriteRequest;
-use wings_control_plane::{
-    resources::{CompactionConfiguration, TopicOptions},
-    schema::{DataType, Field, Schema, SchemaBuilder},
-};
+use wings_resources::{CompactionConfiguration, TopicOptions};
+use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 use crate::conversions::{string_array_from_display_iter, to_arrow_date32};
 
