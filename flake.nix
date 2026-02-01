@@ -79,18 +79,44 @@
           }
         );
 
+        # Build binaries and their checksums.
+        # On linux, patch the interpreter path.
         binariesWithChecksum = pkgs.stdenv.mkDerivation {
-          inherit (binaries) pname version src;
+          inherit (binaries) pname version;
 
-          nativeBuildInputs = [ pkgs.perl ];
+          nativeBuildInputs = [ pkgs.perl pkgs.patchelf ];
 
-          installPhase = ''
-            mkdir -p $out
-            cp ${binaries}/bin/wings $out/wings
-            shasum -b -a 256 $out/wings > $out/wings-hash.txt
-            cp ${binaries}/bin/wings-stress $out/wings-stress
-            shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
-          '';
+          phases = [ "installPhase" ];
+
+          installPhase =
+            if pkgs.stdenv.isLinux then
+              let
+                interpreter =
+                  if pkgs.system == "x86_64-linux" then
+                    "/lib64/ld-linux-x86-64.so.2"
+                  else
+                    "/lib/ld-linux-aarch64.so.1";
+              in
+              ''
+                mkdir -p $out
+                cp --no-preserve=mode ${binaries}/bin/wings $out/wings
+                chmod +x $out/wings
+                patchelf --set-interpreter ${interpreter} $out/wings
+                shasum -b -a 256 $out/wings > $out/wings-hash.txt
+
+                cp --no-preserve=mode ${binaries}/bin/wings-stress $out/wings-stress
+                chmod +x $out/wings-stress
+                patchelf --set-interpreter ${interpreter} $out/wings-stress
+                shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
+              ''
+            else
+              ''
+                mkdir -p $out
+                cp ${binaries}/bin/wings $out/wings
+                shasum -b -a 256 $out/wings > $out/wings-hash.txt
+                cp ${binaries}/bin/wings-stress $out/wings-stress
+                shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
+              '';
         };
 
         dockerImage = pkgs.dockerTools.buildImage {
