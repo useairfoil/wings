@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 async-trait.workspace = true
 object_store.workspace = true
+percent-encoding.workspace = true
 snafu.workspace = true
 tempfile.workspace = true
 wings-control-plane-core.path = "../wings_control_plane_core"

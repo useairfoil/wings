@@ -70,6 +70,7 @@ opentelemetry-otlp = { version = "0.31.0", features = ["trace", "metrics", "grpc
 opentelemetry_sdk = { version = "0.31.0", features = ["trace", "metrics", "rt-tokio", "experimental_metrics_custom_reader"] }
 parquet = "57.0.0"
 paste = "1.0.15"
+percent-encoding = "2.3.2"
 pin-project = "1.1.10"
 prost = "0.14.1"
 prost-types = "0.14.1"
