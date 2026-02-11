@@ -57,7 +57,9 @@ impl Worker {
             .context(DataFusionSnafu {})?;
 
         // TODO: rewrite all of this to build the plan programatically
+        let mut partition_columns = Vec::new();
         let partition_query = if let Some(field) = topic_ref.partition_field() {
+            partition_columns.push(field.name());
             format!(
                 "AND {} = {}",
                 field.name,
@@ -80,7 +82,12 @@ impl Worker {
 
         // println!("Compaction query: {}", query);
 
-        let df = ctx.sql(&query).await.context(DataFusionSnafu {})?;
+        let df = ctx
+            .sql(&query)
+            .await
+            .context(DataFusionSnafu {})?
+            .drop_columns(&partition_columns)
+            .context(DataFusionSnafu {})?;
 
         let mut stream = df.execute_stream().await.context(DataFusionSnafu {})?;
 

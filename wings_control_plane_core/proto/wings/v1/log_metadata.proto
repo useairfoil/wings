@@ -182,6 +182,7 @@ message FileMetadata {
 
 message FileInfo {
   string file_ref = 1;
+  optional PartitionValue partition_value = 2;
   uint64 start_offset = 3;
   uint64 end_offset = 4;
   FileMetadata metadata = 5;

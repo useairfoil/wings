@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use bytesize::ByteSize;
 use deltalake_aws::logstore::default_s3_logstore;
@@ -25,6 +25,9 @@ pub struct DeltaDataLake {
     object_store: Arc<dyn ObjectStore>,
     object_store_name: ObjectStoreName,
 }
+
+#[derive(Debug)]
+struct DeltaLogSerializablePartitionValue<'a>(&'a Option<PartitionValue>);
 
 impl DeltaDataLake {
     pub fn new(object_store_name: ObjectStoreName, object_store: Arc<dyn ObjectStore>) -> Self {
@@ -63,18 +66,24 @@ impl DeltaDataLake {
 impl DataLake for DeltaDataLake {
     async fn create_table(&self, topic: TopicRef) -> Result<String> {
         let log_store = self.new_log_store(&topic.name)?;
-        // TODO: should the partition field be included in the schema?
         let columns = topic
-            .schema_with_metadata(false)
+            .schema_with_metadata(true)
             .context(InvalidSchemaSnafu {})?
             .fields_iter()
             .map(convert_field)
             .collect::<Result<Vec<_>>>()?;
 
+        let partition_columns = if let Some(column) = topic.partition_field() {
+            vec![column.name()]
+        } else {
+            vec![]
+        };
+
         let table = DeltaTable::new(log_store.clone(), Default::default())
             .create()
             .with_save_mode(SaveMode::ErrorIfExists)
             .with_columns(columns)
+            .with_partition_columns(partition_columns)
             .await?;
 
         info!(?table, "Delta table created");
@@ -107,8 +116,20 @@ impl DataLake for DeltaDataLake {
         // making it a relative path.
         let root_location = format!("{}/", self.delta_log_location(&topic.name));
 
+        let partition_field = topic.partition_field();
+
         for file in new_files {
-            // TODO: stats, partition values, file modification time etc.
+            // TODO: stats
+            let partition_value = DeltaLogSerializablePartitionValue(&file.partition_value);
+            let partition_values = partition_field
+                .map(|field| {
+                    HashMap::<String, Option<String>>::from([(
+                        field.name().to_string(),
+                        partition_value.to_string(),
+                    )])
+                })
+                .unwrap_or_default();
+
             // Remove string prefix and create a new file ref relative to the topic's root dir.
             if let Some(file_ref) = file.file_ref.strip_prefix(&root_location) {
                 let modification_time = file
@@ -119,6 +140,7 @@ impl DataLake for DeltaDataLake {
 
                 let add = Add {
                     path: file_ref.to_string(),
+                    partition_values,
                     size: file.metadata.file_size.as_u64() as _,
                     modification_time,
                     data_change: true,
@@ -161,4 +183,29 @@ impl DataLake for DeltaDataLake {
 
 fn convert_field(field: &Field) -> Result<deltalake_core::StructField> {
     field.try_into().context(InvalidSchemaSnafu {})
+}
+
+impl DeltaLogSerializablePartitionValue<'_> {
+    // https://github.com/delta-io/delta/blob/master/PROTOCOL.md#partition-value-serialization
+    fn to_string(&self) -> Option<String> {
+        match self.0.as_ref()? {
+            PartitionValue::Null => None,
+            PartitionValue::Boolean(true) => Some("true".to_string()),
+            PartitionValue::Boolean(false) => Some("false".to_string()),
+            PartitionValue::Int8(n) => Some(n.to_string()),
+            PartitionValue::Int16(n) => Some(n.to_string()),
+            PartitionValue::Int32(n) => Some(n.to_string()),
+            PartitionValue::Int64(n) => Some(n.to_string()),
+            PartitionValue::UInt8(n) => Some(n.to_string()),
+            PartitionValue::UInt16(n) => Some(n.to_string()),
+            PartitionValue::UInt32(n) => Some(n.to_string()),
+            PartitionValue::UInt64(n) => Some(n.to_string()),
+            PartitionValue::String(s) => Some(s.clone()),
+            PartitionValue::Bytes(b) => Some(
+                b.iter()
+                    .map(|b| format!("\\u{:04x}", b))
+                    .collect::<String>(),
+            ),
+        }
+    }
 }

@@ -61,7 +61,7 @@ impl TableProvider for TopicTableProvider {
 
     fn schema(&self) -> SchemaRef {
         self.topic
-            .arrow_schema_with_metadata(false)
+            .arrow_schema_with_metadata(true)
             .expect("schema should be valid")
     }
 

@@ -345,7 +345,8 @@ impl TopicLogState {
 
                     self.commit_status = OperationStatus::new_completed(commit.table_version);
 
-                    return Ok((true, Vec::new()));
+                    let pending_candidates = std::mem::take(&mut self.pending_task_candidates);
+                    return Ok((true, pending_candidates));
                 }
                 TaskCompletionResult::Failure(error) => {
                     debug!(topic = %self.topic_name, error, "Table commit failed");
@@ -390,7 +391,12 @@ impl TopicLogState {
                         );
 
                         self.pending_files.extend(new_files);
-                        return Ok((true, vec![CandidateTask::Topic(self.topic_name.clone())]));
+
+                        let mut pending_candidates =
+                            std::mem::take(&mut self.pending_task_candidates);
+                        pending_candidates.push(CandidateTask::Topic(self.topic_name.clone()));
+
+                        return Ok((true, pending_candidates));
                     }
 
                     return Ok((true, Vec::new()));

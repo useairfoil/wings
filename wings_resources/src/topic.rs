@@ -5,7 +5,9 @@ use std::{
 
 use bytesize::ByteSize;
 use datafusion::common::arrow::datatypes::SchemaRef as ArrowSchemaRef;
-use wings_schema::{DataType, Field, Schema, SchemaBuilder, SchemaError, TimeUnit};
+use wings_schema::{
+    DataType, Field, Schema, SchemaBuilder, SchemaError, TimeUnit, schema_without_partition_field,
+};
 
 use crate::{NamespaceName, resource_type};
 
@@ -115,20 +117,7 @@ impl Topic {
     /// Since partition fields are usually not stored in the physical Parquet
     /// file, this method returns a schema that excludes the partition field.
     pub fn schema_without_partition_field(&self) -> Schema {
-        let Some(partition_key) = self.partition_key else {
-            return self.schema().clone();
-        };
-
-        let fields = self
-            .schema()
-            .fields_iter()
-            .filter(|field| field.id != partition_key)
-            .cloned()
-            .collect::<Vec<_>>();
-        // PANIC: if the current schema is valid, then a schema without the partition field is also valid
-        SchemaBuilder::new(fields)
-            .build()
-            .expect("derived schema is valid")
+        schema_without_partition_field(self.schema(), self.partition_key)
     }
 
     /// Returns the topic's schema without the partition field.

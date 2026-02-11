@@ -275,6 +275,8 @@ pub struct CreateTableResult {
 pub struct FileInfo {
     /// File reference (path) - consistent with PageInfo
     pub file_ref: String,
+    /// The partition value for the file
+    pub partition_value: Option<PartitionValue>,
     /// First offset (inclusive) in this file
     pub start_offset: u64,
     /// Last offset (inclusive) in this file

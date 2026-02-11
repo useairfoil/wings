@@ -894,6 +894,7 @@ impl From<FileInfo> for pb::FileInfo {
     fn from(info: FileInfo) -> Self {
         pb::FileInfo {
             file_ref: info.file_ref,
+            partition_value: info.partition_value.as_ref().map(Into::into),
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             metadata: Some(info.metadata.into()),
@@ -944,6 +945,12 @@ impl TryFrom<pb::FileInfo> for FileInfo {
     type Error = LogMetadataError;
 
     fn try_from(info: pb::FileInfo) -> Result<Self, Self::Error> {
+        let partition_value = info
+            .partition_value
+            .clone()
+            .map(TryFrom::try_from)
+            .transpose()?;
+
         let metadata = info
             .metadata
             .ok_or_else(|| LogMetadataError::Internal {
@@ -961,6 +968,7 @@ impl TryFrom<pb::FileInfo> for FileInfo {
 
         Ok(FileInfo {
             file_ref: info.file_ref,
+            partition_value,
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             metadata,

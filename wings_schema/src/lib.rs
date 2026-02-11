@@ -164,6 +164,23 @@ impl SchemaBuilder {
     }
 }
 
+/// Creates a new schema without the partition field (if any).
+pub fn schema_without_partition_field(schema: &Schema, partition: Option<u64>) -> Schema {
+    let Some(partition_key) = partition else {
+        return schema.clone();
+    };
+
+    let fields = schema
+        .fields_iter()
+        .filter(|field| field.id != partition_key)
+        .cloned()
+        .collect::<Vec<_>>();
+    // PANIC: if the current schema is valid, then a schema without the partition field is also valid
+    SchemaBuilder::new(fields)
+        .build()
+        .expect("derived schema is valid")
+}
+
 impl PartialOrd for Field {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))

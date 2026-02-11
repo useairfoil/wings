@@ -11,13 +11,14 @@ use snafu::ResultExt;
 use tracing::debug;
 use ulid::Ulid;
 use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
-use wings_object_store::paths::format_parquet_data_path;
+use wings_object_store::paths::{format_parquet_data_path, format_partitioned_parquet_data_path};
 use wings_resources::{PartitionValue, TopicName, TopicRef};
+use wings_schema::Field;
 
 use super::error::Result;
 use crate::{
     BatchWriter, DataLake,
-    error::{InternalSnafu, InvalidSchemaSnafu, UnsupportedOperationSnafu},
+    error::{InternalSnafu, InvalidSchemaSnafu},
     parquet_writer::ParquetWriter,
 };
 
@@ -28,6 +29,8 @@ pub struct ParquetDataLake {
 pub struct ParquetBatchWriter {
     inner: Mutex<ParquetWriter>,
     object_store: Arc<dyn ObjectStore>,
+    partition_value: Option<PartitionValue>,
+    partition_field: Option<Field>,
     written: Vec<FileInfo>,
     target_file_size_bytes: u64,
     topic_name: TopicName,
@@ -79,13 +82,6 @@ impl ParquetBatchWriter {
         end_offset: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>> {
-        if partition_value.is_some() {
-            return UnsupportedOperationSnafu {
-                operation: "Parquet data lake does not support partitioning",
-            }
-            .fail();
-        }
-
         let writer_properties = {
             let partition_value = partition_value.as_ref().map(|v| v.to_string());
             let kv_metadata = vec![
@@ -108,6 +104,8 @@ impl ParquetBatchWriter {
 
         let writer = ParquetBatchWriter {
             inner: Mutex::new(inner),
+            partition_value,
+            partition_field: topic.partition_field().cloned(),
             object_store,
             written: Default::default(),
             target_file_size_bytes: target_file_size.as_u64(),
@@ -123,7 +121,16 @@ impl ParquetBatchWriter {
         let payload = PutPayload::from_bytes(data.into());
 
         let file_id = Ulid::new().to_string();
-        let file_ref = format_parquet_data_path(&self.topic_name, &file_id);
+        let file_ref = if let Some(ref field) = self.partition_field {
+            format_partitioned_parquet_data_path(
+                &self.topic_name,
+                field.name(),
+                &self.partition_value,
+                &file_id,
+            )
+        } else {
+            format_parquet_data_path(&self.topic_name, &file_id)
+        };
 
         debug!(
             %file_ref,
@@ -151,6 +158,7 @@ impl ParquetBatchWriter {
 
         self.written.push(FileInfo {
             file_ref,
+            partition_value: self.partition_value.clone(),
             start_offset: self.current_file_start_offset,
             end_offset,
             metadata,
