@@ -24,6 +24,8 @@ pub enum DataLakeError {
     },
     #[snafu(transparent)]
     Delta { source: DeltaTableError },
+    #[snafu(transparent)]
+    Serialization { source: serde_json::Error },
     #[snafu(display("Failed to create file path"))]
     Path { source: object_store::path::Error },
     #[snafu(display("Unsupported operation: {}", operation))]
@@ -40,7 +42,7 @@ impl DataLakeError {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::Internal { .. } => ErrorKind::Internal,
+            Self::Internal { .. } | Self::Serialization { .. } => ErrorKind::Internal,
             Self::ObjectStore { .. }
             | Self::Parquet { .. }
             | Self::DataFusion { .. }

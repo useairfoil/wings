@@ -20,6 +20,7 @@ deltalake-aws.workspace = true
 iceberg.workspace = true
 object_store.workspace = true
 parquet.workspace = true
+serde_json.workspace = true
 snafu.workspace = true
 tracing.workspace = true
 ulid.workspace = true

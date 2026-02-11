@@ -12,9 +12,10 @@ use deltalake_core::{
     protocol::{DeltaOperation, SaveMode},
 };
 use object_store::{ObjectStore, prefix::PrefixStore};
+use serde_json::Value;
 use snafu::ResultExt;
 use tracing::{debug, info, warn};
-use wings_control_plane_core::log_metadata::FileInfo;
+use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
 use wings_resources::{ObjectStoreName, PartitionValue, TopicName, TopicRef};
 use wings_schema::Field;
 
@@ -119,7 +120,6 @@ impl DataLake for DeltaDataLake {
         let partition_field = topic.partition_field();
 
         for file in new_files {
-            // TODO: stats
             let partition_value = DeltaLogSerializablePartitionValue(&file.partition_value);
             let partition_values = partition_field
                 .map(|field| {
@@ -129,6 +129,8 @@ impl DataLake for DeltaDataLake {
                     )])
                 })
                 .unwrap_or_default();
+
+            let stats = serde_json::to_string(&convert_statistics_to_delta(&file.metadata))?;
 
             // Remove string prefix and create a new file ref relative to the topic's root dir.
             if let Some(file_ref) = file.file_ref.strip_prefix(&root_location) {
@@ -144,6 +146,8 @@ impl DataLake for DeltaDataLake {
                     size: file.metadata.file_size.as_u64() as _,
                     modification_time,
                     data_change: true,
+                    base_row_id: Some(file.start_offset as _),
+                    stats: Some(stats),
                     ..Default::default()
                 };
                 actions.push(Action::Add(add));
@@ -162,7 +166,7 @@ impl DataLake for DeltaDataLake {
 
         let operation = DeltaOperation::Write {
             mode: SaveMode::Append,
-            partition_by: None,
+            partition_by: partition_field.map(|field| vec![field.name().to_string()]),
             predicate: None,
         };
 
@@ -208,4 +212,14 @@ impl DeltaLogSerializablePartitionValue<'_> {
             ),
         }
     }
+}
+
+fn convert_statistics_to_delta(stats: &FileMetadata) -> Value {
+    let mut inner = serde_json::Map::new();
+    // The number of records in this data file.
+    inner.insert("numRecords".to_string(), stats.num_rows.into());
+    // Whether per-column statistics are currently tight or wide
+    inner.insert("tightBounds".to_string(), true.into());
+    // TODO: convert wings flat statistics into the nested delta format
+    Value::Object(inner)
 }

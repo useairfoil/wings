@@ -6873,6 +6873,7 @@ dependencies = [
  "iceberg",
  "object_store",
  "parquet",
+ "serde_json",
  "snafu",
  "tracing",
  "ulid",
