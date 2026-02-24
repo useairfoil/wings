@@ -73,7 +73,7 @@ impl Worker {
         };
 
         let query = format!(
-            "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
+            "SELECT * FROM \"{}\" WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
             task.topic_name.id(),
             task.start_offset,
             task.end_offset,

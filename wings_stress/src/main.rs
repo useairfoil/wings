@@ -1,58 +1,44 @@
+use std::sync::{Arc, atomic::AtomicU64};
+
 use clap::{Args, Parser};
-use error::ClientSnafu;
-use futures::{TryStreamExt, stream::FuturesUnordered};
 use snafu::ResultExt;
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-use wings_client::{PushClient, WingsClient};
-use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, TopicView, tonic::ClusterMetadataClient},
-    log_metadata::CommittedBatch,
+use wings_client::WingsClient;
+use wings_control_plane_core::cluster_metadata::{
+    ClusterMetadata, TopicView, tonic::ClusterMetadataClient,
 };
-use wings_resources::{NamespaceName, TopicName};
+use wings_resources::{NamespaceName, Topic, TopicName, TopicOptions};
+use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 use crate::{
-    error::{
-        ClusterMetadataSnafu, ConnectionSnafu, InvalidNamespaceNameSnafu, InvalidRangeSnafu,
-        InvalidRemoteUrlSnafu, JoinSnafu, Result,
-    },
-    generators::{RequestGenerator, TopicType},
-    helpers::parse_range,
+    error::{ClusterMetadataSnafu, InvalidRemoteUrlSnafu, InvalidResourceNameSnafu, Result},
+    log::{Event, run_log_loop},
+    run::run_test,
 };
 
-mod conversions;
 mod error;
-mod generators;
-mod helpers;
+mod log;
+mod run;
 
 #[derive(Parser)]
 #[command(name = "wings-stress")]
 #[command(about = "Wings stress testing CLI")]
 #[command(version)]
 struct Cli {
-    /// The type of topics to generate.
-    ///
-    /// Repeat this flag to generate multiple topic types.
-    #[arg(long, value_enum)]
-    topic: Vec<TopicType>,
-    /// How many messages to send per second per partition.
-    #[arg(long, default_value = "1000")]
-    rate: u64,
-    /// The number of partitions to use for each topic.
-    #[arg(long, default_value = "1")]
-    partitions: u64,
-    /// The batch size for each partition.
-    ///
-    /// Either provide a number (e.g. 1000) or a range (e.g. 1000-2000).
-    #[arg(long, default_value = "1000")]
-    batch_size: String,
-    /// Namespace name
+    /// The number of concurrent clients
+    #[arg(long, default_value = "10")]
+    concurrency: u64,
+    /// The number of iterations for each client
+    #[arg(long, default_value = "usize::MAX")]
+    iterations: usize,
+    /// The batch size for each push request.
+    #[arg(long, default_value = "773")]
+    batch_size: usize,
+    /// The topic's namespace.
     #[arg(long, default_value = "tenants/default/namespaces/default")]
     namespace: String,
-    /// The number of concurrent requests
-    #[arg(long, default_value = "10")]
-    concurrency: usize,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
@@ -80,83 +66,57 @@ async fn main() -> Result<()> {
         }
     });
 
-    let batch_size_range = parse_range(&cli.batch_size).context(InvalidRangeSnafu {})?;
-    let namespace = NamespaceName::parse(&cli.namespace).context(InvalidNamespaceNameSnafu {})?;
-
-    println!("Running stress test");
-    println!("  Namespace: {}", namespace);
-    println!(
-        "  Topics: {}",
-        cli.topic
-            .iter()
-            .map(|t| format!("{:?}", t))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    println!("  Batch Size: {:?}", batch_size_range);
-    println!("  Partitions: {:?}", cli.partitions);
+    let namespace = NamespaceName::parse(&cli.namespace).context(InvalidResourceNameSnafu {
+        resource: "namespace",
+    })?;
 
     let cluster_meta = cli.remote.cluster_metadata_client().await?;
     let ingestion_client = cli.remote.ingestion_client().await?;
 
+    let topic_id = new_random_topic_id();
+
+    let topic_name = TopicName::new(topic_id, namespace)
+        .context(InvalidResourceNameSnafu { resource: "topic" })?;
+
+    let topic = ensure_topic_exists(&cluster_meta, topic_name.clone()).await?;
+
+    let (tx, rx) = mpsc::channel::<Event>(1024);
+
+    let logger_handle = tokio::spawn(async move { run_log_loop(rx).await });
+
     let mut tasks = JoinSet::new();
 
-    for topic in cli.topic.into_iter() {
-        let topic_name = ensure_topic_exists(&cluster_meta, &namespace, &topic).await?;
-        let topic_client = ingestion_client
-            .push_client(topic_name.clone())
-            .await
-            .context(ClientSnafu {})?;
-        let batch_size_range = batch_size_range.clone();
+    let event_id: Arc<_> = AtomicU64::default().into();
+
+    for client_id in 0..cli.concurrency {
+        let event_id = event_id.clone();
+        let tx = tx.clone();
+        let client = ingestion_client.clone();
+        let topic = topic.clone();
         let ct = ct.clone();
         tasks.spawn(async move {
-            let request_generator = RequestGenerator::new(topic, batch_size_range, cli.partitions);
-            run_stress_test_for_topic(request_generator, topic_client, cli.concurrency, ct).await
+            run_test(
+                client_id,
+                event_id,
+                cli.batch_size,
+                cli.iterations,
+                tx,
+                client,
+                topic,
+                ct,
+            )
+            .await
         });
     }
 
-    while let Some(result) = tasks.join_next().await.transpose().context(JoinSnafu {})? {
-        ct.cancel();
+    while let Some(result) = tasks.join_next().await.transpose()? {
         result?;
     }
 
-    Ok(())
-}
+    // Close the channel to stop the logger task
+    drop(tx);
 
-async fn run_stress_test_for_topic(
-    mut generator: RequestGenerator,
-    client: PushClient,
-    concurrency: usize,
-    ct: CancellationToken,
-) -> Result<()> {
-    println!("Starting stress test for topic {}", client.topic_name());
-
-    let mut futures = FuturesUnordered::new();
-
-    loop {
-        if ct.is_cancelled() {
-            break;
-        }
-
-        while futures.len() < concurrency {
-            let request = generator.create_request();
-            let response_fut = client.push(request).await.context(ClientSnafu {})?;
-            futures.push(response_fut.wait_for_response());
-        }
-
-        let Some(response) = futures.try_next().await.context(ClientSnafu {})? else {
-            break;
-        };
-
-        match response {
-            CommittedBatch::Accepted(info) => {
-                println!("Accepted: {} -- {}", info.start_offset, info.end_offset)
-            }
-            CommittedBatch::Rejected(reason) => println!("Rejected: {}", reason.num_messages),
-        }
-    }
-
-    println!("Done");
+    logger_handle.await??;
 
     Ok(())
 }
@@ -177,21 +137,21 @@ impl RemoteArgs {
         let channel = Channel::from_shared(self.remote_address.clone())
             .context(InvalidRemoteUrlSnafu {})?
             .connect()
-            .await
-            .context(ConnectionSnafu {})?;
+            .await?;
 
         Ok(channel)
     }
 }
 
 async fn ensure_topic_exists(
-    admin: &ClusterMetadataClient<Channel>,
-    namespace: &NamespaceName,
-    topic: &TopicType,
-) -> Result<TopicName> {
-    let topic_name = TopicName::new_unchecked(topic.topic_name(), namespace.clone());
-    match admin.get_topic(topic_name.clone(), TopicView::Basic).await {
-        Ok(_) => return Ok(topic_name),
+    cluster_meta: &ClusterMetadataClient<Channel>,
+    topic_name: TopicName,
+) -> Result<Topic> {
+    match cluster_meta
+        .get_topic(topic_name.clone(), TopicView::Basic)
+        .await
+    {
+        Ok(topic) => return Ok(topic),
         Err(err) if err.is_not_found() => {}
         Err(err) => {
             return Err(err).context(ClusterMetadataSnafu {
@@ -200,12 +160,29 @@ async fn ensure_topic_exists(
         }
     };
 
-    admin
-        .create_topic(topic_name.clone(), topic.topic_options())
+    let options = TopicOptions {
+        schema: topic_schema(),
+        compaction: Default::default(),
+        partition_key: None,
+        description: Some("Linearizability test table with no partition".to_string()),
+    };
+
+    cluster_meta
+        .create_topic(topic_name.clone(), options)
         .await
         .context(ClusterMetadataSnafu {
             operation: "create_topic",
-        })?;
+        })
+}
 
-    Ok(topic_name)
+fn topic_schema() -> Schema {
+    // PANIC: the schema is valid.
+    SchemaBuilder::new(vec![Field::new("col", 0, DataType::UInt64, false)])
+        .build()
+        .expect("topic schema")
+}
+
+fn new_random_topic_id() -> String {
+    let r = ulid::Ulid::new().to_string().to_lowercase();
+    format!("t-{r}")
 }

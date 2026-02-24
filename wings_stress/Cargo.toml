@@ -19,13 +19,8 @@ bytesize.workspace = true
 clap.workspace = true
 datafusion.workspace = true
 futures.workspace = true
-nu-ansi-term = "0.50.1"
 object_store.workspace = true
-rand = "0.8"
-reqwest = { version = "0.11", features = [
-    "json",
-    "rustls-tls",
-], default-features = false }
+rand = "0.10"
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
@@ -38,8 +33,8 @@ tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
     "json",
 ] }
-tpchgen = "2.0.0"
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }
+ulid.workspace = true
 wings-ingestor-core = { path = "../wings_ingestor_core" }
 wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-control-plane-core = { path = "../wings_control_plane_core" }

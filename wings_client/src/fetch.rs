@@ -19,6 +19,7 @@ use crate::{
     metadata::new_request_for_namespace,
 };
 
+#[derive(Clone)]
 pub struct FetchClient {
     inner: FlightServiceClient<Channel>,
     topic_name: TopicName,

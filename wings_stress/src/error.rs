@@ -1,36 +1,43 @@
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
-use tokio::task::JoinError;
+use tokio::{sync::mpsc::error::SendError, task::JoinError};
 use wings_client::ClientError;
 use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
 use wings_observability::ErrorKind;
 use wings_resources::ResourceError;
 
-use crate::helpers::RangeParserError;
+use crate::log::Event;
 
 /// CLI error types.
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum CliError {
-    #[snafu(display("Invalid namespace name"))]
-    InvalidNamespaceName { source: ResourceError },
-    #[snafu(display("Invalid range format"))]
-    InvalidRange { source: RangeParserError },
+    #[snafu(display("Invalid {resource} name"))]
+    InvalidResourceName {
+        resource: &'static str,
+        source: ResourceError,
+    },
     #[snafu(display("Invalid remote URL"))]
     InvalidRemoteUrl { source: InvalidUri },
-    #[snafu(display("Connection error"))]
-    Connection { source: tonic::transport::Error },
-    #[snafu(display("Tonic server error"))]
-    TonicServer { source: tonic::transport::Error },
     #[snafu(display("Failed admin operation {operation}"))]
     ClusterMetadata {
         operation: &'static str,
         source: ClusterMetadataError,
     },
-    #[snafu(display("Failed client operation"))]
-    ClientError { source: ClientError },
-    #[snafu(display("Failed join operation"))]
+    #[snafu(display("Failed to push data"))]
+    PushError { source: ClientError },
+    #[snafu(display("Failed to fetch data"))]
+    FetchError { source: ClientError },
+    #[snafu(transparent)]
+    Connection { source: tonic::transport::Error },
+    #[snafu(transparent)]
     JoinError { source: JoinError },
+    #[snafu(transparent)]
+    ArrowError {
+        source: datafusion::common::arrow::error::ArrowError,
+    },
+    #[snafu(transparent)]
+    EventChannelClosed { source: SendError<Event> },
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
@@ -38,12 +45,14 @@ pub type Result<T, E = CliError> = std::result::Result<T, E>;
 impl CliError {
     pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::InvalidNamespaceName { .. } | Self::InvalidRange { .. } => ErrorKind::Validation,
-            Self::InvalidRemoteUrl { .. } => ErrorKind::Configuration,
-            Self::Connection { .. } | Self::TonicServer { .. } => ErrorKind::Temporary,
             Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::ClientError { source } => source.kind(),
-            Self::JoinError { .. } => ErrorKind::Internal,
+            Self::PushError { source } | Self::FetchError { source } => source.kind(),
+            Self::InvalidResourceName { .. } => ErrorKind::Validation,
+            Self::InvalidRemoteUrl { .. } => ErrorKind::Configuration,
+            Self::Connection { .. } => ErrorKind::Temporary,
+            Self::JoinError { .. } | Self::ArrowError { .. } | Self::EventChannelClosed { .. } => {
+                ErrorKind::Internal
+            }
         }
     }
 }

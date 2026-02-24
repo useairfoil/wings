@@ -424,7 +424,7 @@ impl FlightSqlService for WingsFlightSqlServer {
         };
 
         let query = format!(
-            "SELECT * FROM {} WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
+            "SELECT * FROM \"{}\" WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
             topic_name.id(),
             offset,
             offset + max_batch_size as u64 - 1,
