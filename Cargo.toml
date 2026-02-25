@@ -18,6 +18,7 @@ members = [
     "wings_ingestor_http",
     "wings_object_store",
     "wings_observability",
+    "wings_query",
     "wings_resources",
     "wings_schema",
     "wings_server_core",

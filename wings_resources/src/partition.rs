@@ -7,7 +7,7 @@
 use std::convert::TryFrom;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
-use datafusion::scalar::ScalarValue;
+use datafusion::{prelude::Expr, scalar::ScalarValue};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use wings_schema::DataType;
@@ -197,6 +197,10 @@ impl PartitionValue {
             PartitionValue::Bytes(_) => DataType::Binary,
             PartitionValue::Boolean(_) => DataType::Boolean,
         }
+    }
+
+    pub fn to_lit(&self) -> Expr {
+        todo!();
     }
 }
 

@@ -36,3 +36,4 @@ wings-data-lake = { path = "../wings_data_lake" }
 wings-object-store = { path = "../wings_object_store" }
 wings-observability = { path = "../wings_observability" }
 wings-server-core = { path = "../wings_server_core" }
+wings-query = { path = "../wings_query" }

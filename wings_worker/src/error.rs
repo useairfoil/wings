@@ -29,8 +29,12 @@ pub enum WorkerError {
         source: DataLakeError,
         operation: &'static str,
     },
-    #[snafu(display("DataFusion error"))]
+    #[snafu(transparent)]
     DataFusion { source: DataFusionError },
+    #[snafu(transparent)]
+    Query {
+        source: wings_query::TopicLogicalPlanError,
+    },
 }
 
 pub type Result<T, E = WorkerError> = std::result::Result<T, E>;
@@ -41,7 +45,7 @@ impl WorkerError {
             Self::LogMetadata { source, .. } => source.kind(),
             Self::ClusterMetadata { source, .. } => source.kind(),
             Self::DataLake { source, .. } => source.kind(),
-            Self::DataFusion { .. } => ErrorKind::Temporary,
+            Self::DataFusion { .. } | Self::Query { .. } => ErrorKind::Temporary,
         }
     }
 }

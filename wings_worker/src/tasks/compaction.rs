@@ -6,10 +6,11 @@ use wings_control_plane_core::log_metadata::{
     CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest, TaskMetadata,
     TaskResult,
 };
+use wings_query::TopicLogicalPlanExt;
 
 use crate::{
     Worker,
-    error::{ClusterMetadataSnafu, DataFusionSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
+    error::{ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
 };
 
 impl Worker {
@@ -48,48 +49,30 @@ impl Worker {
         let provider = self
             .namespace_provider_factory
             .create_provider(namespace_name)
-            .await
-            .context(DataFusionSnafu {})?;
+            .await?;
 
-        let ctx = provider
-            .new_session_context()
-            .await
-            .context(DataFusionSnafu {})?;
+        let ctx = provider.new_session_context().await?;
 
-        // TODO: rewrite all of this to build the plan programatically
         let mut partition_columns = Vec::new();
-        let partition_query = if let Some(field) = topic_ref.partition_field() {
+        if let Some(field) = topic_ref.partition_field() {
             partition_columns.push(field.name());
-            format!(
-                "AND {} = {}",
-                field.name,
-                task.partition_value
-                    .as_ref()
-                    .map(|v| v.to_string())
-                    .unwrap_or_default()
+        }
+
+        let plan = topic_ref
+            .logical_plan(
+                &ctx,
+                task.start_offset,
+                task.end_offset,
+                task.partition_value.clone(),
             )
-        } else {
-            String::new()
-        };
-
-        let query = format!(
-            "SELECT * FROM \"{}\" WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
-            task.topic_name.id(),
-            task.start_offset,
-            task.end_offset,
-            partition_query
-        );
-
-        // println!("Compaction query: {}", query);
+            .await?;
 
         let df = ctx
-            .sql(&query)
-            .await
-            .context(DataFusionSnafu {})?
-            .drop_columns(&partition_columns)
-            .context(DataFusionSnafu {})?;
+            .execute_logical_plan(plan)
+            .await?
+            .drop_columns(&partition_columns)?;
 
-        let mut stream = df.execute_stream().await.context(DataFusionSnafu {})?;
+        let mut stream = df.execute_stream().await?;
 
         let data_lake = self
             .data_lake_factory
@@ -112,7 +95,7 @@ impl Worker {
                 operation: "create writer",
             })?;
 
-        while let Some(batch) = stream.try_next().await.context(DataFusionSnafu {})? {
+        while let Some(batch) = stream.try_next().await? {
             if ct.is_cancelled() {
                 return Ok(());
             }

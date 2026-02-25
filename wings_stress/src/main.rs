@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::AtomicU64};
+use std::{
+    sync::{Arc, atomic::AtomicU64},
+    time::Duration,
+};
 
 use clap::{Args, Parser};
 use snafu::ResultExt;
@@ -9,13 +12,13 @@ use wings_client::WingsClient;
 use wings_control_plane_core::cluster_metadata::{
     ClusterMetadata, TopicView, tonic::ClusterMetadataClient,
 };
-use wings_resources::{NamespaceName, Topic, TopicName, TopicOptions};
+use wings_resources::{CompactionConfiguration, NamespaceName, Topic, TopicName, TopicOptions};
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 use crate::{
     error::{ClusterMetadataSnafu, InvalidRemoteUrlSnafu, InvalidResourceNameSnafu, Result},
     log::{Event, run_log_loop},
-    run::run_test,
+    run::{RunContext, run_test},
 };
 
 mod error;
@@ -88,25 +91,19 @@ async fn main() -> Result<()> {
 
     let event_id: Arc<_> = AtomicU64::default().into();
 
+    let ctx = RunContext {
+        event_id,
+        iterations: cli.iterations,
+        batch_size: cli.batch_size,
+    };
+
     for client_id in 0..cli.concurrency {
-        let event_id = event_id.clone();
+        let ctx = ctx.clone();
         let tx = tx.clone();
         let client = ingestion_client.clone();
         let topic = topic.clone();
         let ct = ct.clone();
-        tasks.spawn(async move {
-            run_test(
-                client_id,
-                event_id,
-                cli.batch_size,
-                cli.iterations,
-                tx,
-                client,
-                topic,
-                ct,
-            )
-            .await
-        });
+        tasks.spawn(async move { run_test(ctx, client_id, tx, client, topic, ct).await });
     }
 
     while let Some(result) = tasks.join_next().await.transpose()? {
@@ -162,7 +159,10 @@ async fn ensure_topic_exists(
 
     let options = TopicOptions {
         schema: topic_schema(),
-        compaction: Default::default(),
+        compaction: CompactionConfiguration {
+            freshness: Duration::from_secs(60),
+            ..Default::default()
+        },
         partition_key: None,
         description: Some("Linearizability test table with no partition".to_string()),
     };

@@ -25,6 +25,7 @@ use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
 use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
 use wings_ingestor_core::BatchIngestorClient;
+use wings_query::TopicLogicalPlanExt;
 use wings_resources::{NamespaceName, TopicName};
 use wings_server_core::query::NamespaceProviderFactory;
 
@@ -412,28 +413,22 @@ impl FlightSqlService for WingsFlightSqlServer {
                 .expect("update wings.timeout_ms");
         }
 
-        // TODO: rewrite all of this to build the plan programatically
-        let partition_query = if let Some(field) = topic_ref.partition_field() {
-            format!(
-                "AND {} = {}",
-                field.name,
-                partition_value.map(|v| v.to_string()).unwrap_or_default()
+        let plan = topic_ref
+            .logical_plan(
+                &ctx,
+                offset,
+                offset + max_batch_size as u64 - 1,
+                partition_value,
             )
-        } else {
-            String::new()
-        };
+            .await
+            .map_err(FlightServerError::from)?;
 
-        let query = format!(
-            "SELECT * FROM \"{}\" WHERE __offset__ BETWEEN {} AND {} {} ORDER BY __offset__ ASC",
-            topic_name.id(),
-            offset,
-            offset + max_batch_size as u64 - 1,
-            partition_query
-        );
+        validate_logical_plan(&plan)?;
 
-        println!("Executing query: {}", query);
-
-        let out = ctx.sql(&query).await.map_err(FlightServerError::from)?;
+        let out = ctx
+            .execute_logical_plan(plan)
+            .await
+            .map_err(FlightServerError::from)?;
 
         let schema: Arc<_> = out.schema().as_arrow().clone().into();
 

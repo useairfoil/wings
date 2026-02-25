@@ -16,6 +16,10 @@ pub enum FlightServerError {
     Flight {
         source: arrow_flight::error::FlightError,
     },
+    #[snafu(transparent)]
+    Query {
+        source: wings_query::TopicLogicalPlanError,
+    },
     #[snafu(display("Invalid Flight ticket: {}", message))]
     InvalidTicket { message: String },
 }
@@ -31,9 +35,10 @@ impl FlightServerError {
 impl FlightServerError {
     pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::Arrow { .. } | Self::DataFusion { .. } | Self::Flight { .. } => {
-                ErrorKind::Temporary
-            }
+            Self::Arrow { .. }
+            | Self::DataFusion { .. }
+            | Self::Flight { .. }
+            | Self::Query { .. } => ErrorKind::Temporary,
             Self::InvalidTicket { .. } => ErrorKind::Validation,
         }
     }

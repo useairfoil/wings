@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    usize,
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
 };
 
 use arrow::array::{UInt64Array, UInt64Builder};
@@ -28,11 +25,16 @@ enum Operation {
     Fetch,
 }
 
+#[derive(Debug, Clone)]
+pub struct RunContext {
+    pub event_id: Arc<AtomicU64>,
+    pub batch_size: usize,
+    pub iterations: usize,
+}
+
 pub async fn run_test(
+    ctx: RunContext,
     client_id: u64,
-    event_id: Arc<AtomicU64>,
-    batch_size: usize,
-    iterations: usize,
     tx: mpsc::Sender<Event>,
     client: WingsClient,
     topic: Topic,
@@ -50,16 +52,16 @@ pub async fn run_test(
 
     let mut end_offset = 0;
 
-    for _ in 0..iterations {
+    for _ in 0..ctx.iterations {
         if ct.is_cancelled() {
             break;
         }
 
-        let id = event_id.fetch_add(1, Ordering::Relaxed);
+        let id = ctx.event_id.fetch_add(1, Ordering::Relaxed);
 
         match random_operation() {
             Operation::Push => {
-                let (batch, last_value) = random_batch(arrow_schema.clone(), batch_size)?;
+                let (batch, last_value) = random_batch(arrow_schema.clone(), ctx.batch_size)?;
 
                 tx.send(Event {
                     id,

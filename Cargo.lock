@@ -6837,6 +6837,7 @@ dependencies = [
  "wings-control-plane-core",
  "wings-ingestor-core",
  "wings-observability",
+ "wings-query",
  "wings-resources",
  "wings-server-core",
 ]
@@ -6916,6 +6917,22 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "wings-query"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "datafusion",
+ "futures",
+ "snafu",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
@@ -7035,6 +7052,7 @@ dependencies = [
  "wings-data-lake",
  "wings-object-store",
  "wings-observability",
+ "wings-query",
  "wings-server-core",
 ]
 
