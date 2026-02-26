@@ -12,7 +12,7 @@ use tracing::debug;
 use ulid::Ulid;
 use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
 use wings_object_store::paths::{format_parquet_data_path, format_partitioned_parquet_data_path};
-use wings_resources::{PartitionValue, TopicName, TopicRef};
+use wings_resources::{PartitionPosition, PartitionValue, TopicName, TopicRef};
 use wings_schema::Field;
 
 use super::error::Result;
@@ -98,7 +98,7 @@ impl ParquetBatchWriter {
         };
 
         let output_schema = topic
-            .schema_with_metadata(false)
+            .schema_with_metadata(PartitionPosition::Skip)
             .context(InvalidSchemaSnafu {})?;
         let inner = ParquetWriter::new(output_schema.into(), writer_properties);
 

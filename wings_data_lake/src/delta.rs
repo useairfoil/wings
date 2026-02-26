@@ -16,7 +16,7 @@ use serde_json::Value;
 use snafu::ResultExt;
 use tracing::{debug, info, warn};
 use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
-use wings_resources::{ObjectStoreName, PartitionValue, TopicName, TopicRef};
+use wings_resources::{ObjectStoreName, PartitionPosition, PartitionValue, TopicName, TopicRef};
 use wings_schema::Field;
 
 use super::{error::Result, parquet::ParquetBatchWriter};
@@ -68,7 +68,7 @@ impl DataLake for DeltaDataLake {
     async fn create_table(&self, topic: TopicRef) -> Result<String> {
         let log_store = self.new_log_store(&topic.name)?;
         let columns = topic
-            .schema_with_metadata(true)
+            .schema_with_metadata(PartitionPosition::Original)
             .context(InvalidSchemaSnafu {})?
             .fields_iter()
             .map(convert_field)

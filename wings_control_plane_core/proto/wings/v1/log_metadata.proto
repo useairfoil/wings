@@ -85,7 +85,8 @@ message FolioLocation {
   string file_ref = 1;
   uint64 offset_bytes = 2;
   uint64 size_bytes = 3;
-  repeated CommittedBatch batches = 4;
+  uint32 num_rows = 4;
+  repeated CommittedBatch batches = 5;
 }
 
 message ListPartitionsRequest {

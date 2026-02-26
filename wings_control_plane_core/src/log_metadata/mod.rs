@@ -165,6 +165,8 @@ pub struct FolioLocation {
     pub offset_bytes: u64,
     /// Size of the partition data in the folio file.
     pub size_bytes: u64,
+    /// The number of rows in the parquet file.
+    pub num_rows: usize,
     /// The batches that were committed.
     pub batches: Vec<CommittedBatch>,
 }

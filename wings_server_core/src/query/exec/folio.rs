@@ -1,10 +1,17 @@
-use std::{any::Any, fmt, sync::Arc, time::SystemTime};
+use std::{
+    any::Any,
+    collections::VecDeque,
+    fmt,
+    pin::Pin,
+    sync::Arc,
+    task::{self, Poll},
+    time::SystemTime,
+};
 
-use arrow::array::TimestampMicrosecondBuilder;
 use datafusion::{
     catalog::{Session, memory::DataSourceExec},
     common::arrow::{
-        array::{RecordBatch, UInt64Builder},
+        array::{ArrayBuilder, RecordBatch, TimestampMicrosecondBuilder, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
     datasource::physical_plan::{FileScanConfigBuilder, ParquetSource},
@@ -18,9 +25,10 @@ use datafusion::{
     },
     scalar::ScalarValue,
 };
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
+use tracing::trace;
 use wings_control_plane_core::log_metadata::{CommittedBatch, FolioLocation};
-use wings_resources::{OFFSET_COLUMN_NAME, PartitionValue, TIMESTAMP_COLUMN_NAME};
+use wings_resources::PartitionValue;
 use wings_schema::Field;
 
 use crate::folio_reader::FolioParquetFileReaderFactory;
@@ -29,21 +37,28 @@ pub struct FolioExec {
     partition_value_column: Option<(FieldRef, PartitionValue)>,
     location: FolioLocation,
     inner: Arc<dyn ExecutionPlan>,
-    schema: SchemaRef,
+    output_schema: SchemaRef,
     properties: PlanProperties,
+}
+
+struct FolioRecordBatchStream {
+    inner: SendableRecordBatchStream,
+    partition_value_column: Option<(FieldRef, PartitionValue)>,
+    batches: VecDeque<CommittedBatch>,
+    output_schema: SchemaRef,
 }
 
 impl FolioExec {
     pub fn try_new_exec(
         state: &dyn Session,
-        schema: SchemaRef,
+        output_schema: SchemaRef,
         file_schema: SchemaRef,
         partition_value: Option<PartitionValue>,
         partition_column: Option<Field>,
         location: FolioLocation,
         object_store_url: ObjectStoreUrl,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let properties = Self::compute_properties(&schema);
+        let properties = Self::compute_properties(&output_schema);
 
         let partition_value_column = match (partition_column, partition_value) {
             (None, None) => None,
@@ -75,7 +90,7 @@ impl FolioExec {
             partition_value_column,
             location,
             inner,
-            schema,
+            output_schema,
             properties,
         };
 
@@ -117,7 +132,7 @@ impl ExecutionPlan for FolioExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+        self.output_schema.clone()
     }
 
     fn execute(
@@ -125,71 +140,111 @@ impl ExecutionPlan for FolioExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
-        let stream = self.inner.execute(partition, context)?;
-        let stream_with_partition_and_offset = RecordBatchStreamAdapter::new(
-            self.schema.clone(),
-            stream.map({
-                let partition_value_column = self.partition_value_column.clone();
-                let location = self.location.clone();
-                let output_schema = self.schema.clone();
-                move |batch| {
-                    let batch = batch?;
-                    let mut columns = Vec::with_capacity(batch.num_columns() + 2);
-                    let mut partition_col_offset = 0;
+        let inner = self.inner.execute(partition, context)?;
+        let stream = FolioRecordBatchStream {
+            inner,
+            partition_value_column: self.partition_value_column.clone(),
+            batches: self.location.batches.clone().into(),
+            output_schema: self.output_schema.clone(),
+        };
 
-                    for (col_index, output_col) in output_schema.fields().iter().enumerate() {
-                        if output_col.name() == OFFSET_COLUMN_NAME
-                            || output_col.name() == TIMESTAMP_COLUMN_NAME
-                        {
-                            continue;
-                        }
+        let stream_with_partition_and_offset =
+            RecordBatchStreamAdapter::new(self.output_schema.clone(), stream);
+        Ok(Box::pin(stream_with_partition_and_offset))
+    }
+}
 
-                        if let Some((column, value)) = partition_value_column.clone() {
-                            if column.name() == output_col.name() {
-                                let scalar_value: ScalarValue = value.into();
-                                let array = scalar_value.to_array_of_size(batch.num_rows())?;
-                                columns.push(array);
-                                partition_col_offset = 1;
-                            } else {
-                                columns
-                                    .push(batch.column(col_index - partition_col_offset).clone());
-                            }
-                        } else {
-                            columns.push(batch.column(col_index - partition_col_offset).clone());
-                        }
+impl FolioRecordBatchStream {
+    fn gen_next_batch(&mut self, data: RecordBatch) -> Result<RecordBatch, DataFusionError> {
+        let (_, mut columns, num_rows) = data.into_parts();
+
+        if let Some((_field, value)) = self.partition_value_column.as_ref() {
+            let scalar_value: ScalarValue = value.clone().into();
+            let array = scalar_value.to_array_of_size(num_rows)?;
+            columns.push(array);
+        }
+
+        let mut offset_arr = UInt64Builder::new();
+        let mut timestamp_arr = TimestampMicrosecondBuilder::new();
+
+        let mut rows_to_fill = num_rows as u32;
+        while rows_to_fill > 0 {
+            let Some(current_batch) = self.batches.front_mut() else {
+                return Err(DataFusionError::Internal(
+                    "Metadata batch rows do not match file rows".to_string(),
+                ));
+            };
+
+            match current_batch {
+                CommittedBatch::Rejected(info) => {
+                    if info.num_messages > rows_to_fill {
+                        offset_arr.append_nulls(rows_to_fill as _);
+                        timestamp_arr.append_nulls(rows_to_fill as _);
+
+                        info.num_messages -= rows_to_fill;
+                        rows_to_fill = 0;
+                    } else {
+                        offset_arr.append_nulls(info.num_messages as _);
+                        timestamp_arr.append_nulls(info.num_messages as _);
+
+                        rows_to_fill -= info.num_messages;
+                        self.batches.pop_front();
                     }
-
-                    let mut offset_arr = UInt64Builder::new();
-                    let mut timestamp_arr = TimestampMicrosecondBuilder::new();
-                    for batch in location.batches.iter() {
-                        match batch {
-                            CommittedBatch::Rejected(info) => {
-                                offset_arr.append_nulls(info.num_messages as _);
-                                timestamp_arr.append_nulls(info.num_messages as _);
-                            }
-                            CommittedBatch::Accepted(info) => {
-                                let ts_micros = info
-                                    .timestamp
-                                    .duration_since(SystemTime::UNIX_EPOCH)
-                                    .expect("timestamp")
-                                    .as_micros();
-                                offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
-                                timestamp_arr
-                                    .append_value_n(ts_micros as _, info.num_messages() as _);
-                            }
-                        }
-                    }
-
-                    columns.push(Arc::new(offset_arr.finish()));
-                    columns.push(Arc::new(timestamp_arr.finish()));
-
-                    let output = RecordBatch::try_new(output_schema.clone(), columns)?;
-                    Ok(output)
                 }
-            }),
+                CommittedBatch::Accepted(info) => {
+                    let num_messages = info.num_messages();
+                    let ts_micros = info
+                        .timestamp
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("timestamp")
+                        .as_micros();
+
+                    if num_messages > rows_to_fill {
+                        let end_offset = info.start_offset + rows_to_fill as u64 - 1;
+
+                        offset_arr.extend((info.start_offset..=end_offset).map(Some));
+                        timestamp_arr.append_value_n(ts_micros as _, rows_to_fill as _);
+
+                        info.start_offset = end_offset + 1;
+                        rows_to_fill = 0;
+                    } else {
+                        offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
+                        timestamp_arr.append_value_n(ts_micros as _, num_messages as _);
+
+                        rows_to_fill -= num_messages;
+                        self.batches.pop_front();
+                    }
+                }
+            }
+        }
+
+        trace!(
+            data_num_rows = num_rows,
+            offset_num_rows = offset_arr.len(),
+            timestamp_num_rows = timestamp_arr.len(),
+            "FolioExec::execute add batch"
         );
 
-        Ok(Box::pin(stream_with_partition_and_offset))
+        columns.push(Arc::new(offset_arr.finish()));
+        columns.push(Arc::new(timestamp_arr.finish()));
+
+        let output = RecordBatch::try_new(self.output_schema.clone(), columns)?;
+        Ok(output)
+    }
+}
+
+impl Stream for FolioRecordBatchStream {
+    type Item = Result<RecordBatch, DataFusionError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(batch))) => Poll::Ready(Some(self.gen_next_batch(batch))),
+            other => other,
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
     }
 }
 

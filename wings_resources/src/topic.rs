@@ -71,6 +71,17 @@ pub struct CompactionConfiguration {
 
 pub type TopicRef = Arc<Topic>;
 
+/// Whether to include the partition field (if any) in the schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PartitionPosition {
+    /// Don't include it.
+    Skip,
+    /// Include it in the original position.
+    Original,
+    /// Include it after all topic's columns, but before the metadata columns.
+    Last,
+}
+
 impl Topic {
     /// Create a new topic with the given name and options.
     pub fn new(name: TopicName, options: TopicOptions) -> Self {
@@ -136,17 +147,35 @@ impl Topic {
     /// the same id as the metadata columns.
     pub fn schema_with_metadata(
         &self,
-        include_partition_field: bool,
+        partition: PartitionPosition,
     ) -> Result<Schema, SchemaError> {
-        let mut fields = if let Some(partition_key) = self.partition_key
-            && !include_partition_field
-        {
-            self.schema()
-                .fields_iter()
-                .filter(|field| field.id != partition_key)
-                .cloned()
-                .map(Arc::new)
-                .collect::<Vec<_>>()
+        let mut fields = if let Some(partition_key) = self.partition_key {
+            match partition {
+                PartitionPosition::Skip => self
+                    .schema()
+                    .fields_iter()
+                    .filter(|field| field.id != partition_key)
+                    .cloned()
+                    .map(Arc::new)
+                    .collect::<Vec<_>>(),
+                PartitionPosition::Original => self.schema.fields.to_vec(),
+                PartitionPosition::Last => {
+                    let mut fields = self
+                        .schema()
+                        .fields_iter()
+                        .filter(|field| field.id != partition_key)
+                        .cloned()
+                        .map(Arc::new)
+                        .collect::<Vec<_>>();
+                    // PANIC: if we made it this far we must have a partition field.
+                    let partition_field = self
+                        .partition_field()
+                        .expect("must have partition field")
+                        .clone();
+                    fields.push(partition_field.into());
+                    fields
+                }
+            }
         } else {
             self.schema.fields.to_vec()
         };
@@ -168,9 +197,9 @@ impl Topic {
 
     pub fn arrow_schema_with_metadata(
         &self,
-        include_partition_field: bool,
+        partition: PartitionPosition,
     ) -> Result<ArrowSchemaRef, SchemaError> {
-        let schema = self.schema_with_metadata(include_partition_field)?;
+        let schema = self.schema_with_metadata(partition)?;
         Ok(schema.arrow_schema().into())
     }
 }

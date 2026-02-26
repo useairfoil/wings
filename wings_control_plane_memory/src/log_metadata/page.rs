@@ -15,6 +15,8 @@ pub struct PageInfo {
     pub size_bytes: u64,
     /// The end offset of the messages in the page.
     pub end_offset: LogOffset,
+    /// The number of rows in the page.
+    pub num_rows: usize,
     /// The batches in the page.
     pub batches: Vec<CommittedBatch>,
 }

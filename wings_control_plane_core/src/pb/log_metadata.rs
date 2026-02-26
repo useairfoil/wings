@@ -412,6 +412,7 @@ impl TryFrom<pb::FolioLocation> for FolioLocation {
             file_ref: location.file_ref,
             offset_bytes: location.offset_bytes,
             size_bytes: location.size_bytes,
+            num_rows: location.num_rows as _,
             batches,
         })
     }
@@ -423,6 +424,7 @@ impl From<FolioLocation> for pb::FolioLocation {
             file_ref: location.file_ref,
             offset_bytes: location.offset_bytes,
             size_bytes: location.size_bytes,
+            num_rows: location.num_rows as _,
             batches: location.batches.into_iter().map(Into::into).collect(),
         }
     }

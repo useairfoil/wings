@@ -194,6 +194,7 @@ impl PartitionLogState {
                 file_ref: file_ref.clone(),
                 offset_bytes: page.offset_bytes,
                 size_bytes: page.batch_size_bytes,
+                num_rows: page.num_messages as _,
                 end_offset,
                 batches: batches.clone(),
             };
@@ -273,6 +274,7 @@ impl PartitionLogState {
                 file_ref: page_info.file_ref.clone(),
                 offset_bytes: page_info.offset_bytes,
                 size_bytes: page_info.size_bytes,
+                num_rows: page_info.num_rows,
                 batches: page_info.batches.clone(),
             }));
         }

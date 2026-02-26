@@ -15,7 +15,7 @@ use tracing::debug;
 use wings_control_plane_core::log_metadata::{
     LogLocation, LogMetadata, stream::PaginatedLogLocationStream,
 };
-use wings_resources::{Namespace, PartitionValue, Topic};
+use wings_resources::{Namespace, PartitionPosition, PartitionValue, Topic};
 
 use crate::{
     options::SessionConfigExt,
@@ -61,7 +61,7 @@ impl TableProvider for TopicTableProvider {
 
     fn schema(&self) -> SchemaRef {
         self.topic
-            .arrow_schema_with_metadata(true)
+            .arrow_schema_with_metadata(PartitionPosition::Last)
             .expect("schema should be valid")
     }
 
@@ -79,7 +79,13 @@ impl TableProvider for TopicTableProvider {
         filters: &[Expr],
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        debug!(?projection, ?filters, ?limit, "TopicTableProvider::scan");
+        debug!(
+            topic = %self.topic.name,
+            ?projection,
+            ?filters,
+            ?limit,
+            "TopicTableProvider::scan"
+        );
 
         let offset_range = validate_offset_filters(filters)?;
 
@@ -121,25 +127,28 @@ impl TableProvider for TopicTableProvider {
 
         let object_store_url = self.namespace.object_store.wings_object_store_url()?;
 
-        let schema = self.schema();
+        let output_schema = self.schema();
         let file_schema = self.topic.arrow_schema_without_partition_field();
         let locations_exec = locations
             .into_iter()
             .map(|(_, partition_value, location)| match location {
-                LogLocation::Folio(folio) => FolioExec::try_new_exec(
-                    state,
-                    schema.clone(),
-                    file_schema.clone(),
-                    partition_value,
-                    partition_column.clone(),
-                    folio,
-                    object_store_url.clone(),
-                ),
+                LogLocation::Folio(folio) => {
+                    debug!(topic = %self.topic.name, partition = ?partition_value, ?folio, "TopicTableProvider::scan add folio");
+                    FolioExec::try_new_exec(
+                        state,
+                        output_schema.clone(),
+                        file_schema.clone(),
+                        partition_value,
+                        partition_column.clone(),
+                        folio,
+                        object_store_url.clone(),
+                    )
+                }
             })
             .collect::<Result<Vec<_>, DataFusionError>>()?;
 
         match locations_exec.as_slice() {
-            [] => Ok(Arc::new(EmptyExec::new(schema))),
+            [] => Ok(Arc::new(EmptyExec::new(output_schema))),
             [exec] => Ok(exec.clone()),
             _ => Ok(UnionExec::try_new(locations_exec)?),
         }
