@@ -50,7 +50,7 @@ impl TopicLogicalPlanExt for Topic {
                 });
             };
 
-            let partition_expr = col(field.name()).eq(value.to_lit());
+            let partition_expr = col(field.name()).eq(value.into_lit());
             and(offset_expr, partition_expr)
         } else {
             offset_expr

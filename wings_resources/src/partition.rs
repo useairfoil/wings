@@ -199,8 +199,9 @@ impl PartitionValue {
         }
     }
 
-    pub fn to_lit(&self) -> Expr {
-        todo!();
+    pub fn into_lit(self) -> Expr {
+        let scalar: ScalarValue = self.into();
+        Expr::Literal(scalar, None)
     }
 }
 

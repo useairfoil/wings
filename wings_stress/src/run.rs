@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use wings_client::{WingsClient, WriteRequest};
 use wings_control_plane_core::log_metadata::CommittedBatch;
-use wings_resources::Topic;
+use wings_resources::{PartitionValue, Topic};
 
 use crate::{
     error::{FetchSnafu, PushSnafu, Result},
@@ -27,9 +27,11 @@ enum Operation {
 
 #[derive(Debug, Clone)]
 pub struct RunContext {
-    pub event_id: Arc<AtomicU64>,
+    event_id: Arc<AtomicU64>,
     pub batch_size: usize,
     pub iterations: usize,
+    num_partitions: Option<u64>,
+    partition: Arc<AtomicU64>,
 }
 
 pub async fn run_test(
@@ -57,11 +59,13 @@ pub async fn run_test(
             break;
         }
 
-        let id = ctx.event_id.fetch_add(1, Ordering::Relaxed);
+        let id = ctx.next_event_id();
 
         match random_operation() {
             Operation::Push => {
                 let (batch, last_value) = random_batch(arrow_schema.clone(), ctx.batch_size)?;
+
+                let partition_value = ctx.next_partition_value();
 
                 tx.send(Event {
                     id,
@@ -76,7 +80,7 @@ pub async fn run_test(
                 let response = push_client
                     .push(WriteRequest {
                         data: batch,
-                        partition_value: None,
+                        partition_value,
                         timestamp: None,
                     })
                     .await
@@ -104,6 +108,8 @@ pub async fn run_test(
                 }
             }
             Operation::Fetch => {
+                let partition_value = ctx.next_partition_value();
+
                 tx.send(Event {
                     id,
                     client_id,
@@ -116,6 +122,7 @@ pub async fn run_test(
                     .with_max_batch_size(usize::MAX)
                     .with_min_batch_size(0)
                     .with_offset(end_offset)
+                    .with_partition(partition_value)
                     .fetch_next()
                     .await
                     .context(FetchSnafu {})?;
@@ -151,6 +158,40 @@ pub async fn run_test(
     }
 
     Ok(())
+}
+
+impl RunContext {
+    pub fn new(batch_size: usize, iterations: usize, num_partitions: Option<usize>) -> Self {
+        Self {
+            event_id: Arc::new(AtomicU64::new(0)),
+            batch_size,
+            iterations,
+            num_partitions: num_partitions.map(|n| n as u64),
+            partition: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub fn next_event_id(&self) -> u64 {
+        self.event_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn next_partition_value(&self) -> Option<PartitionValue> {
+        let num_parts = self.num_partitions?;
+        let mut current = self.partition.load(Ordering::Relaxed);
+
+        loop {
+            let new_val = (current + 1) % num_parts;
+            match self.partition.compare_exchange(
+                current,
+                new_val,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(PartitionValue::UInt64(new_val)),
+                Err(old) => current = old,
+            }
+        }
+    }
 }
 
 fn random_batch(schema: ArrowSchemaRef, batch_size: usize) -> Result<(RecordBatch, u64)> {
