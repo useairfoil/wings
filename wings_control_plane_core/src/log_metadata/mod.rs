@@ -75,17 +75,17 @@ pub enum CommittedBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedBatchInfo {
-    /// The number of messages in the batch.
-    pub num_messages: u32,
+    /// The number of rows in the batch.
+    pub num_rows: u32,
     /// The reason for rejection.
     pub reason: String,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct AcceptedBatchInfo {
-    /// The offset of the first message in the batch.
+    /// The offset of the first row in the batch.
     pub start_offset: u64,
-    /// The offset of the last message in the batch.
+    /// The offset of the last row in the batch.
     pub end_offset: u64,
     /// The timestamp of the batch.
     pub timestamp: SystemTime,
@@ -100,8 +100,8 @@ pub struct CommitPageRequest<B = CommitBatchRequest> {
     pub partition_value: Option<PartitionValue>,
     /// The individual batches to commit.
     pub batches: Vec<B>,
-    /// The number of messages in the batch.
-    pub num_messages: u32,
+    /// The number of rows in the batch.
+    pub num_rows: u32,
     /// The start offset of the batch in the folio file.
     pub offset_bytes: u64,
     /// The batch size, in bytes.
@@ -124,8 +124,8 @@ pub struct CommitPageResponse<B = CommittedBatch> {
 pub struct CommitBatchRequest {
     /// The requested timestamp for the write request.
     pub timestamp: Option<SystemTime>,
-    /// The number of messages in the write request.
-    pub num_messages: u32,
+    /// The number of rows in the write request.
+    pub num_rows: u32,
 }
 
 /// Request to retrieve the location of a log.
@@ -382,16 +382,16 @@ impl LogOffset {
 }
 
 impl CommitBatchRequest {
-    pub fn new(num_messages: u32) -> Self {
+    pub fn new(num_rows: u32) -> Self {
         Self {
-            num_messages,
+            num_rows,
             timestamp: None,
         }
     }
 
-    pub fn new_with_timestamp(num_messages: u32, timestamp: SystemTime) -> Self {
+    pub fn new_with_timestamp(num_rows: u32, timestamp: SystemTime) -> Self {
         Self {
-            num_messages,
+            num_rows,
             timestamp: Some(timestamp),
         }
     }
@@ -447,7 +447,7 @@ impl FolioLocation {
 }
 
 impl AcceptedBatchInfo {
-    pub fn num_messages(&self) -> u32 {
+    pub fn num_rows(&self) -> u32 {
         (self.end_offset - self.start_offset + 1) as u32
     }
 }

@@ -162,7 +162,7 @@ impl PartitionLogState {
             match validate_timestamp_in_request(&current_offset, batch) {
                 ValidateRequestResult::Reject { reason } => {
                     let rejected = RejectedBatchInfo {
-                        num_messages: batch.num_messages,
+                        num_rows: batch.num_rows,
                         reason: reason.to_string(),
                     };
                     batches.push(CommittedBatch::Rejected(rejected));
@@ -194,7 +194,7 @@ impl PartitionLogState {
                 file_ref: file_ref.clone(),
                 offset_bytes: page.offset_bytes,
                 size_bytes: page.batch_size_bytes,
-                num_rows: page.num_messages as _,
+                num_rows: page.num_rows as _,
                 end_offset,
                 batches: batches.clone(),
             };

@@ -94,7 +94,7 @@ pub async fn process_ingestion_stream(
     loop {
         tokio::select! {
             ingestion_result = ingestion_fut.next(), if !ingestion_fut.is_empty() => {
-                let Some((request_id, num_messages, response)) = ingestion_result else {
+                let Some((request_id, num_rows, response)) = ingestion_result else {
                     continue;
                 };
 
@@ -103,7 +103,7 @@ pub async fn process_ingestion_stream(
                     // TODO: this is a more general write error and not a rejected batch
                     Err(err) => {
                         debug!(err = ?err, "failed to commit batch");
-                        CommittedBatch::Rejected(RejectedBatchInfo { num_messages, reason: "INTERNAL_ERROR".to_string() })
+                        CommittedBatch::Rejected(RejectedBatchInfo { num_rows, reason: "INTERNAL_ERROR".to_string() })
                     },
                 };
 
@@ -133,12 +133,12 @@ pub async fn process_ingestion_stream(
                 };
 
                 let request_id = metadata.request_id;
-                let num_messages = batch.num_rows() as u32;
+                let num_rows = batch.num_rows() as u32;
                 let namespace = namespace.clone();
                 let topic = topic.clone();
                 let ingestor = ingestor.clone();
 
-                debug!(topic = %topic.name, size = num_messages, "Writing batch to topic");
+                debug!(topic = %topic.name, size = num_rows, "Writing batch to topic");
 
                 ingestion_fut.push(async move {
                     let response = ingestor
@@ -150,7 +150,7 @@ pub async fn process_ingestion_stream(
                             records: batch,
                         })
                         .await;
-                    (request_id, num_messages, response)
+                    (request_id, num_rows, response)
                 });
             }
         }

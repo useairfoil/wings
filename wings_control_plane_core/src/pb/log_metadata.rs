@@ -3,12 +3,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bytesize::ByteSize;
-use snafu::{ResultExt, ensure};
+use snafu::{ensure, ResultExt};
 use wings_resources::{PartitionValue, TopicName};
 use wings_schema::Datum;
 
 use crate::{
     log_metadata::{
+        error::{
+            InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
+            InvalidTimestampSnafu,
+        },
         AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
         CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
         CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask, FileInfo,
@@ -16,10 +20,6 @@ use crate::{
         ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset,
         PartitionMetadata, RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task,
         TaskCompletionResult, TaskMetadata, TaskResult, TaskStatus,
-        error::{
-            InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
-            InvalidTimestampSnafu,
-        },
     },
     pb,
 };
@@ -83,7 +83,7 @@ impl TryFrom<pb::CommitPageRequest> for CommitPageRequest {
             topic_name,
             partition_value,
             batches,
-            num_messages: request.num_messages,
+            num_rows: request.num_rows,
             offset_bytes: request.offset_bytes,
             batch_size_bytes: request.batch_size_bytes,
         })
@@ -97,7 +97,7 @@ impl From<&CommitPageRequest> for pb::CommitPageRequest {
         pb::CommitPageRequest {
             topic: request.topic_name.to_string(),
             partition: request.partition_value.as_ref().map(Into::into),
-            num_messages: request.num_messages,
+            num_rows: request.num_rows,
             offset_bytes: request.offset_bytes,
             batch_size_bytes: request.batch_size_bytes,
             batches,
@@ -112,7 +112,7 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
         let Some(timestamp) = meta.timestamp else {
             return Ok(CommitBatchRequest {
                 timestamp: None,
-                num_messages: meta.num_messages,
+                num_rows: meta.num_rows,
             });
         };
 
@@ -126,7 +126,7 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
 
         Ok(CommitBatchRequest {
             timestamp: Some(timestamp),
-            num_messages: meta.num_messages,
+            num_rows: meta.num_rows,
         })
     }
 }
@@ -137,7 +137,7 @@ impl From<&CommitBatchRequest> for pb::CommitBatchRequest {
 
         pb::CommitBatchRequest {
             timestamp,
-            num_messages: meta.num_messages,
+            num_rows: meta.num_rows,
         }
     }
 }
@@ -252,7 +252,7 @@ impl From<AcceptedBatchInfo> for pb::committed_batch::Accepted {
 impl From<pb::committed_batch::Rejected> for RejectedBatchInfo {
     fn from(info: pb::committed_batch::Rejected) -> Self {
         RejectedBatchInfo {
-            num_messages: info.num_messages,
+            num_rows: info.num_rows,
             reason: info.reason,
         }
     }
@@ -261,7 +261,7 @@ impl From<pb::committed_batch::Rejected> for RejectedBatchInfo {
 impl From<RejectedBatchInfo> for pb::committed_batch::Rejected {
     fn from(info: RejectedBatchInfo) -> Self {
         pb::committed_batch::Rejected {
-            num_messages: info.num_messages,
+            num_rows: info.num_rows,
             reason: info.reason,
         }
     }

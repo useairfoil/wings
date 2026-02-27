@@ -1,8 +1,8 @@
 use std::{cmp::Ordering, collections::HashSet};
 
 use wings_control_plane_core::log_metadata::{
-    CommitPageRequest, CommittedBatch, LogMetadataError, LogOffset, Result,
-    timestamp::compare_batch_request_timestamps,
+    timestamp::compare_batch_request_timestamps, CommitPageRequest, CommittedBatch,
+    LogMetadataError, LogOffset, Result,
 };
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub struct PageInfo {
     pub offset_bytes: u64,
     /// The size of the Parquet file.
     pub size_bytes: u64,
-    /// The end offset of the messages in the page.
+    /// The end offset of the rows in the page.
     pub end_offset: LogOffset,
     /// The number of rows in the page.
     pub num_rows: usize,

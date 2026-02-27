@@ -118,8 +118,8 @@ impl FetchClient {
             .await
             .context(FlightSnafu {})?;
 
-        let num_messages: u64 = batches.iter().map(|batch| batch.num_rows() as u64).sum();
-        self.current_offset += num_messages;
+        let num_rows: u64 = batches.iter().map(|batch| batch.num_rows() as u64).sum();
+        self.current_offset += num_rows;
 
         Ok(batches)
     }

@@ -28,7 +28,7 @@ message CommitFolioRequest {
 message CommitPageRequest {
   string topic = 1;
   optional PartitionValue partition = 2;
-  uint32 num_messages = 3;
+  uint32 num_rows = 3;
   uint64 offset_bytes = 4;
   uint64 batch_size_bytes = 5;
   repeated CommitBatchRequest batches = 6;
@@ -37,8 +37,8 @@ message CommitPageRequest {
 message CommitBatchRequest {
   /// The requested timestamp (if any) of the batch.
   optional google.protobuf.Timestamp timestamp = 1;
-  /// The number of messages in the batch.
-  uint32 num_messages = 2;
+  /// The number of rows in the batch.
+  uint32 num_rows = 2;
 }
 
 message CommitFolioResponse {
@@ -107,17 +107,17 @@ message PartitionMetadata {
 
 message CommittedBatch {
   message Accepted {
-    /// The offset assigned to the first message in the batch.
+    /// The offset assigned to the first row in the batch.
     uint64 start_offset = 1;
-    /// The offset assigned to the last message in the batch.
+    /// The offset assigned to the last row in the batch.
     uint64 end_offset = 2;
     /// The timestamp assigned to the batch.
     google.protobuf.Timestamp timestamp = 3;
   }
 
   message Rejected {
-    // How many messages were rejected.
-    uint32 num_messages = 1;
+    // How many rows were rejected.
+    uint32 num_rows = 1;
     // The reason for rejection.
     string reason = 2;
   }

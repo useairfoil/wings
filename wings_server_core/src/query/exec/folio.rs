@@ -9,19 +9,19 @@ use std::{
 };
 
 use datafusion::{
-    catalog::{Session, memory::DataSourceExec},
+    catalog::{memory::DataSourceExec, Session},
     common::arrow::{
         array::{ArrayBuilder, RecordBatch, TimestampMicrosecondBuilder, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
     datasource::physical_plan::{FileScanConfigBuilder, ParquetSource},
     error::DataFusionError,
-    execution::{SendableRecordBatchStream, TaskContext, object_store::ObjectStoreUrl},
+    execution::{object_store::ObjectStoreUrl, SendableRecordBatchStream, TaskContext},
     physical_expr::EquivalenceProperties,
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
         execution_plan::{Boundedness, EmissionType},
         stream::RecordBatchStreamAdapter,
+        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
     },
     scalar::ScalarValue,
 };
@@ -177,29 +177,29 @@ impl FolioRecordBatchStream {
 
             match current_batch {
                 CommittedBatch::Rejected(info) => {
-                    if info.num_messages > rows_to_fill {
+                    if info.num_rows > rows_to_fill {
                         offset_arr.append_nulls(rows_to_fill as _);
                         timestamp_arr.append_nulls(rows_to_fill as _);
 
-                        info.num_messages -= rows_to_fill;
+                        info.num_rows -= rows_to_fill;
                         rows_to_fill = 0;
                     } else {
-                        offset_arr.append_nulls(info.num_messages as _);
-                        timestamp_arr.append_nulls(info.num_messages as _);
+                        offset_arr.append_nulls(info.num_rows as _);
+                        timestamp_arr.append_nulls(info.num_rows as _);
 
-                        rows_to_fill -= info.num_messages;
+                        rows_to_fill -= info.num_rows;
                         self.batches.pop_front();
                     }
                 }
                 CommittedBatch::Accepted(info) => {
-                    let num_messages = info.num_messages();
+                    let num_rows = info.num_rows();
                     let ts_micros = info
                         .timestamp
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .expect("timestamp")
                         .as_micros();
 
-                    if num_messages > rows_to_fill {
+                    if num_rows > rows_to_fill {
                         let end_offset = info.start_offset + rows_to_fill as u64 - 1;
 
                         offset_arr.extend((info.start_offset..=end_offset).map(Some));
@@ -209,9 +209,9 @@ impl FolioRecordBatchStream {
                         rows_to_fill = 0;
                     } else {
                         offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
-                        timestamp_arr.append_value_n(ts_micros as _, num_messages as _);
+                        timestamp_arr.append_value_n(ts_micros as _, num_rows as _);
 
-                        rows_to_fill -= num_messages;
+                        rows_to_fill -= num_rows;
                         self.batches.pop_front();
                     }
                 }

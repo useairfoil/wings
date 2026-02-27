@@ -40,22 +40,22 @@ pub fn validate_timestamp_in_request(
     ts: &LogOffset,
     request: &CommitBatchRequest,
 ) -> ValidateRequestResult {
-    if request.num_messages == 0 {
+    if request.num_rows == 0 {
         return ValidateRequestResult::Reject {
             reason: "EMPTY_BATCH",
         };
     };
 
-    let num_messages = request.num_messages as u64;
+    let num_rows = request.num_rows as u64;
     let Some(timestamp) = request.timestamp else {
         let next_offset = LogOffset {
-            offset: ts.offset + num_messages,
+            offset: ts.offset + num_rows,
             timestamp: ts.timestamp,
         };
 
         return ValidateRequestResult::Accept {
             start_offset: ts.offset,
-            end_offset: ts.offset + num_messages - 1,
+            end_offset: ts.offset + num_rows - 1,
             timestamp: None,
             next_offset,
         };
@@ -68,13 +68,13 @@ pub fn validate_timestamp_in_request(
     };
 
     let next_offset = LogOffset {
-        offset: ts.offset + num_messages,
+        offset: ts.offset + num_rows,
         timestamp,
     };
 
     ValidateRequestResult::Accept {
         start_offset: ts.offset,
-        end_offset: ts.offset + num_messages - 1,
+        end_offset: ts.offset + num_rows - 1,
         timestamp: timestamp.into(),
         next_offset,
     }

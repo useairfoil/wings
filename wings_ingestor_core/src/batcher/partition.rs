@@ -8,10 +8,10 @@ use parquet::{
 use wings_control_plane_core::log_metadata::CommitBatchRequest;
 use wings_resources::{PartitionValue, TopicName};
 
-use super::{FolioPage, metrics::IngestionMetrics};
+use super::{metrics::IngestionMetrics, FolioPage};
 use crate::{
-    WriteBatchError, WriteBatchRequest,
     write::{ReplyWithWriteBatchError, WithReplyChannel},
+    WriteBatchError, WriteBatchRequest,
 };
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
@@ -99,20 +99,18 @@ impl PartitionFolioWriter {
             return ReplyWithWriteBatchError::new_single(error, request.reply).into();
         };
 
-        let num_messages = batch.records.num_rows() as u32;
+        let num_rows = batch.records.num_rows() as u32;
 
         self.batches.push(WithReplyChannel {
             reply: request.reply,
             data: CommitBatchRequest {
-                num_messages,
+                num_rows,
                 timestamp: batch.timestamp,
             },
         });
 
         let bytes_written = self.estimate_bytes() - initial_size;
-        metrics
-            .written_rows
-            .add(num_messages as _, &self.metrics_kv);
+        metrics.written_rows.add(num_rows as _, &self.metrics_kv);
 
         Ok(bytes_written)
     }

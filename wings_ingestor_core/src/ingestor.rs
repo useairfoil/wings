@@ -155,7 +155,7 @@ async fn upload_and_commit_folio(
             let request = CommitPageRequest {
                 topic_name: page.topic_name,
                 partition_value: page.partition_value,
-                num_messages: page.num_messages,
+                num_rows: page.num_rows,
                 offset_bytes: page.offset_bytes,
                 batch_size_bytes: page.batch_size_bytes,
                 batches,
