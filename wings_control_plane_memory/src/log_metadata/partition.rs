@@ -10,8 +10,8 @@ use tokio::sync::{Notify, futures::OwnedNotified};
 use tracing::{debug, trace};
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, CompactionOperation,
-    CompactionResult, CompactionTask, FileInfo, FolioLocation, GetLogLocationOptions, LogLocation,
-    LogOffset, RejectedBatchInfo, Result, Task,
+    CompactionResult, CompactionTask, DataLakeLocation, FileInfo, FolioLocation,
+    GetLogLocationOptions, LogLocation, LogOffset, RejectedBatchInfo, Result, Task,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
 };
 use wings_resources::{CompactionConfiguration, PartitionValue, TopicName};
@@ -129,14 +129,14 @@ impl PartitionLogState {
         let new_files: Vec<FileInfo> = result.new_files.clone();
 
         // Update stored offset to the highest end_offset from new files
-        if let Some(max_end_offset) = result.new_files.iter().map(|f| f.end_offset).max() {
+        if let Some(max_end_offset) = result.new_files.iter().map(|f| f.end_offset.offset).max() {
             debug!(partition = ?self.key, end_offset = max_end_offset, "Updating partition log state");
             self.stored = Some(max_end_offset);
 
             // Add new files to files map (keyed by start offset)
             for file_info in result.new_files.into_iter() {
                 debug!(partition = ?self.key, ?file_info, "Adding partition log state parquet file");
-                self.files.insert(file_info.start_offset, file_info);
+                self.files.insert(file_info.start_offset.offset, file_info);
             }
         }
 
@@ -240,8 +240,45 @@ impl PartitionLogState {
         locations: &mut Vec<LogLocation>,
     ) -> Result<GetLogLocationResult> {
         let target_offset = offset + options.min_rows as u64;
+        // Start by first taking files.
+        let file_start = self.files.range(..=offset).next_back();
+
+        let mut current_offset = None;
+
+        if let Some((&start_offset, _file_info)) = file_start {
+            for (start_offset, file_info) in self.files.range(start_offset..) {
+                trace!(
+                    start_offset,
+                    end_offset = file_info.end_offset.offset,
+                    target_offset,
+                    "processing datalake file"
+                );
+
+                if file_info.end_offset.offset < offset {
+                    continue;
+                }
+
+                if *start_offset > target_offset {
+                    break;
+                }
+
+                current_offset = Some(file_info.end_offset.offset);
+
+                locations.push(LogLocation::DataLake(DataLakeLocation {
+                    file_ref: file_info.file_ref.clone(),
+                    size_bytes: file_info.metadata.file_size.as_u64(),
+                    num_rows: file_info.metadata.num_rows,
+                    start_offset: file_info.start_offset,
+                    end_offset: file_info.end_offset,
+                }));
+            }
+        };
+
         // Find the batch containing this offset
-        let batch_start = self.pages.range(..=offset).next_back();
+        let batch_start = self
+            .pages
+            .range(..=current_offset.map(|o| o + 1).unwrap_or(offset))
+            .next_back();
 
         debug!(offset, target_offset, "get log location by offset");
 
@@ -249,8 +286,6 @@ impl PartitionLogState {
             debug!("no page found for offset");
             return Ok(GetLogLocationResult::Done);
         };
-
-        let mut current_offset = None;
 
         for (start_offset, page_info) in self.pages.range(start_offset..) {
             trace!(

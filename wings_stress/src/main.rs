@@ -44,6 +44,9 @@ struct Cli {
     /// The topic's namespace.
     #[arg(long, default_value = "tenants/default/namespaces/default")]
     namespace: String,
+    /// If specified, use an existing topic.
+    #[arg(long)]
+    topic_id: Option<String>,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
@@ -78,7 +81,7 @@ async fn main() -> Result<()> {
     let cluster_meta = cli.remote.cluster_metadata_client().await?;
     let ingestion_client = cli.remote.ingestion_client().await?;
 
-    let topic_id = new_random_topic_id();
+    let topic_id = cli.topic_id.unwrap_or_else(new_random_topic_id);
 
     let topic_name = TopicName::new(topic_id, namespace)
         .context(InvalidResourceNameSnafu { resource: "topic" })?;

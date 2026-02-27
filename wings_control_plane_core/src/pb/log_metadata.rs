@@ -3,23 +3,23 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bytesize::ByteSize;
-use snafu::{ensure, ResultExt};
+use snafu::{ResultExt, ensure};
 use wings_resources::{PartitionValue, TopicName};
 use wings_schema::Datum;
 
 use crate::{
     log_metadata::{
+        AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
+        CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
+        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask,
+        DataLakeLocation, FileInfo, FileMetadata, FolioLocation, GetLogLocationOptions,
+        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
+        LogMetadataError, LogOffset, PartitionMetadata, RejectedBatchInfo, RequestTaskRequest,
+        RequestTaskResponse, Task, TaskCompletionResult, TaskMetadata, TaskResult, TaskStatus,
         error::{
             InvalidArgumentSnafu, InvalidDurationSnafu, InvalidResourceNameSnafu,
             InvalidTimestampSnafu,
         },
-        AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
-        CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
-        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask, FileInfo,
-        FileMetadata, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
-        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadataError, LogOffset,
-        PartitionMetadata, RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task,
-        TaskCompletionResult, TaskMetadata, TaskResult, TaskStatus,
     },
     pb,
 };
@@ -373,6 +373,10 @@ impl TryFrom<pb::GetLogLocationResponse> for Vec<LogLocation> {
                     let inner = folio.try_into()?;
                     Ok(LogLocation::Folio(inner))
                 }
+                Some(ProtoLocation::DataLakeLocation(lake)) => {
+                    let inner = lake.try_into()?;
+                    Ok(LogLocation::DataLake(inner))
+                }
             })
             .collect::<Result<Vec<_>, _>>()
     }
@@ -387,6 +391,7 @@ impl From<Vec<LogLocation>> for pb::GetLogLocationResponse {
             .map(|location| {
                 let inner = match location {
                     LogLocation::Folio(folio) => Location::FolioLocation(folio.into()),
+                    LogLocation::DataLake(lake) => Location::DataLakeLocation(lake.into()),
                 };
 
                 pb::LogLocation {
@@ -426,6 +431,45 @@ impl From<FolioLocation> for pb::FolioLocation {
             size_bytes: location.size_bytes,
             num_rows: location.num_rows as _,
             batches: location.batches.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<pb::DataLakeLocation> for DataLakeLocation {
+    type Error = LogMetadataError;
+
+    fn try_from(location: pb::DataLakeLocation) -> Result<Self, Self::Error> {
+        let start_offset = location
+            .start_offset
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing start_offset in DataLakeLocation proto".to_string(),
+            })?
+            .try_into()?;
+        let end_offset = location
+            .end_offset
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing start_offset in DataLakeLocation proto".to_string(),
+            })?
+            .try_into()?;
+
+        Ok(Self {
+            file_ref: location.file_ref,
+            size_bytes: location.size_bytes,
+            num_rows: location.num_rows as _,
+            start_offset,
+            end_offset,
+        })
+    }
+}
+
+impl From<DataLakeLocation> for pb::DataLakeLocation {
+    fn from(location: DataLakeLocation) -> Self {
+        pb::DataLakeLocation {
+            file_ref: location.file_ref,
+            size_bytes: location.size_bytes,
+            num_rows: location.num_rows as _,
+            start_offset: Some(location.start_offset.into()),
+            end_offset: Some(location.end_offset.into()),
         }
     }
 }
@@ -897,8 +941,8 @@ impl From<FileInfo> for pb::FileInfo {
         pb::FileInfo {
             file_ref: info.file_ref,
             partition_value: info.partition_value.as_ref().map(Into::into),
-            start_offset: info.start_offset,
-            end_offset: info.end_offset,
+            start_offset: Some(info.start_offset.into()),
+            end_offset: Some(info.end_offset.into()),
             metadata: Some(info.metadata.into()),
             modification_time: Some(info.modification_time.into()),
         }
@@ -953,6 +997,19 @@ impl TryFrom<pb::FileInfo> for FileInfo {
             .map(TryFrom::try_from)
             .transpose()?;
 
+        let start_offset = info
+            .start_offset
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing start_offset in FileInfo proto".to_string(),
+            })?
+            .try_into()?;
+        let end_offset = info
+            .end_offset
+            .ok_or_else(|| LogMetadataError::Internal {
+                message: "missing start_offset in FileInfo proto".to_string(),
+            })?
+            .try_into()?;
+
         let metadata = info
             .metadata
             .ok_or_else(|| LogMetadataError::Internal {
@@ -971,8 +1028,8 @@ impl TryFrom<pb::FileInfo> for FileInfo {
         Ok(FileInfo {
             file_ref: info.file_ref,
             partition_value,
-            start_offset: info.start_offset,
-            end_offset: info.end_offset,
+            start_offset,
+            end_offset,
             metadata,
             modification_time,
         })

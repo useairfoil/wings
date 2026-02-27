@@ -20,7 +20,7 @@ use wings_resources::{Namespace, PartitionPosition, PartitionValue, Topic};
 use crate::{
     options::SessionConfigExt,
     query::{
-        exec::FolioExec,
+        exec::{DataLakeExec, FolioExec},
         helpers::{find_partition_column_value, validate_offset_filters},
     },
 };
@@ -128,7 +128,12 @@ impl TableProvider for TopicTableProvider {
         let object_store_url = self.namespace.object_store.wings_object_store_url()?;
 
         let output_schema = self.schema();
-        let file_schema = self.topic.arrow_schema_without_partition_field();
+        let folio_schema = self.topic.arrow_schema_without_partition_field();
+        let datalake_schema = self
+            .topic
+            .arrow_schema_with_metadata(PartitionPosition::Skip)
+            .map_err(|err| DataFusionError::External(err.into()))?;
+
         let locations_exec = locations
             .into_iter()
             .map(|(_, partition_value, location)| match location {
@@ -137,10 +142,24 @@ impl TableProvider for TopicTableProvider {
                     FolioExec::try_new_exec(
                         state,
                         output_schema.clone(),
-                        file_schema.clone(),
+                        folio_schema.clone(),
                         partition_value,
                         partition_column.clone(),
                         folio,
+                        object_store_url.clone(),
+                    )
+                }
+                LogLocation::DataLake(file) => {
+                    debug!(topic = %self.topic.name, partition = ?partition_value, ?file, "TopicTableProvider::scan add datalake file");
+                    // Notice:
+                    // file and output schema are the same.
+                    // partition value is included in file.
+                    DataLakeExec::try_new_exec(
+                        state,
+                        output_schema.clone(),
+                        datalake_schema.clone(),
+                        partition_value,
+                        file,
                         object_store_url.clone(),
                     )
                 }

@@ -10,7 +10,7 @@ use parquet::file::{metadata::KeyValue, properties::WriterProperties};
 use snafu::ResultExt;
 use tracing::debug;
 use ulid::Ulid;
-use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
+use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata, LogOffset};
 use wings_object_store::paths::{format_parquet_data_path, format_partitioned_parquet_data_path};
 use wings_resources::{PartitionPosition, PartitionValue, TopicName, TopicRef};
 use wings_schema::Field;
@@ -156,11 +156,12 @@ impl ParquetBatchWriter {
 
         let end_offset = self.current_file_start_offset + num_rows - 1;
 
+        // TODO: include correct timestamp in offsets
         self.written.push(FileInfo {
             file_ref,
             partition_value: self.partition_value.clone(),
-            start_offset: self.current_file_start_offset,
-            end_offset,
+            start_offset: LogOffset::new(self.current_file_start_offset),
+            end_offset: LogOffset::new(end_offset),
             metadata,
             modification_time: SystemTime::now(),
         });

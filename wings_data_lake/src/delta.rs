@@ -146,7 +146,7 @@ impl DataLake for DeltaDataLake {
                     size: file.metadata.file_size.as_u64() as _,
                     modification_time,
                     data_change: true,
-                    base_row_id: Some(file.start_offset as _),
+                    base_row_id: Some(file.start_offset.offset as _),
                     stats: Some(stats),
                     ..Default::default()
                 };

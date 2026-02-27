@@ -2,7 +2,7 @@ use std::{any::Any, fmt, sync::Arc};
 
 use datafusion::{
     common::arrow::{
-        array::{ArrayRef, RecordBatch, StringBuilder, UInt64Builder},
+        array::{ArrayRef, RecordBatch, StringBuilder, UInt32Builder, UInt64Builder},
         datatypes::{DataType, Field, Schema, SchemaRef},
     },
     error::{DataFusionError, Result},
@@ -67,11 +67,15 @@ impl TopicOffsetLocationDiscoveryExec {
             // TODO: add start and end timestamp
             Field::new("start_offset", DataType::UInt64, false),
             Field::new("end_offset", DataType::UInt64, false),
+            Field::new("num_rows", DataType::UInt32, false),
             Field::new("location_type", DataType::Utf8, false),
             // Folio-specific columns
             Field::new("folio_file_ref", DataType::Utf8, true),
             Field::new("folio_offset_bytes", DataType::UInt64, true),
             Field::new("folio_size_bytes", DataType::UInt64, true),
+            // DataLake-specific columns
+            Field::new("datalake_file_ref", DataType::Utf8, true),
+            Field::new("datalake_size_bytes", DataType::UInt64, true),
         ];
 
         Arc::new(Schema::new(fields))
@@ -223,10 +227,13 @@ fn from_offset_location(
     let mut partition_value_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut start_offset_arr = UInt64Builder::with_capacity(offsets.len());
     let mut end_offset_arr = UInt64Builder::with_capacity(offsets.len());
+    let mut num_rows_arr = UInt32Builder::with_capacity(offsets.len());
     let mut location_type_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut folio_file_ref_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut folio_offset_bytes_arr = UInt64Builder::with_capacity(offsets.len());
     let mut folio_size_bytes_arr = UInt64Builder::with_capacity(offsets.len());
+    let mut lake_file_ref_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut lake_size_bytes_arr = UInt64Builder::with_capacity(offsets.len());
 
     for (topic_name, partition_value, offset_location) in offsets {
         topic_arr.append_value(topic_name.id.clone());
@@ -248,12 +255,25 @@ fn from_offset_location(
             None => end_offset_arr.append_null(),
             Some(offset) => end_offset_arr.append_value(offset.offset),
         }
+
+        num_rows_arr.append_value(offset_location.num_rows() as _);
+
         match offset_location {
             LogLocation::Folio(folio) => {
                 location_type_arr.append_value("folio");
                 folio_file_ref_arr.append_value(&folio.file_ref);
                 folio_offset_bytes_arr.append_value(folio.offset_bytes);
                 folio_size_bytes_arr.append_value(folio.size_bytes);
+                lake_file_ref_arr.append_null();
+                lake_size_bytes_arr.append_null();
+            }
+            LogLocation::DataLake(file) => {
+                location_type_arr.append_value("datalake");
+                folio_file_ref_arr.append_null();
+                folio_offset_bytes_arr.append_null();
+                folio_size_bytes_arr.append_null();
+                lake_file_ref_arr.append_value(&file.file_ref);
+                lake_size_bytes_arr.append_value(file.size_bytes);
             }
         }
     }
@@ -265,10 +285,13 @@ fn from_offset_location(
         Arc::new(partition_value_arr.finish()),
         Arc::new(start_offset_arr.finish()),
         Arc::new(end_offset_arr.finish()),
+        Arc::new(num_rows_arr.finish()),
         Arc::new(location_type_arr.finish()),
         Arc::new(folio_file_ref_arr.finish()),
         Arc::new(folio_offset_bytes_arr.finish()),
         Arc::new(folio_size_bytes_arr.finish()),
+        Arc::new(lake_file_ref_arr.finish()),
+        Arc::new(lake_size_bytes_arr.finish()),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)

@@ -154,7 +154,10 @@ pub struct GetLogLocationOptions {
 /// Location of a specific log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogLocation {
+    /// The Parquet file is inside a folio.
     Folio(FolioLocation),
+    /// The Parquet file is in the data lake.
+    DataLake(DataLakeLocation),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,6 +172,20 @@ pub struct FolioLocation {
     pub num_rows: usize,
     /// The batches that were committed.
     pub batches: Vec<CommittedBatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataLakeLocation {
+    /// Path to the parquet file.
+    pub file_ref: String,
+    /// Size of the parquet file.
+    pub size_bytes: u64,
+    /// The number of rows in the parquet file.
+    pub num_rows: usize,
+    /// The offset of the first row in the file.
+    pub start_offset: LogOffset,
+    /// The offset of the last row in the file.
+    pub end_offset: LogOffset,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,9 +297,9 @@ pub struct FileInfo {
     /// The partition value for the file
     pub partition_value: Option<PartitionValue>,
     /// First offset (inclusive) in this file
-    pub start_offset: u64,
+    pub start_offset: LogOffset,
     /// Last offset (inclusive) in this file
-    pub end_offset: u64,
+    pub end_offset: LogOffset,
     /// Parquet file metadata
     pub metadata: FileMetadata,
     /// Timestamp when the file was created
@@ -365,6 +382,14 @@ pub struct CompleteTaskResponse {
 }
 
 impl LogOffset {
+    /// Creates a new `LogOffset` with the given offset.
+    pub fn new(offset: u64) -> Self {
+        Self {
+            offset,
+            ..Default::default()
+        }
+    }
+
     /// Creates a new `LogOffset` with the timestamp.
     pub fn with_timestamp(&self, timestamp: SystemTime) -> LogOffset {
         LogOffset {
@@ -410,12 +435,21 @@ impl LogLocation {
     pub fn start_offset(&self) -> Option<LogOffset> {
         match self {
             LogLocation::Folio(folio) => folio.start_offset(),
+            LogLocation::DataLake(lake) => lake.start_offset.into(),
         }
     }
 
     pub fn end_offset(&self) -> Option<LogOffset> {
         match self {
             LogLocation::Folio(folio) => folio.end_offset(),
+            LogLocation::DataLake(lake) => lake.end_offset.into(),
+        }
+    }
+
+    pub fn num_rows(&self) -> usize {
+        match self {
+            LogLocation::Folio(folio) => folio.num_rows,
+            LogLocation::DataLake(lake) => lake.num_rows,
         }
     }
 }
