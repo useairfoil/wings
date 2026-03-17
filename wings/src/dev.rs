@@ -2,6 +2,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use axum::Router;
 use clap::{Args, ValueEnum};
+use sea_orm::ConnectOptions;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -13,7 +14,7 @@ use wings_control_plane_core::{
     },
     log_metadata::tonic::LogMetadataServer,
 };
-use wings_control_plane_memory::InMemoryControlPlane;
+use wings_control_plane_sql::{Database, SqlControlPlane};
 use wings_flight::WingsFlightSqlServer;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
 use wings_ingestor_http::HttpIngestor;
@@ -137,16 +138,18 @@ pub enum DataLakeType {
 
 impl DevArgs {
     pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
-        let (control_plane, default_tenant) = new_in_memory_service().await;
+        let (control_plane, default_tenant) = new_sql_control_plane().await;
 
         let (object_store_factory, default_object_store) = self
             .new_object_store_factory(control_plane.clone(), &default_tenant)
             .await;
 
-        let default_data_lake = self.new_data_lake(&control_plane, &default_tenant).await;
+        let default_data_lake = self
+            .new_data_lake(control_plane.as_ref(), &default_tenant)
+            .await;
         let default_namespace = self
             .new_namespace(
-                &control_plane,
+                control_plane.as_ref(),
                 &default_tenant,
                 &default_object_store,
                 &default_data_lake,
@@ -230,9 +233,9 @@ impl DevArgs {
         Ok(())
     }
 
-    async fn new_object_store_factory(
+    async fn new_object_store_factory<C: ClusterMetadata + 'static>(
         &self,
-        control_plane: Arc<InMemoryControlPlane>,
+        control_plane: Arc<C>,
         tenant: &TenantName,
     ) -> (Arc<dyn ObjectStoreFactory>, ObjectStoreName) {
         let object_store_name = ObjectStoreName::new_unchecked("default", tenant.clone());
@@ -298,9 +301,9 @@ impl DevArgs {
         (backend, object_store_name)
     }
 
-    async fn new_data_lake(
+    async fn new_data_lake<C: ClusterMetadata>(
         &self,
-        control_plane: &Arc<InMemoryControlPlane>,
+        control_plane: C,
         tenant: &TenantName,
     ) -> DataLakeName {
         info!(
@@ -322,9 +325,9 @@ impl DevArgs {
         data_lake_name
     }
 
-    async fn new_namespace(
+    async fn new_namespace<C: ClusterMetadata>(
         &self,
-        control_plane: &Arc<InMemoryControlPlane>,
+        control_plane: C,
         tenant: &TenantName,
         object_store: &ObjectStoreName,
         data_lake: &DataLakeName,
@@ -342,8 +345,17 @@ impl DevArgs {
     }
 }
 
-async fn new_in_memory_service() -> (Arc<InMemoryControlPlane>, TenantName) {
-    let control_plane = Arc::new(InMemoryControlPlane::default());
+async fn new_sql_control_plane() -> (Arc<SqlControlPlane>, TenantName) {
+    let options = ConnectOptions::new("sqlite::memory:");
+    let pool = Database::new(options)
+        .await
+        .expect("failed to create SQLite database");
+
+    wings_control_plane_sql::migrate(&pool)
+        .await
+        .expect("failed to migrate database");
+
+    let control_plane = Arc::new(SqlControlPlane::new(pool));
 
     let default_tenant = TenantName::new_unchecked("default");
     control_plane
@@ -355,7 +367,7 @@ async fn new_in_memory_service() -> (Arc<InMemoryControlPlane>, TenantName) {
 }
 
 async fn run_grpc_server(
-    control_plane: Arc<InMemoryControlPlane>,
+    control_plane: Arc<SqlControlPlane>,
     namespace_provider_factory: NamespaceProviderFactory,
     batch_ingestor: BatchIngestorClient,
     address: SocketAddr,

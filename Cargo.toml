@@ -12,6 +12,7 @@ members = [
     "wings_client",
     "wings_control_plane_core",
     "wings_control_plane_memory",
+    "wings_control_plane_sql",
     "wings_data_lake",
     "wings_flight",
     "wings_ingestor_core",
@@ -79,11 +80,13 @@ reqwest = { version = "0.11", features = [
     "json",
     "rustls-tls",
 ], default-features = false }
+sea-orm = { version = "1.1.19", features = ["sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-uuid", "with-json"] }
+sea-orm-migration = "1.1.19"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 snafu = "0.8.0"
 tempfile = "3.0"
-time = { version = "0.3.44", features = ["formatting"] }
+time = { version = "0.3.44", features = ["formatting", "local-offset"] }
 tonic = "0.14.2"
 tonic-reflection = "0.14.2"
 tonic-prost = "0.14.2"

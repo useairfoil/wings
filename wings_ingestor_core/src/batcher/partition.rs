@@ -8,10 +8,10 @@ use parquet::{
 use wings_control_plane_core::log_metadata::CommitBatchRequest;
 use wings_resources::{PartitionValue, TopicName};
 
-use super::{metrics::IngestionMetrics, FolioPage};
+use super::{FolioPage, metrics::IngestionMetrics};
 use crate::{
-    write::{ReplyWithWriteBatchError, WithReplyChannel},
     WriteBatchError, WriteBatchRequest,
+    write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
 
 const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;

@@ -84,7 +84,10 @@
         binariesWithChecksum = pkgs.stdenv.mkDerivation {
           inherit (binaries) pname version;
 
-          nativeBuildInputs = [ pkgs.perl pkgs.patchelf ];
+          nativeBuildInputs = [
+            pkgs.perl
+            pkgs.patchelf
+          ];
 
           phases = [ "installPhase" ];
 
@@ -182,6 +185,10 @@
             ];
 
             inputsFrom = [ binaries ];
+
+            buildInputs = [
+              pkgs.sea-orm-cli
+            ];
           };
 
           ci = pkgs.mkShell {

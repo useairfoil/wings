@@ -74,10 +74,7 @@ impl FolioUploader {
             let offset_bytes = content.len() as _;
             let batch_size_bytes = page.data.len() as _;
             content.extend_from_slice(&page.data);
-            let num_rows = page
-                .batches
-                .iter()
-                .fold(0, |acc, b| acc + b.data.num_rows);
+            let num_rows = page.batches.iter().fold(0, |acc, b| acc + b.data.num_rows);
             page_metadata.push(CommitPageRequest {
                 topic_name: page.topic_name,
                 partition_value: page.partition_value,

@@ -9,19 +9,19 @@ use std::{
 };
 
 use datafusion::{
-    catalog::{memory::DataSourceExec, Session},
+    catalog::{Session, memory::DataSourceExec},
     common::arrow::{
         array::{ArrayBuilder, RecordBatch, TimestampMicrosecondBuilder, UInt64Builder},
         datatypes::{FieldRef, SchemaRef},
     },
     datasource::physical_plan::{FileScanConfigBuilder, ParquetSource},
     error::DataFusionError,
-    execution::{object_store::ObjectStoreUrl, SendableRecordBatchStream, TaskContext},
+    execution::{SendableRecordBatchStream, TaskContext, object_store::ObjectStoreUrl},
     physical_expr::EquivalenceProperties,
     physical_plan::{
+        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
         execution_plan::{Boundedness, EmissionType},
         stream::RecordBatchStreamAdapter,
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
     },
     scalar::ScalarValue,
 };

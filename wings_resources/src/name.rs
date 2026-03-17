@@ -213,6 +213,25 @@ macro_rules! resource_type {
                     Self::parse(s)
                 }
             }
+
+            impl serde::ser::Serialize for [<$name Name>] {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    serializer.serialize_str(&self.name())
+                }
+            }
+
+            impl<'de> serde::de::Deserialize<'de> for [<$name Name>] {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    let s = String::deserialize(deserializer)?;
+                    Self::parse(&s).map_err(serde::de::Error::custom)
+                }
+            }
         }
     };
 }

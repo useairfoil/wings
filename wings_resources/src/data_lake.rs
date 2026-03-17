@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use super::tenant::TenantName;
 use crate::{ObjectStoreName, resource_type};
 
@@ -16,7 +18,7 @@ pub struct DataLake {
 ///
 /// Different data lake types require different configurations.
 /// This enum represents the various supported data lake types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataLakeConfiguration {
     /// Parquet data lake configuration.
     Parquet(ParquetConfiguration),
@@ -27,15 +29,15 @@ pub enum DataLakeConfiguration {
 }
 
 /// Parquet data lake configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParquetConfiguration {}
 
 /// Iceberg data lake configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IcebergConfiguration {}
 
 /// DeltaLake data lake configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeltaConfiguration {
     /// The object store where to store the data lake data.
     ///
@@ -44,3 +46,9 @@ pub struct DeltaConfiguration {
 }
 
 pub type DataLakeRef = Arc<DataLake>;
+
+impl DataLake {
+    pub fn new(name: DataLakeName, data_lake: DataLakeConfiguration) -> Self {
+        Self { name, data_lake }
+    }
+}

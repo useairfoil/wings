@@ -1,8 +1,8 @@
 use std::{cmp::Ordering, collections::HashSet};
 
 use wings_control_plane_core::log_metadata::{
-    timestamp::compare_batch_request_timestamps, CommitPageRequest, CommittedBatch,
-    LogMetadataError, LogOffset, Result,
+    CommitPageRequest, CommittedBatch, LogMetadataError, LogOffset, Result,
+    timestamp::compare_batch_request_timestamps,
 };
 
 #[derive(Debug, Clone)]

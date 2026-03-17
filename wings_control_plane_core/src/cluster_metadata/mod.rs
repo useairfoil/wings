@@ -284,3 +284,108 @@ pub struct ListDataLakesResponse {
     /// The continuation token.
     pub next_page_token: Option<String>,
 }
+
+/// Generic implementation for references
+#[async_trait]
+impl<T: ClusterMetadata + ?Sized> ClusterMetadata for &T {
+    async fn create_tenant(&self, name: TenantName) -> Result<Tenant> {
+        (**self).create_tenant(name).await
+    }
+
+    async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
+        (**self).get_tenant(name).await
+    }
+
+    async fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
+        (**self).list_tenants(request).await
+    }
+
+    async fn delete_tenant(&self, name: TenantName) -> Result<()> {
+        (**self).delete_tenant(name).await
+    }
+
+    async fn create_namespace(
+        &self,
+        name: NamespaceName,
+        options: NamespaceOptions,
+    ) -> Result<Namespace> {
+        (**self).create_namespace(name, options).await
+    }
+
+    async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
+        (**self).get_namespace(name).await
+    }
+
+    async fn list_namespaces(
+        &self,
+        request: ListNamespacesRequest,
+    ) -> Result<ListNamespacesResponse> {
+        (**self).list_namespaces(request).await
+    }
+
+    async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
+        (**self).delete_namespace(name).await
+    }
+
+    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+        (**self).create_topic(name, options).await
+    }
+
+    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
+        (**self).get_topic(name, view).await
+    }
+
+    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
+        (**self).list_topics(request).await
+    }
+
+    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
+        (**self).delete_topic(name, force).await
+    }
+
+    async fn create_object_store(
+        &self,
+        name: ObjectStoreName,
+        configuration: ObjectStoreConfiguration,
+    ) -> Result<ObjectStore> {
+        (**self).create_object_store(name, configuration).await
+    }
+
+    async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
+        (**self).get_object_store(name).await
+    }
+
+    async fn list_object_stores(
+        &self,
+        request: ListObjectStoresRequest,
+    ) -> Result<ListObjectStoresResponse> {
+        (**self).list_object_stores(request).await
+    }
+
+    async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
+        (**self).delete_object_store(name).await
+    }
+
+    async fn create_data_lake(
+        &self,
+        name: DataLakeName,
+        configuration: DataLakeConfiguration,
+    ) -> Result<DataLake> {
+        (**self).create_data_lake(name, configuration).await
+    }
+
+    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+        (**self).get_data_lake(name).await
+    }
+
+    async fn list_data_lakes(
+        &self,
+        request: ListDataLakesRequest,
+    ) -> Result<ListDataLakesResponse> {
+        (**self).list_data_lakes(request).await
+    }
+
+    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
+        (**self).delete_data_lake(name).await
+    }
+}

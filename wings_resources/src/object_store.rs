@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::{error::DataFusionError, execution::object_store::ObjectStoreUrl};
+use serde::{Deserialize, Serialize};
 
 use super::tenant::TenantName;
 use crate::resource_type;
@@ -18,7 +19,7 @@ pub struct ObjectStore {
 ///
 /// Different cloud providers require different object store configurations.
 /// This enum represents the various supported object store types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObjectStoreConfiguration {
     /// AWS S3 object store configuration.
     Aws(AwsConfiguration),
@@ -31,7 +32,7 @@ pub enum ObjectStoreConfiguration {
 }
 
 /// AWS S3 object store configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AwsConfiguration {
     /// Bucket name.
     pub bucket_name: String,
@@ -46,7 +47,7 @@ pub struct AwsConfiguration {
 }
 
 /// Azure Blob Storage object store configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AzureConfiguration {
     /// Azure container name.
     pub container_name: String,
@@ -59,7 +60,7 @@ pub struct AzureConfiguration {
 }
 
 /// Google Cloud Storage object store configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoogleConfiguration {
     /// Bucket name.
     pub bucket_name: String,
@@ -72,7 +73,7 @@ pub struct GoogleConfiguration {
 }
 
 /// S3-compatible storage object store configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct S3CompatibleConfiguration {
     /// Bucket name.
     pub bucket_name: String,
@@ -98,5 +99,11 @@ impl ObjectStoreName {
     /// Notice that this URL is only necessary for registering the client with DataFusion.
     pub fn wings_object_store_url(&self) -> Result<ObjectStoreUrl, DataFusionError> {
         ObjectStoreUrl::parse(format!("wings://{}", self.id))
+    }
+}
+
+impl ObjectStore {
+    pub fn new(name: ObjectStoreName, object_store: ObjectStoreConfiguration) -> Self {
+        ObjectStore { name, object_store }
     }
 }
