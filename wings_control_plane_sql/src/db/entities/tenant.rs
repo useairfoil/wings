@@ -1,4 +1,4 @@
-use sea_orm::entity::prelude::*;
+use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
 use wings_resources::{Tenant, TenantName};
 
@@ -49,4 +49,20 @@ impl TryFrom<Model> for Tenant {
             TenantName::new(model.id).context(InvalidResourceNameSnafu { resource: "tenant" })?;
         Ok(Tenant { name })
     }
+}
+
+pub async fn expect_exists(
+    tx: &DatabaseTransaction,
+    name: &TenantName,
+) -> Result<(), crate::db::Error> {
+    let existing = Entity::find_by_id(name.id()).one(tx).await?;
+
+    if existing.is_none() {
+        return Err(crate::db::Error::NotFound {
+            resource: "tenant",
+            message: format!("name={name}"),
+        });
+    }
+
+    Ok(())
 }

@@ -4,7 +4,7 @@
 //! storing metadata in a relational database.
 
 mod cluster_metadata;
-mod db;
+pub mod db;
 mod log_metadata;
 
 pub use sea_orm::ConnectOptions;

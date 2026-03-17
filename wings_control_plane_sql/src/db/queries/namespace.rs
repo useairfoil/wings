@@ -15,7 +15,8 @@ impl Database {
         name: NamespaceName,
         options: NamespaceOptions,
     ) -> Result<Namespace> {
-        let tenant_id = name.parent().id().to_owned();
+        let tenant_name = name.parent().clone();
+        let tenant_id = tenant_name.id().to_owned();
         let id = name.id().to_owned();
 
         if options.data_lake.parent() != name.parent() {
@@ -43,6 +44,10 @@ impl Database {
 
         self.with_transaction(|tx| {
             Box::pin(async move {
+                entities::tenant::expect_exists(tx, &tenant_name).await?;
+                entities::data_lake::expect_exists(tx, &options.data_lake).await?;
+                entities::object_store::expect_exists(tx, &options.object_store).await?;
+
                 let existing = entities::namespace::Entity::find_by_id((tenant_id, id))
                     .one(tx)
                     .await?;

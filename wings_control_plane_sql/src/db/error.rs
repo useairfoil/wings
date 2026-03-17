@@ -6,6 +6,11 @@ use wings_resources::ResourceError;
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum Error {
+    #[snafu(display("{resource} not found: {message}"))]
+    NotFound {
+        resource: &'static str,
+        message: String,
+    },
     #[snafu(display("{resource} already exists: {message}"))]
     AlreadyExists {
         resource: &'static str,
@@ -32,6 +37,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 impl From<Error> for ClusterMetadataError {
     fn from(err: Error) -> Self {
         match err {
+            Error::NotFound { resource, message } => {
+                ClusterMetadataError::NotFound { resource, message }
+            }
             Error::AlreadyExists { resource, message } => {
                 ClusterMetadataError::AlreadyExists { resource, message }
             }

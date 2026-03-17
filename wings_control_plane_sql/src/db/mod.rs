@@ -9,7 +9,7 @@ use sea_orm::{
     ConnectOptions, DatabaseConnection, DatabaseTransaction, TransactionError, TransactionTrait,
 };
 
-use self::error::Result;
+pub use self::error::{Error, Result};
 
 pub struct Database {
     pub options: ConnectOptions,

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bytesize::ByteSize;
-use sea_orm::entity::prelude::*;
+use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
 use wings_resources::{DataLakeName, Namespace, NamespaceName, ObjectStoreName, TenantName};
 
@@ -70,4 +70,22 @@ impl TryFrom<Model> for Namespace {
             data_lake,
         })
     }
+}
+
+pub async fn expect_exists(
+    tx: &DatabaseTransaction,
+    name: &NamespaceName,
+) -> Result<(), crate::db::Error> {
+    let tenant_id = name.parent().id().to_owned();
+    let id = name.id.to_owned();
+    let existing = Entity::find_by_id((tenant_id, id)).one(tx).await?;
+
+    if existing.is_none() {
+        return Err(crate::db::Error::NotFound {
+            resource: "namespace",
+            message: format!("name={name}"),
+        });
+    }
+
+    Ok(())
 }

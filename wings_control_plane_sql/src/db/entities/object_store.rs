@@ -1,4 +1,4 @@
-use sea_orm::entity::prelude::*;
+use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
 use wings_resources::{ObjectStore, ObjectStoreName, TenantName};
 
@@ -43,4 +43,22 @@ impl TryFrom<Model> for ObjectStore {
 
         Ok(ObjectStore { name, object_store })
     }
+}
+
+pub async fn expect_exists(
+    tx: &DatabaseTransaction,
+    name: &ObjectStoreName,
+) -> Result<(), crate::db::Error> {
+    let tenant_id = name.parent().id().to_owned();
+    let id = name.id.to_owned();
+    let existing = Entity::find_by_id((tenant_id, id)).one(tx).await?;
+
+    if existing.is_none() {
+        return Err(crate::db::Error::NotFound {
+            resource: "object-store",
+            message: format!("name={name}"),
+        });
+    }
+
+    Ok(())
 }

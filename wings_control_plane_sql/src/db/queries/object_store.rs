@@ -15,7 +15,8 @@ impl Database {
         name: ObjectStoreName,
         config: ObjectStoreConfiguration,
     ) -> Result<ObjectStore> {
-        let tenant_id = name.parent().id().to_owned();
+        let tenant_name = name.parent().clone();
+        let tenant_id = tenant_name.id().to_owned();
         let id = name.id().to_owned();
 
         let config_json = serde_json::to_value(&config)?;
@@ -28,6 +29,8 @@ impl Database {
 
         self.with_transaction(|tx| {
             Box::pin(async move {
+                entities::tenant::expect_exists(tx, &tenant_name).await?;
+
                 let existing = entities::object_store::Entity::find_by_id((tenant_id, id))
                     .one(tx)
                     .await?;

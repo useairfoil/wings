@@ -1,4 +1,4 @@
-use sea_orm::entity::prelude::*;
+use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
 use wings_resources::{DataLake, DataLakeName, TenantName};
 
@@ -42,4 +42,22 @@ impl TryFrom<Model> for DataLake {
 
         Ok(DataLake { name, data_lake })
     }
+}
+
+pub async fn expect_exists(
+    tx: &DatabaseTransaction,
+    name: &DataLakeName,
+) -> Result<(), crate::db::Error> {
+    let tenant_id = name.parent().id().to_owned();
+    let id = name.id.to_owned();
+    let existing = Entity::find_by_id((tenant_id, id)).one(tx).await?;
+
+    if existing.is_none() {
+        return Err(crate::db::Error::NotFound {
+            resource: "data-lake",
+            message: format!("name={name}"),
+        });
+    }
+
+    Ok(())
 }
