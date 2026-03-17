@@ -40,7 +40,7 @@ impl Database {
 
                 if existing.is_some() {
                     return Err(Error::AlreadyExists {
-                        resource: "data_lake",
+                        resource: "data-lake",
                         message: format!("name={name}"),
                     });
                 }
@@ -116,6 +116,20 @@ impl Database {
         self.with_transaction(|tx| {
             Box::pin(async move {
                 entities::data_lake::expect_exists(tx, &name).await?;
+
+                let has_namespaces = entities::namespace::Entity::find()
+                    .filter(entities::namespace::Column::TenantId.eq(&tenant_id))
+                    .filter(entities::namespace::Column::DataLakeId.eq(&id))
+                    .one(tx)
+                    .await?
+                    .is_some();
+
+                if has_namespaces {
+                    return Err(Error::InvalidArgument {
+                        resource: "data-lake",
+                        message: format!("{name} is used by a namespace and cannot be deleted"),
+                    });
+                }
 
                 let result = entities::data_lake::Entity::delete_by_id((tenant_id, id))
                     .exec(tx)

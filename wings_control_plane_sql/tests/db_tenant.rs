@@ -1,4 +1,5 @@
 use wings_control_plane_core::cluster_metadata::ListTenantsRequest;
+use wings_control_plane_sql::db::Error;
 use wings_resources::TenantName;
 
 mod common;
@@ -31,53 +32,14 @@ async fn test_get_tenant_not_found() {
 
     let name = TenantName::new_unchecked("nonexistent");
     let result = db.get_tenant(name).await;
-    assert!(result.is_err());
-}
 
-#[tokio::test]
-async fn test_debug_list_tenants() {
-    let db = common::new_test_db().await;
-
-    // Create multiple tenants with delay to ensure different timestamps
-    for i in 0..3 {
-        let name = TenantName::new_unchecked(&format!("tenant{i}"));
-        db.create_tenant(name).await.unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    }
-
-    // List all tenants first
-    let all_tenants = db
-        .list_tenants(ListTenantsRequest::default())
-        .await
-        .unwrap();
-    println!("All tenants: {} tenants", all_tenants.tenants.len());
-    for t in &all_tenants.tenants {
-        println!("  - {}", t.name.id());
-    }
-
-    // Test with page_size=1
-    let request = ListTenantsRequest {
-        page_size: Some(1),
-        page_token: None,
-    };
-    let result = db.list_tenants(request).await.unwrap();
-    println!("\nFirst page: {} tenants", result.tenants.len());
-    for t in &result.tenants {
-        println!("  - {}", t.name.id());
-    }
-    println!("Next page token: {:?}", result.next_page_token);
-
-    // Get next page
-    let request = ListTenantsRequest {
-        page_size: Some(1),
-        page_token: result.next_page_token,
-    };
-    let result = db.list_tenants(request).await.unwrap();
-    println!("\nSecond page: {} tenants", result.tenants.len());
-    for t in &result.tenants {
-        println!("  - {}", t.name.id());
-    }
-    println!("Next page token: {:?}", result.next_page_token);
+    assert!(matches!(
+        result,
+        Err(Error::NotFound {
+            resource: "tenant",
+            ..
+        })
+    ));
 }
 
 #[tokio::test]
@@ -144,7 +106,14 @@ async fn test_delete_tenant() {
 
     // Verify get fails
     let result = db.get_tenant(name).await;
-    assert!(result.is_err());
+
+    assert!(matches!(
+        result,
+        Err(Error::NotFound {
+            resource: "tenant",
+            ..
+        })
+    ));
 }
 
 #[tokio::test]
@@ -153,5 +122,99 @@ async fn test_delete_tenant_not_found() {
 
     let name = TenantName::new_unchecked("nonexistent");
     let result = db.delete_tenant(name).await;
+
+    assert!(matches!(
+        result,
+        Err(Error::NotFound {
+            resource: "tenant",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn test_delete_tenant_fails_if_has_namespaces() {
+    let db = common::new_test_db().await;
+
+    common::seed_tenant(&db).await;
+    common::seed_data_lake(&db).await;
+    common::seed_object_store(&db).await;
+    common::seed_namespace(&db).await;
+
+    let name = TenantName::new_unchecked("abcd");
+
+    let result = db.delete_tenant(name).await;
+
+    assert!(matches!(
+        result,
+        Err(Error::InvalidArgument {
+            resource: "tenant",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn test_delete_tenant_cascades_to_object_stores_and_data_lakes() {
+    let db = common::new_test_db().await;
+
+    common::seed_tenant(&db).await;
+    common::seed_data_lake(&db).await;
+    common::seed_object_store(&db).await;
+
+    let tenant_name = TenantName::new_unchecked("abcd");
+    let _data_lake_name =
+        wings_resources::DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
+    let _object_store_name =
+        wings_resources::ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
+
+    // Verify they exist
+    let lakes_response = db
+        .list_data_lakes(
+            wings_control_plane_core::cluster_metadata::ListDataLakesRequest::new(
+                tenant_name.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(lakes_response.data_lakes.len(), 1);
+
+    let stores_response = db
+        .list_object_stores(
+            wings_control_plane_core::cluster_metadata::ListObjectStoresRequest::new(
+                tenant_name.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stores_response.object_stores.len(), 1);
+
+    // Delete tenant - should cascade to data_lakes and object_stores
+    db.delete_tenant(tenant_name.clone()).await.unwrap();
+
+    // Verify tenant is gone
+    let result = db.get_tenant(tenant_name.clone()).await;
     assert!(result.is_err());
+
+    // Verify data_lakes are gone (cascaded)
+    let lakes_response = db
+        .list_data_lakes(
+            wings_control_plane_core::cluster_metadata::ListDataLakesRequest::new(
+                tenant_name.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert!(lakes_response.data_lakes.is_empty());
+
+    // Verify object_stores are gone (cascaded)
+    let stores_response = db
+        .list_object_stores(
+            wings_control_plane_core::cluster_metadata::ListObjectStoresRequest::new(
+                tenant_name.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert!(stores_response.object_stores.is_empty());
 }

@@ -129,6 +129,28 @@ async fn test_delete_data_lake_fails_if_not_found() {
 }
 
 #[tokio::test]
+async fn test_delete_data_lake_fails_if_used_by_namespace() {
+    let db = common::new_test_db().await;
+
+    common::seed_tenant(&db).await;
+    common::seed_data_lake(&db).await;
+    common::seed_object_store(&db).await;
+    common::seed_namespace(&db).await;
+
+    let data_lake_name = DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
+
+    let result = db.delete_data_lake(data_lake_name).await;
+
+    assert!(matches!(
+        result,
+        Err(Error::InvalidArgument {
+            resource: "data-lake",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
 async fn test_create_data_lake_fails_if_parent_tenant_doesnt_exist() {
     let db = common::new_test_db().await;
 

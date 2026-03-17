@@ -54,7 +54,7 @@ async fn test_get_object_store_fails_if_not_found() {
     assert!(matches!(
         result,
         Err(Error::NotFound {
-            resource: "object_store",
+            resource: "object-store",
             ..
         })
     ));
@@ -109,7 +109,7 @@ async fn test_delete_object_store() {
     assert!(matches!(
         result,
         Err(Error::NotFound {
-            resource: "object_store",
+            resource: "object-store",
             ..
         })
     ));
@@ -128,6 +128,28 @@ async fn test_delete_object_store_fails_if_not_found() {
     assert!(matches!(
         result,
         Err(Error::NotFound {
+            resource: "object-store",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn test_delete_object_store_fails_if_used_by_namespace() {
+    let db = common::new_test_db().await;
+
+    common::seed_tenant(&db).await;
+    common::seed_data_lake(&db).await;
+    common::seed_object_store(&db).await;
+    common::seed_namespace(&db).await;
+
+    let object_store_name = ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
+
+    let result = db.delete_object_store(object_store_name).await;
+
+    assert!(matches!(
+        result,
+        Err(Error::InvalidArgument {
             resource: "object-store",
             ..
         })

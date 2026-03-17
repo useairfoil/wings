@@ -89,16 +89,16 @@ impl MigrationTrait for Migration {
                             .name("data_lake_fk")
                             .to("data_lakes", ("tenant_id", "id"))
                             .from("namespaces", ("tenant_id", "data_lake_id"))
-                            .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
+                            .on_delete(ForeignKeyAction::NoAction)
+                            .on_update(ForeignKeyAction::NoAction),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("object_store_fk")
                             .to("object_stores", ("tenant_id", "id"))
                             .from("namespaces", ("tenant_id", "object_store_id"))
-                            .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
+                            .on_delete(ForeignKeyAction::NoAction)
+                            .on_update(ForeignKeyAction::NoAction),
                     )
                     .to_owned(),
             )

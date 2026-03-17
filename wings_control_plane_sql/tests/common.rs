@@ -47,3 +47,13 @@ pub async fn seed_object_store(db: &Database) {
         .await
         .unwrap();
 }
+
+pub async fn seed_namespace(db: &Database) {
+    let name = wings_resources::NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
+    let object_store =
+        wings_resources::ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
+    let data_lake = wings_resources::DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
+    let options = wings_resources::NamespaceOptions::new(object_store, data_lake);
+
+    db.create_namespace(name, options).await.unwrap();
+}

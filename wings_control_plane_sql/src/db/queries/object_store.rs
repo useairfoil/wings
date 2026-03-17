@@ -42,7 +42,7 @@ impl Database {
 
                 if existing.is_some() {
                     return Err(Error::AlreadyExists {
-                        resource: "object_store",
+                        resource: "object-store",
                         message: format!("name={name}"),
                     });
                 }
@@ -68,7 +68,7 @@ impl Database {
         match existing {
             Some(entity) => entity.try_into(),
             None => Err(Error::NotFound {
-                resource: "object_store",
+                resource: "object-store",
                 message: format!("name={name}"),
             }),
         }
@@ -119,13 +119,27 @@ impl Database {
             Box::pin(async move {
                 entities::object_store::expect_exists(tx, &name).await?;
 
+                let has_namespaces = entities::namespace::Entity::find()
+                    .filter(entities::namespace::Column::TenantId.eq(&tenant_id))
+                    .filter(entities::namespace::Column::ObjectStoreId.eq(&id))
+                    .one(tx)
+                    .await?
+                    .is_some();
+
+                if has_namespaces {
+                    return Err(Error::InvalidArgument {
+                        resource: "object-store",
+                        message: format!("{name} is used by a namespace and cannot be deleted"),
+                    });
+                }
+
                 let result = entities::object_store::Entity::delete_by_id((tenant_id, id))
                     .exec(tx)
                     .await?;
 
                 if result.rows_affected == 0 {
                     return Err(Error::NotFound {
-                        resource: "object_store",
+                        resource: "object-store",
                         message: format!("name={name}"),
                     });
                 }
