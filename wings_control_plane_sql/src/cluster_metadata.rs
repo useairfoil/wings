@@ -41,19 +41,19 @@ impl ClusterMetadata for SqlControlPlane {
             .map_err(Into::into)
     }
 
-    async fn get_namespace(&self, _name: NamespaceName) -> Result<Namespace> {
-        todo!()
+    async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
+        self.db.get_namespace(name).await.map_err(Into::into)
     }
 
     async fn list_namespaces(
         &self,
-        _request: ListNamespacesRequest,
+        request: ListNamespacesRequest,
     ) -> Result<ListNamespacesResponse> {
-        todo!()
+        self.db.list_namespaces(request).await.map_err(Into::into)
     }
 
-    async fn delete_namespace(&self, _name: NamespaceName) -> Result<()> {
-        todo!()
+    async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
+        self.db.delete_namespace(name).await.map_err(Into::into)
     }
 
     async fn create_topic(&self, _name: TopicName, _options: TopicOptions) -> Result<Topic> {
@@ -83,19 +83,22 @@ impl ClusterMetadata for SqlControlPlane {
             .map_err(Into::into)
     }
 
-    async fn get_object_store(&self, _name: ObjectStoreName) -> Result<ObjectStore> {
-        todo!()
+    async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
+        self.db.get_object_store(name).await.map_err(Into::into)
     }
 
     async fn list_object_stores(
         &self,
-        _request: ListObjectStoresRequest,
+        request: ListObjectStoresRequest,
     ) -> Result<ListObjectStoresResponse> {
-        todo!()
+        self.db
+            .list_object_stores(request)
+            .await
+            .map_err(Into::into)
     }
 
-    async fn delete_object_store(&self, _name: ObjectStoreName) -> Result<()> {
-        todo!()
+    async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
+        self.db.delete_object_store(name).await.map_err(Into::into)
     }
 
     async fn create_data_lake(
@@ -109,18 +112,18 @@ impl ClusterMetadata for SqlControlPlane {
             .map_err(Into::into)
     }
 
-    async fn get_data_lake(&self, _name: DataLakeName) -> Result<DataLake> {
-        todo!()
+    async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
+        self.db.get_data_lake(name).await.map_err(Into::into)
     }
 
     async fn list_data_lakes(
         &self,
-        _request: ListDataLakesRequest,
+        request: ListDataLakesRequest,
     ) -> Result<ListDataLakesResponse> {
-        todo!()
+        self.db.list_data_lakes(request).await.map_err(Into::into)
     }
 
-    async fn delete_data_lake(&self, _name: DataLakeName) -> Result<()> {
-        todo!()
+    async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
+        self.db.delete_data_lake(name).await.map_err(Into::into)
     }
 }
