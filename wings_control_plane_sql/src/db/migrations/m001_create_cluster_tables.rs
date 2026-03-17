@@ -13,6 +13,11 @@ impl MigrationTrait for Migration {
                     .table("tenants")
                     .if_not_exists()
                     .col(ColumnDef::new("id").text().primary_key())
+                    .col(
+                        ColumnDef::new("created_at")
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;

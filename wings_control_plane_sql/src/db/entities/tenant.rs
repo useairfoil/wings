@@ -1,5 +1,6 @@
 use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
+use time::OffsetDateTime;
 use wings_resources::{Tenant, TenantName};
 
 use crate::db::error::InvalidResourceNameSnafu;
@@ -9,6 +10,7 @@ use crate::db::error::InvalidResourceNameSnafu;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

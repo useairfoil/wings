@@ -18,16 +18,16 @@ impl ClusterMetadata for SqlControlPlane {
         self.db.create_tenant(name).await.map_err(Into::into)
     }
 
-    async fn get_tenant(&self, _name: TenantName) -> Result<Tenant> {
-        todo!()
+    async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
+        self.db.get_tenant(name).await.map_err(Into::into)
     }
 
-    async fn list_tenants(&self, _request: ListTenantsRequest) -> Result<ListTenantsResponse> {
-        todo!()
+    async fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
+        self.db.list_tenants(request).await.map_err(Into::into)
     }
 
-    async fn delete_tenant(&self, _name: TenantName) -> Result<()> {
-        todo!()
+    async fn delete_tenant(&self, name: TenantName) -> Result<()> {
+        self.db.delete_tenant(name).await.map_err(Into::into)
     }
 
     async fn create_namespace(
