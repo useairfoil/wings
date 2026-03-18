@@ -49,6 +49,20 @@ pub struct DevArgs {
         env = "WINGS_HTTP_ADDRESS"
     )]
     http_address: String,
+    /// Connection string for the metadata database.
+    #[arg(
+        long("db.connection-string"),
+        default_value = "sqlite::memory:",
+        env = "WINGS_DB_CONNECTION_STRING"
+    )]
+    db_connection_string: String,
+    /// Log SQL statements executed by the database.
+    #[arg(
+        long("db.log-statement"),
+        default_value = "false",
+        env = "WINGS_DB_LOG_STATEMENT"
+    )]
+    db_log_statement: bool,
     /// The type of object store to use.
     #[arg(long, default_value = "temp", env = "WINGS_OBJECT_STORE")]
     object_store: ObjectStoreType,
@@ -138,7 +152,8 @@ pub enum DataLakeType {
 
 impl DevArgs {
     pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
-        let (control_plane, default_tenant) = new_sql_control_plane().await;
+        let (control_plane, default_tenant) =
+            new_sql_control_plane(&self.db_connection_string, self.db_log_statement).await;
 
         let (object_store_factory, default_object_store) = self
             .new_object_store_factory(control_plane.clone(), &default_tenant)
@@ -345,8 +360,13 @@ impl DevArgs {
     }
 }
 
-async fn new_sql_control_plane() -> (Arc<SqlControlPlane>, TenantName) {
-    let options = ConnectOptions::new("sqlite::memory:");
+async fn new_sql_control_plane(
+    connection_string: &str,
+    log_statement: bool,
+) -> (Arc<SqlControlPlane>, TenantName) {
+    let mut options = ConnectOptions::new(connection_string);
+    options.sqlx_logging(log_statement);
+
     let pool = Database::new(options)
         .await
         .expect("failed to create SQLite database");
