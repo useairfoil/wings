@@ -7607,6 +7607,7 @@ dependencies = [
  "wings-control-plane-core",
  "wings-observability",
  "wings-resources",
+ "wings-schema",
 ]
 
 [[package]]
@@ -7779,6 +7780,7 @@ dependencies = [
  "datafusion",
  "deltalake-core",
  "parquet",
+ "serde",
  "snafu",
  "wings-observability",
 ]

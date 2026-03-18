@@ -22,11 +22,12 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, TimeUnit as ArrowTimeUnit,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{Field, FieldRef, Fields};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TimeUnit {
     /// Time in seconds.
     Second,
@@ -38,7 +39,7 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DataType {
     /// Null type
     Null,

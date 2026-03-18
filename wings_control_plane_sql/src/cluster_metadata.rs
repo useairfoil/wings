@@ -56,20 +56,23 @@ impl ClusterMetadata for SqlControlPlane {
         self.db.delete_namespace(name).await.map_err(Into::into)
     }
 
-    async fn create_topic(&self, _name: TopicName, _options: TopicOptions) -> Result<Topic> {
-        todo!()
+    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+        self.db
+            .create_topic(name, options)
+            .await
+            .map_err(Into::into)
     }
 
-    async fn get_topic(&self, _name: TopicName, _view: TopicView) -> Result<Topic> {
-        todo!()
+    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
+        self.db.get_topic(name, view).await.map_err(Into::into)
     }
 
-    async fn list_topics(&self, _request: ListTopicsRequest) -> Result<ListTopicsResponse> {
-        todo!()
+    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
+        self.db.list_topics(request).await.map_err(Into::into)
     }
 
-    async fn delete_topic(&self, _name: TopicName, _force: bool) -> Result<()> {
-        todo!()
+    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
+        self.db.delete_topic(name, force).await.map_err(Into::into)
     }
 
     async fn create_object_store(

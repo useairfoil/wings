@@ -104,6 +104,39 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        manager
+            .create_table(
+                Table::create()
+                    .table("topics")
+                    .if_not_exists()
+                    .col(ColumnDef::new("tenant_id").text())
+                    .col(ColumnDef::new("namespace_id").text())
+                    .col(ColumnDef::new("id").text())
+                    .col(ColumnDef::new("schema_fields").json())
+                    .col(ColumnDef::new("schema_metadata").json())
+                    .col(ColumnDef::new("partition_key").integer())
+                    .col(ColumnDef::new("description").text())
+                    .col(ColumnDef::new("compaction_freshness_ms").integer())
+                    .col(ColumnDef::new("compaction_ttl_ms").integer())
+                    .col(ColumnDef::new("compaction_target_file_size_bytes").integer())
+                    .primary_key(
+                        Index::create()
+                            .col("tenant_id")
+                            .col("namespace_id")
+                            .col("id"),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("namespace_fk")
+                            .to("namespaces", ("tenant_id", "id"))
+                            .from("topics", ("tenant_id", "namespace_id"))
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 

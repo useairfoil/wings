@@ -2,6 +2,7 @@ use sea_orm::DbErr;
 use snafu::Snafu;
 use wings_control_plane_core::ClusterMetadataError;
 use wings_resources::ResourceError;
+use wings_schema::SchemaError;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -27,6 +28,8 @@ pub enum Error {
         source: ResourceError,
     },
     #[snafu(transparent)]
+    Schema { source: SchemaError },
+    #[snafu(transparent)]
     Json { source: serde_json::Error },
     #[snafu(transparent)]
     Orm { source: DbErr },
@@ -49,6 +52,9 @@ impl From<Error> for ClusterMetadataError {
             Error::InvalidResourceName { resource, source } => {
                 ClusterMetadataError::InvalidResourceName { resource, source }
             }
+            Error::Schema { source } => ClusterMetadataError::Internal {
+                message: format!("schema error: {source}"),
+            },
             Error::Json { source } => ClusterMetadataError::Internal {
                 message: format!("json error: {source}"),
             },

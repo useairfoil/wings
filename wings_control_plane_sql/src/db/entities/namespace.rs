@@ -24,6 +24,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_one = "super::tenant::Entity")]
     Tenant,
+    #[sea_orm(has_many = "super::topic::Entity")]
+    Topic,
 }
 
 impl ActiveModelBehavior for ActiveModel {}
@@ -31,6 +33,12 @@ impl ActiveModelBehavior for ActiveModel {}
 impl Related<super::tenant::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Tenant.def()
+    }
+}
+
+impl Related<super::topic::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Topic.def()
     }
 }
 

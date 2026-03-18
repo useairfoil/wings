@@ -134,8 +134,21 @@ impl Database {
             Box::pin(async move {
                 entities::namespace::expect_exists(tx, &name).await?;
 
-                // Note: Topic check is skipped since topic entity doesn't exist yet.
-                // This should be added when topics are implemented.
+                // Check if namespace has any topics
+                let topics_count = entities::topic::Entity::find()
+                    .filter(entities::topic::Column::TenantId.eq(&tenant_id))
+                    .filter(entities::topic::Column::NamespaceId.eq(&id))
+                    .count(tx)
+                    .await?;
+
+                if topics_count > 0 {
+                    return Err(Error::InvalidArgument {
+                        resource: "namespace",
+                        message: format!(
+                            "namespace has {topics_count} topics and cannot be deleted"
+                        ),
+                    });
+                }
 
                 let result = entities::namespace::Entity::delete_by_id((tenant_id, id))
                     .exec(tx)

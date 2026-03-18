@@ -2,9 +2,10 @@
 use sea_orm::ConnectOptions;
 use wings_control_plane_sql::Database;
 use wings_resources::{
-    AwsConfiguration, DataLakeConfiguration, DataLakeName, ObjectStoreConfiguration,
-    ObjectStoreName, ParquetConfiguration, TenantName,
+    AwsConfiguration, DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
+    ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration, TenantName,
 };
+use wings_schema::{DataType, Field, SchemaBuilder};
 
 pub async fn new_test_db() -> Database {
     let options = ConnectOptions::new("sqlite::memory:");
@@ -49,11 +50,22 @@ pub async fn seed_object_store(db: &Database) {
 }
 
 pub async fn seed_namespace(db: &Database) {
-    let name = wings_resources::NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
-    let object_store =
-        wings_resources::ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
-    let data_lake = wings_resources::DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
-    let options = wings_resources::NamespaceOptions::new(object_store, data_lake);
+    let name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
+    let object_store = ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
+    let data_lake = DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
+    let options = NamespaceOptions::new(object_store, data_lake);
 
     db.create_namespace(name, options).await.unwrap();
+}
+
+pub async fn seed_topic(db: &Database) {
+    use wings_resources::{TopicName, TopicOptions};
+
+    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
+        .build()
+        .unwrap();
+    let options = TopicOptions::new(schema);
+
+    db.create_topic(name, options).await.unwrap();
 }

@@ -31,6 +31,7 @@ use std::{
 
 use datafusion::arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
+use serde::{Deserialize, Serialize};
 
 pub use self::{
     data_type::{DataType, TimeUnit},
@@ -49,7 +50,7 @@ pub struct Schema {
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
     pub id: u64,
@@ -60,7 +61,7 @@ pub struct Field {
 
 pub type FieldRef = Arc<Field>;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Fields(Arc<[FieldRef]>);
 
 #[derive(Debug)]

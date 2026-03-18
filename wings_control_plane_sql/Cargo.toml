@@ -24,3 +24,4 @@ tracing.workspace = true
 wings-control-plane-core.path = "../wings_control_plane_core"
 wings-observability.path = "../wings_observability"
 wings-resources.path = "../wings_resources"
+wings-schema.path = "../wings_schema"

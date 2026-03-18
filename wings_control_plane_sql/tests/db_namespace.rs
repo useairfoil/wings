@@ -268,3 +268,26 @@ async fn test_create_namespace_fails_if_data_lake_parent_mismatch() {
         })
     ));
 }
+
+#[tokio::test]
+async fn test_delete_namespace_fails_if_has_topics() {
+    let db = common::new_test_db().await;
+
+    common::seed_tenant(&db).await;
+    common::seed_data_lake(&db).await;
+    common::seed_object_store(&db).await;
+    common::seed_namespace(&db).await;
+    common::seed_topic(&db).await;
+
+    let name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
+
+    let result = db.delete_namespace(name).await;
+
+    assert!(matches!(
+        result,
+        Err(Error::InvalidArgument {
+            resource: "namespace",
+            ..
+        })
+    ));
+}
