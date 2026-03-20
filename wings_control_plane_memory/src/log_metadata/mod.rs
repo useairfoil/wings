@@ -20,6 +20,7 @@ use wings_control_plane_core::log_metadata::{
     CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
     GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
     LogMetadataError, PartitionMetadata, RequestTaskRequest, RequestTaskResponse, Result,
+    validate_pages_to_commit,
 };
 use wings_resources::{NamespaceName, PartitionValue, Topic, TopicName, TopicStatus};
 
@@ -58,7 +59,7 @@ impl LogMetadataStore {
         pages: &[CommitPageRequest],
         cluster_metadata: &ClusterMetadataStore,
     ) -> Result<Vec<CommitPageResponse>> {
-        page::validate_pages_to_commit(pages)?;
+        validate_pages_to_commit(&namespace, pages)?;
 
         // Assign the same timestamp to all batches across pages.
         let now_ts = SystemTime::now();

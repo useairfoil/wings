@@ -1,6 +1,6 @@
 use sea_orm::DbErr;
 use snafu::Snafu;
-use wings_control_plane_core::ClusterMetadataError;
+use wings_control_plane_core::{ClusterMetadataError, log_metadata::LogMetadataError};
 use wings_resources::ResourceError;
 use wings_schema::SchemaError;
 
@@ -61,6 +61,15 @@ impl From<Error> for ClusterMetadataError {
             Error::Orm { source } => ClusterMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
+        }
+    }
+}
+
+impl From<Error> for LogMetadataError {
+    fn from(err: Error) -> Self {
+        // TODO: cleanup conversion
+        LogMetadataError::Internal {
+            message: err.to_string(),
         }
     }
 }

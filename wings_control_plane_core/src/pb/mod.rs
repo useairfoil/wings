@@ -19,3 +19,16 @@ const CLUSTER_METADATA_DESCRIPTOR_SET: &[u8] =
 pub fn cluster_metadata_file_descriptor_set() -> &'static [u8] {
     CLUSTER_METADATA_DESCRIPTOR_SET
 }
+
+#[derive(prost::Message)]
+pub struct CommittedBatches {
+    #[prost(message, repeated, tag = "1")]
+    pub batches: Vec<self::CommittedBatch>,
+}
+
+impl CommittedBatches {
+    pub fn new(batches: Vec<crate::log_metadata::CommittedBatch>) -> Self {
+        let batches = batches.into_iter().map(Into::into).collect();
+        Self { batches }
+    }
+}

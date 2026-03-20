@@ -2,6 +2,7 @@ pub(crate) mod error;
 pub mod stream;
 pub mod timestamp;
 pub mod tonic;
+mod validation;
 
 use std::{
     collections::HashMap,
@@ -16,7 +17,10 @@ use time::UtcDateTime;
 use wings_resources::{NamespaceName, PartitionValue, TopicName};
 use wings_schema::Datum;
 
-pub use self::error::{LogMetadataError, Result};
+pub use self::{
+    error::{LogMetadataError, Result},
+    validation::validate_pages_to_commit,
+};
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct FileMetadata {

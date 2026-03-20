@@ -6,6 +6,7 @@ use wings_control_plane_core::log_metadata::{
     GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
     RequestTaskRequest, RequestTaskResponse, Result,
 };
+use wings_resources::NamespaceName;
 
 use crate::SqlControlPlane;
 
@@ -13,15 +14,18 @@ use crate::SqlControlPlane;
 impl LogMetadata for SqlControlPlane {
     async fn commit_folio(
         &self,
-        _namespace: wings_resources::NamespaceName,
-        _file_ref: String,
-        _pages: &[CommitPageRequest],
+        namespace: NamespaceName,
+        file_ref: String,
+        pages: &[CommitPageRequest],
     ) -> Result<Vec<CommitPageResponse>> {
-        todo!()
+        self.db
+            .commit_folio(namespace, file_ref, pages)
+            .await
+            .map_err(Into::into)
     }
 
     async fn get_log_location(&self, _request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
-        todo!()
+        Ok(vec![])
     }
 
     async fn list_partitions(

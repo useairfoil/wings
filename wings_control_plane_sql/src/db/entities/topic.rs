@@ -29,6 +29,10 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_one = "super::namespace::Entity")]
     Namespace,
+    #[sea_orm(has_many = "super::partition_state::Entity")]
+    PartitionState,
+    #[sea_orm(has_many = "super::partition_location::Entity")]
+    PartitionLocation,
 }
 
 impl ActiveModelBehavior for ActiveModel {}
@@ -36,6 +40,18 @@ impl ActiveModelBehavior for ActiveModel {}
 impl Related<super::namespace::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Namespace.def()
+    }
+}
+
+impl Related<super::partition_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PartitionState.def()
+    }
+}
+
+impl Related<super::partition_location::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PartitionLocation.def()
     }
 }
 
