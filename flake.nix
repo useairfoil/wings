@@ -185,10 +185,6 @@
             ];
 
             inputsFrom = [ binaries ];
-
-            buildInputs = [
-              pkgs.sea-orm-cli
-            ];
           };
 
           ci = pkgs.mkShell {
