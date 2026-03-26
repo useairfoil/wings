@@ -2,20 +2,21 @@ use std::time::SystemTime;
 
 use sea_orm::{
     ActiveValue::{NotSet, Set},
-    DatabaseTransaction, EntityTrait, QuerySelect,
+    DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
     sea_query::OnConflict,
 };
 use tracing::debug;
 use wings_control_plane_core::log_metadata::{
-    AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch, RejectedBatchInfo,
+    AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch,
+    ListPartitionsResponse, RejectedBatchInfo,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
     validate_pages_to_commit,
 };
-use wings_resources::NamespaceName;
+use wings_resources::{NamespaceName, TopicName};
 
 use crate::{
     Database,
-    db::{entities, error::Result},
+    db::{PartitionKey, entities, error::Result},
 };
 
 impl Database {
@@ -25,6 +26,7 @@ impl Database {
         file_ref: String,
         pages: &[CommitPageRequest],
     ) -> Result<Vec<CommitPageResponse>> {
+        // TODO: decide how to forward validation errors.
         validate_pages_to_commit(&namespace, pages).unwrap();
 
         // Assign the same timestamp to all batches across pages.
@@ -45,6 +47,40 @@ impl Database {
         })
         .await
     }
+
+    pub async fn list_partitions(
+        &self,
+        topic_name: TopicName,
+        page_size: usize,
+        page: usize,
+    ) -> Result<ListPartitionsResponse> {
+        self.with_transaction(|tx| {
+            Box::pin(async move {
+                let paginator = entities::partition_state::Entity::find()
+                    .filter(entities::partition_state::topic_condition(&topic_name))
+                    .paginate(tx, page_size as _);
+
+                let partitions = paginator
+                    .fetch_page(page as _)
+                    .await?
+                    .into_iter()
+                    .map(|m| m.try_into())
+                    .collect::<Result<Vec<_>>>()?;
+
+                let next_page_token = if partitions.len() == page_size {
+                    Some((page + 1).to_string())
+                } else {
+                    None
+                };
+
+                Ok(ListPartitionsResponse {
+                    partitions,
+                    next_page_token,
+                })
+            })
+        })
+        .await
+    }
 }
 
 async fn commit_page(
@@ -53,10 +89,7 @@ async fn commit_page(
     page: CommitPageRequest,
     now_ts: SystemTime,
 ) -> Result<CommitPageResponse> {
-    let partition_key = entities::partition_state::PartitionKey::new(
-        &page.topic_name,
-        page.partition_value.clone(),
-    );
+    let partition_key = PartitionKey::new(&page.topic_name, page.partition_value.clone());
 
     let state = entities::partition_state::Entity::find_by_id(partition_key.clone())
         .lock_exclusive()
@@ -135,7 +168,7 @@ async fn commit_page(
                 location_type: Set(LocationType::Folio),
                 folio_offset_bytes: Set(Some(page.offset_bytes as _)),
                 folio_size_bytes: Set(Some(page.batch_size_bytes as _)),
-                folio_batches_pb: Set(folio_batches_pb),
+                folio_batches_pb: Set(Some(folio_batches_pb)),
                 parquet_metadata_pb: NotSet,
             }
         };

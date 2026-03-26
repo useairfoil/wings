@@ -1,3 +1,4 @@
+use prost::DecodeError;
 use sea_orm::DbErr;
 use snafu::Snafu;
 use wings_control_plane_core::{ClusterMetadataError, log_metadata::LogMetadataError};
@@ -33,6 +34,10 @@ pub enum Error {
     Json { source: serde_json::Error },
     #[snafu(transparent)]
     Orm { source: DbErr },
+    #[snafu(transparent)]
+    ProtoDecode { source: DecodeError },
+    #[snafu(display("{message}"))]
+    Internal { message: String },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -55,12 +60,16 @@ impl From<Error> for ClusterMetadataError {
             Error::Schema { source } => ClusterMetadataError::Internal {
                 message: format!("schema error: {source}"),
             },
+            Error::ProtoDecode { source } => ClusterMetadataError::Internal {
+                message: format!("proto decode error: {source}"),
+            },
             Error::Json { source } => ClusterMetadataError::Internal {
                 message: format!("json error: {source}"),
             },
             Error::Orm { source } => ClusterMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
+            Error::Internal { message } => ClusterMetadataError::Internal { message },
         }
     }
 }
@@ -69,6 +78,15 @@ impl From<Error> for LogMetadataError {
     fn from(err: Error) -> Self {
         // TODO: cleanup conversion
         LogMetadataError::Internal {
+            message: err.to_string(),
+        }
+    }
+}
+
+impl From<LogMetadataError> for Error {
+    fn from(err: LogMetadataError) -> Self {
+        // TODO: cleanup conversion
+        Error::Internal {
             message: err.to_string(),
         }
     }

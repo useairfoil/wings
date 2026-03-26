@@ -1,6 +1,7 @@
 pub mod entities;
 pub mod error;
 pub mod migrations;
+mod partition_key;
 mod queries;
 
 use std::pin::Pin;
@@ -9,7 +10,10 @@ use sea_orm::{
     ConnectOptions, DatabaseConnection, DatabaseTransaction, TransactionError, TransactionTrait,
 };
 
-pub use self::error::{Error, Result};
+pub use self::{
+    error::{Error, Result},
+    partition_key::PartitionKey,
+};
 
 pub struct Database {
     pub options: ConnectOptions,

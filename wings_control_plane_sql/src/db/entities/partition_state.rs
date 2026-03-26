@@ -1,8 +1,10 @@
 use std::time::{Duration, SystemTime};
 
-use sea_orm::entity::prelude::*;
-use wings_control_plane_core::log_metadata::LogOffset;
+use sea_orm::{Condition, entity::prelude::*};
+use wings_control_plane_core::log_metadata::{LogOffset, PartitionMetadata};
 use wings_resources::{PartitionValue, TopicName};
+
+use crate::db::PartitionKey;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "partition_states")]
@@ -33,36 +35,15 @@ impl Related<super::topic::Entity> for Entity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartitionKey {
-    pub tenant_id: String,
-    pub namespace_id: String,
-    pub topic_id: String,
-    pub partition_value: Vec<u8>,
-}
+pub fn topic_condition(topic_name: &TopicName) -> Condition {
+    let topic_id = topic_name.id();
+    let namespace_id = topic_name.parent().id();
+    let tenant_id = topic_name.parent().parent().id();
 
-impl PartitionKey {
-    pub fn new(name: &TopicName, partition_value: Option<PartitionValue>) -> Self {
-        use prost::Message;
-        use wings_control_plane_core::pb::PartitionValue as Proto;
-
-        let namespace = name.parent();
-        let tenant = namespace.parent();
-
-        let pv = if let Some(ref pv) = partition_value {
-            let pv: Proto = pv.into();
-            pv.encode_to_vec()
-        } else {
-            Vec::default()
-        };
-
-        Self {
-            tenant_id: tenant.id().to_owned(),
-            namespace_id: namespace.id().to_owned(),
-            topic_id: name.id().to_owned(),
-            partition_value: pv,
-        }
-    }
+    Condition::all()
+        .add(Column::TenantId.eq(tenant_id))
+        .add(Column::NamespaceId.eq(namespace_id))
+        .add(Column::TopicId.eq(topic_id))
 }
 
 impl Model {
@@ -83,5 +64,26 @@ impl From<PartitionKey> for <PrimaryKey as PrimaryKeyTrait>::ValueType {
             pk.topic_id,
             pk.partition_value,
         )
+    }
+}
+
+impl TryFrom<Model> for PartitionMetadata {
+    type Error = crate::db::Error;
+
+    fn try_from(model: Model) -> Result<Self, Self::Error> {
+        use prost::Message;
+        use wings_control_plane_core::pb::PartitionValue as Proto;
+
+        let partition_value: Option<PartitionValue> = if model.partition_value.is_empty() {
+            None
+        } else {
+            let proto = Proto::decode(model.partition_value.as_slice())?;
+            Some(proto.try_into()?)
+        };
+
+        Ok(Self {
+            partition_value,
+            end_offset: model.next_log_offset(),
+        })
     }
 }
