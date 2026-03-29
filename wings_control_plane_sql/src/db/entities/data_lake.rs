@@ -2,7 +2,7 @@ use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
 use wings_resources::{DataLake, DataLakeName, TenantName};
 
-use crate::db::error::InvalidResourceNameSnafu;
+use super::error::{Error, InvalidResourceNameSnafu};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "data_lakes")]
@@ -29,7 +29,7 @@ impl Related<super::tenant::Entity> for Entity {
 }
 
 impl TryFrom<Model> for DataLake {
-    type Error = crate::db::error::Error;
+    type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         let tenant_name = TenantName::new(model.tenant_id)
@@ -44,18 +44,15 @@ impl TryFrom<Model> for DataLake {
     }
 }
 
-pub async fn expect_exists(
-    tx: &DatabaseTransaction,
-    name: &DataLakeName,
-) -> Result<(), crate::db::Error> {
+pub async fn expect_exists(tx: &DatabaseTransaction, name: &DataLakeName) -> Result<(), Error> {
     let tenant_id = name.parent().id().to_owned();
     let id = name.id.to_owned();
     let existing = Entity::find_by_id((tenant_id, id)).one(tx).await?;
 
     if existing.is_none() {
-        return Err(crate::db::Error::NotFound {
-            resource: "data-lake",
-            message: format!("name={name}"),
+        return Err(Error::NotFound {
+            resource: "data lake",
+            name: name.to_string(),
         });
     }
 

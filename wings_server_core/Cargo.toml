@@ -36,5 +36,5 @@ wings-schema = { path = "../wings_schema" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-wings-control-plane-memory = { path = "../wings_control_plane_memory" }
+wings-control-plane-sql = { path = "../wings_control_plane_sql" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }

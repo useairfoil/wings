@@ -11,10 +11,10 @@ use wings_resources::{
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadata, ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse,
-        ListNamespacesRequest, ListNamespacesResponse, ListObjectStoresRequest,
-        ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse, ListTopicsRequest,
-        ListTopicsResponse, Result, TopicView,
+        ClusterMetadata, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
+        ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
+        ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
+        TopicView,
     },
     pb::{self, cluster_metadata_service_client::ClusterMetadataServiceClient as TonicClient},
 };
@@ -62,10 +62,10 @@ where
         self.client
             .clone()
             .create_tenant(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("tenant", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
@@ -76,10 +76,10 @@ where
         self.client
             .clone()
             .get_tenant(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("tenant", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
@@ -88,10 +88,10 @@ where
         self.client
             .clone()
             .list_tenants(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("tenant", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn delete_tenant(&self, name: TenantName) -> Result<()> {
@@ -99,11 +99,7 @@ where
             name: name.to_string(),
         };
 
-        self.client
-            .clone()
-            .delete_tenant(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("tenant", status))?;
+        self.client.clone().delete_tenant(request).await?;
 
         Ok(())
     }
@@ -122,10 +118,10 @@ where
         self.client
             .clone()
             .create_namespace(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("namespace", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
@@ -136,10 +132,10 @@ where
         self.client
             .clone()
             .get_namespace(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("namespace", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_namespaces(
@@ -151,10 +147,10 @@ where
         self.client
             .clone()
             .list_namespaces(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("namespace", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
@@ -162,11 +158,7 @@ where
             name: name.to_string(),
         };
 
-        self.client
-            .clone()
-            .delete_namespace(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("tenant", status))?;
+        self.client.clone().delete_namespace(request).await?;
 
         Ok(())
     }
@@ -182,10 +174,10 @@ where
         self.client
             .clone()
             .create_topic(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("topic", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
@@ -198,10 +190,10 @@ where
         self.client
             .clone()
             .get_topic(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("topic", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
@@ -210,10 +202,10 @@ where
         self.client
             .clone()
             .list_topics(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("topic", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
@@ -222,11 +214,7 @@ where
             force,
         };
 
-        self.client
-            .clone()
-            .delete_topic(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("topic", status))?;
+        self.client.clone().delete_topic(request).await?;
 
         Ok(())
     }
@@ -245,10 +233,10 @@ where
         self.client
             .clone()
             .create_object_store(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
@@ -259,10 +247,10 @@ where
         self.client
             .clone()
             .get_object_store(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_object_stores(
@@ -274,10 +262,10 @@ where
         self.client
             .clone()
             .list_object_stores(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("object store", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
@@ -285,11 +273,7 @@ where
             name: name.to_string(),
         };
 
-        self.client
-            .clone()
-            .delete_object_store(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("object store", status))?;
+        self.client.clone().delete_object_store(request).await?;
 
         Ok(())
     }
@@ -308,10 +292,10 @@ where
         self.client
             .clone()
             .create_data_lake(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_data_lake(&self, name: DataLakeName) -> Result<DataLake> {
@@ -322,10 +306,10 @@ where
         self.client
             .clone()
             .get_data_lake(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_data_lakes(
@@ -337,10 +321,10 @@ where
         self.client
             .clone()
             .list_data_lakes(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn delete_data_lake(&self, name: DataLakeName) -> Result<()> {
@@ -348,37 +332,8 @@ where
             name: name.to_string(),
         };
 
-        self.client
-            .clone()
-            .delete_data_lake(request)
-            .await
-            .map_err(|status| status_to_cluster_metadata_error("data lake", status))?;
+        self.client.clone().delete_data_lake(request).await?;
 
         Ok(())
-    }
-}
-
-fn status_to_cluster_metadata_error(
-    resource: &'static str,
-    status: tonic::Status,
-) -> ClusterMetadataError {
-    use tonic::Code;
-
-    match status.code() {
-        Code::NotFound => ClusterMetadataError::NotFound {
-            resource,
-            message: status.message().to_string(),
-        },
-        Code::AlreadyExists => ClusterMetadataError::AlreadyExists {
-            resource,
-            message: status.message().to_string(),
-        },
-        Code::InvalidArgument => ClusterMetadataError::InvalidArgument {
-            resource,
-            message: status.message().to_string(),
-        },
-        _ => ClusterMetadataError::Internal {
-            message: format!("unknown error from remote service: {}", status.message()),
-        },
     }
 }

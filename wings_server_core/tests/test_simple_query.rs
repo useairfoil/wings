@@ -9,7 +9,7 @@ mod common;
 
 #[tokio::test]
 async fn test_simple_query_with_no_data() -> Result<()> {
-    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
@@ -42,7 +42,7 @@ async fn test_simple_query_with_no_data() -> Result<()> {
 
 #[tokio::test]
 async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
-    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
@@ -145,7 +145,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
 #[tokio::test]
 async fn test_simple_query_with_missing_offset_bounds() -> Result<()> {
-    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();

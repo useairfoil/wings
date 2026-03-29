@@ -4,6 +4,7 @@ use sea_orm::{Condition, entity::prelude::*};
 use wings_control_plane_core::log_metadata::{LogOffset, PartitionMetadata};
 use wings_resources::{PartitionValue, TopicName};
 
+use super::error::Error;
 use crate::db::PartitionKey;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -68,7 +69,7 @@ impl From<PartitionKey> for <PrimaryKey as PrimaryKeyTrait>::ValueType {
 }
 
 impl TryFrom<Model> for PartitionMetadata {
-    type Error = crate::db::Error;
+    type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         use prost::Message;

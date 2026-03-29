@@ -1,38 +1,40 @@
 pub mod entities;
-pub mod error;
 pub mod migrations;
 mod partition_key;
 mod queries;
 
-use std::pin::Pin;
+use std::{
+    fmt::{Debug, Display},
+    pin::Pin,
+};
 
 use sea_orm::{
-    ConnectOptions, DatabaseConnection, DatabaseTransaction, TransactionError, TransactionTrait,
+    ConnectOptions, DatabaseConnection, DatabaseTransaction, DbErr, TransactionError,
+    TransactionTrait,
 };
 
-pub use self::{
-    error::{Error, Result},
-    partition_key::PartitionKey,
-};
+pub use self::partition_key::PartitionKey;
 
+#[derive(Clone)]
 pub struct Database {
     pub options: ConnectOptions,
     pub pool: DatabaseConnection,
 }
 
 impl Database {
-    pub async fn new(options: ConnectOptions) -> Result<Self> {
+    pub async fn new(options: ConnectOptions) -> Result<Self, DbErr> {
         let pool = sea_orm::Database::connect(options.clone()).await?;
         Ok(Self { options, pool })
     }
 
-    pub async fn with_transaction<F, T>(&self, f: F) -> Result<T>
+    pub async fn with_transaction<F, T, E>(&self, f: F) -> Result<T, E>
     where
         F: for<'c> FnOnce(
                 &'c DatabaseTransaction,
-            ) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'c>>
+            ) -> Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'c>>
             + Send,
         T: Send,
+        E: From<DbErr> + Send + Debug + Display,
     {
         match self.pool.transaction(f).await {
             Ok(result) => Ok(result),

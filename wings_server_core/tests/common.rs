@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::ClusterMetadata;
-use wings_control_plane_memory::InMemoryControlPlane;
+use wings_control_plane_sql::SqlControlPlane;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
@@ -16,7 +16,7 @@ use wings_resources::{
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 use wings_server_core::query::NamespaceProviderFactory;
 
-pub fn create_ingestor_and_provider() -> (
+pub async fn create_ingestor_and_provider() -> (
     JoinHandle<()>,
     BatchIngestorClient,
     NamespaceProviderFactory,
@@ -24,7 +24,7 @@ pub fn create_ingestor_and_provider() -> (
     CancellationToken,
 ) {
     let metrics_exporter = MetricsExporter::default();
-    let control_plane: Arc<_> = InMemoryControlPlane::new().into();
+    let control_plane: Arc<_> = SqlControlPlane::new_in_memory().await.into();
     let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new(control_plane.clone())
         .expect("object store factory")
         .into();

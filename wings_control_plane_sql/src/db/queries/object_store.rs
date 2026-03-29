@@ -1,25 +1,37 @@
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
-use wings_control_plane_core::cluster_metadata::{
-    ListObjectStoresRequest, ListObjectStoresResponse,
+use snafu::Snafu;
+use wings_control_plane_core::{
+    ClusterMetadataError,
+    cluster_metadata::{ListObjectStoresRequest, ListObjectStoresResponse},
 };
 use wings_resources::{ObjectStore, ObjectStoreConfiguration, ObjectStoreName};
 
-use crate::{
-    Database,
-    db::{
-        entities,
-        error::{Error, Result},
-    },
-};
+use crate::{Database, db::entities};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("object store {name} already exists"))]
+    AlreadyExists { name: ObjectStoreName },
+    #[snafu(display("object store {name} not found"))]
+    NotFound { name: ObjectStoreName },
+    #[snafu(display("object store {name} is in use by a namespace"))]
+    InUse { name: ObjectStoreName },
+    #[snafu(transparent)]
+    Json { source: serde_json::Error },
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
     pub async fn create_object_store(
         &self,
         name: ObjectStoreName,
         config: ObjectStoreConfiguration,
-    ) -> Result<ObjectStore> {
+    ) -> Result<ObjectStore, Error> {
         let tenant_name = name.parent().clone();
         let tenant_id = tenant_name.id().to_owned();
         let id = name.id().to_owned();
@@ -41,23 +53,20 @@ impl Database {
                     .await?;
 
                 if existing.is_some() {
-                    return Err(Error::AlreadyExists {
-                        resource: "object-store",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::AlreadyExists { name });
                 }
 
                 let entity = entities::object_store::Entity::insert(object_store)
                     .exec_with_returning(tx)
                     .await?;
 
-                entity.try_into()
+                entity.try_into().map_err(Into::into)
             })
         })
         .await
     }
 
-    pub async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore> {
+    pub async fn get_object_store(&self, name: ObjectStoreName) -> Result<ObjectStore, Error> {
         let tenant_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
@@ -66,18 +75,15 @@ impl Database {
             .await?;
 
         match existing {
-            Some(entity) => entity.try_into(),
-            None => Err(Error::NotFound {
-                resource: "object-store",
-                message: format!("name={name}"),
-            }),
+            Some(entity) => entity.try_into().map_err(Into::into),
+            None => Err(Error::NotFound { name }),
         }
     }
 
     pub async fn list_object_stores(
         &self,
         request: ListObjectStoresRequest,
-    ) -> Result<ListObjectStoresResponse> {
+    ) -> Result<ListObjectStoresResponse, Error> {
         let tenant_id = request.parent.id().to_owned();
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1_000) as u64;
 
@@ -103,7 +109,7 @@ impl Database {
         let object_stores = entities
             .into_iter()
             .map(|entity| entity.try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ListObjectStoresResponse {
             object_stores,
@@ -111,7 +117,7 @@ impl Database {
         })
     }
 
-    pub async fn delete_object_store(&self, name: ObjectStoreName) -> Result<()> {
+    pub async fn delete_object_store(&self, name: ObjectStoreName) -> Result<(), Error> {
         let tenant_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
@@ -127,10 +133,7 @@ impl Database {
                     .is_some();
 
                 if has_namespaces {
-                    return Err(Error::InvalidArgument {
-                        resource: "object-store",
-                        message: format!("{name} is used by a namespace and cannot be deleted"),
-                    });
+                    return Err(Error::InUse { name });
                 }
 
                 let result = entities::object_store::Entity::delete_by_id((tenant_id, id))
@@ -138,15 +141,37 @@ impl Database {
                     .await?;
 
                 if result.rows_affected == 0 {
-                    return Err(Error::NotFound {
-                        resource: "object-store",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::NotFound { name });
                 }
 
                 Ok(())
             })
         })
         .await
+    }
+}
+
+impl From<Error> for ClusterMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::AlreadyExists { name } => ClusterMetadataError::AlreadyExists {
+                resource: "object store".to_string(),
+                name: name.to_string(),
+            },
+            Error::NotFound { name } => ClusterMetadataError::NotFound {
+                resource: "object store".to_string(),
+                name: name.to_string(),
+            },
+            Error::InUse { .. } => ClusterMetadataError::FailedPrecondition {
+                message: err.to_string(),
+            },
+            Error::Json { source } => ClusterMetadataError::Internal {
+                message: format!("json error: {source}"),
+            },
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => ClusterMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
     }
 }

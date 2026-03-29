@@ -5,7 +5,7 @@ use snafu::ResultExt;
 use wings_resources::{CompactionConfiguration, NamespaceName, TenantName, Topic, TopicName};
 use wings_schema::{FieldRef, Fields, SchemaBuilder};
 
-use crate::db::error::InvalidResourceNameSnafu;
+use super::error::{Error, InvalidResourceNameSnafu};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "topics")]
@@ -56,7 +56,7 @@ impl Related<super::partition_location::Entity> for Entity {
 }
 
 impl TryFrom<Model> for Topic {
-    type Error = crate::db::error::Error;
+    type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         let tenant_name = TenantName::new(model.tenant_id.clone())
@@ -103,10 +103,7 @@ impl TryFrom<Model> for Topic {
     }
 }
 
-pub async fn expect_exists(
-    tx: &DatabaseTransaction,
-    name: &TopicName,
-) -> Result<(), crate::db::Error> {
+pub async fn expect_exists(tx: &DatabaseTransaction, name: &TopicName) -> Result<(), Error> {
     let tenant_id = name.parent().parent().id().to_owned();
     let namespace_id = name.parent().id().to_owned();
     let id = name.id.to_owned();
@@ -115,9 +112,9 @@ pub async fn expect_exists(
         .await?;
 
     if existing.is_none() {
-        return Err(crate::db::Error::NotFound {
+        return Err(Error::NotFound {
             resource: "topic",
-            message: format!("name={name}"),
+            name: name.to_string(),
         });
     }
 

@@ -8,11 +8,10 @@ use std::{
 
 use futures::Stream;
 use pin_project::pin_project;
-use snafu::ResultExt;
 use wings_resources::{NamespaceName, Topic, TopicName};
 
 use super::{ClusterMetadata, ClusterMetadataError};
-use crate::cluster_metadata::{ListTopicsRequest, error::InvalidResourceNameSnafu};
+use crate::cluster_metadata::ListTopicsRequest;
 
 pub trait TopicPageStream: Stream<Item = Result<Vec<Topic>, ClusterMetadataError>> {}
 pub type SendableTopicPageStream = Pin<Box<dyn TopicPageStream + Send>>;
@@ -111,7 +110,7 @@ fn gen_paginated_topic_stream_with_filter(
     async_stream::stream! {
         for topic_id in topics_filter {
             let topic_name = TopicName::new(topic_id, namespace.clone())
-                .context(InvalidResourceNameSnafu { resource: "topic" })?;
+                .map_err(|err| ClusterMetadataError::InvalidResourceName { resource: "topic".to_string(), message: err.to_string() })?;
 
             match cluster_metadata.get_topic(topic_name, Default::default()).await {
                 Ok(topic) => {

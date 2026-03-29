@@ -2,7 +2,6 @@ use arrow_flight::error::FlightError;
 use snafu::Snafu;
 use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
 use wings_flight::{TicketDecodeError, TicketEncodeError};
-use wings_observability::ErrorKind;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -38,17 +37,6 @@ impl From<tonic::Status> for ClientError {
     fn from(source: tonic::Status) -> Self {
         Self::Tonic {
             source: source.into(),
-        }
-    }
-}
-
-impl ClientError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::MissingPartitionValue => ErrorKind::Validation,
-            Self::UnexpectedRequestId { .. } => ErrorKind::Internal,
-            Self::ClusterMetadata { source } => source.kind(),
-            _ => ErrorKind::Temporary,
         }
     }
 }

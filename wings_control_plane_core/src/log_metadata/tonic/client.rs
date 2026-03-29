@@ -9,7 +9,7 @@ use crate::{
     log_metadata::{
         CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
         GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-        LogMetadata, LogMetadataError, RequestTaskRequest, RequestTaskResponse, Result,
+        LogMetadata, RequestTaskRequest, RequestTaskResponse, Result,
     },
     pb::{self, log_metadata_service_client::LogMetadataServiceClient as TonicClient},
 };
@@ -63,24 +63,22 @@ where
         self.client
             .clone()
             .commit_folio(request)
-            .await
-            .map_err(status_to_log_metadata_error)?
+            .await?
             .into_inner()
             .try_into()
+            .map_err(Into::into)
     }
 
     async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
         let request: pb::GetLogLocationRequest = request.try_into()?;
 
-        let response = self
-            .client
+        self.client
             .clone()
             .get_log_location(request)
-            .await
-            .map_err(status_to_log_metadata_error)?
-            .into_inner();
-
-        response.try_into()
+            .await?
+            .into_inner()
+            .try_into()
+            .map_err(Into::into)
     }
 
     async fn list_partitions(
@@ -89,51 +87,36 @@ where
     ) -> Result<ListPartitionsResponse> {
         let request: pb::ListPartitionsRequest = request.into();
 
-        let response = self
-            .client
+        self.client
             .clone()
             .list_partitions(request)
-            .await
-            .map_err(status_to_log_metadata_error)?
+            .await?
             .into_inner()
-            .try_into()?;
-
-        Ok(response)
+            .try_into()
+            .map_err(Into::into)
     }
 
     async fn request_task(&self, request: RequestTaskRequest) -> Result<RequestTaskResponse> {
         let request: pb::RequestTaskRequest = request.into();
 
-        let response = self
-            .client
+        self.client
             .clone()
             .request_task(request)
-            .await
-            .map_err(status_to_log_metadata_error)?
+            .await?
             .into_inner()
-            .try_into()?;
-
-        Ok(response)
+            .try_into()
+            .map_err(Into::into)
     }
 
     async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse> {
         let request: pb::CompleteTaskRequest = request.into();
 
-        let response = self
-            .client
+        self.client
             .clone()
             .complete_task(request)
-            .await
-            .map_err(status_to_log_metadata_error)?
+            .await?
             .into_inner()
-            .try_into()?;
-
-        Ok(response)
-    }
-}
-
-fn status_to_log_metadata_error(status: tonic::Status) -> LogMetadataError {
-    LogMetadataError::Internal {
-        message: format!("error from remote service: {}", status.message()),
+            .try_into()
+            .map_err(Into::into)
     }
 }

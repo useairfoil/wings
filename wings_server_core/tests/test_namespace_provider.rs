@@ -15,7 +15,7 @@ mod common;
 
 #[tokio::test]
 async fn test_metadata_system_tables() -> Result<()> {
-    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
@@ -60,7 +60,7 @@ async fn test_metadata_system_tables() -> Result<()> {
 
 #[tokio::test]
 async fn test_topic_and_topic_schema() -> Result<()> {
-    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
@@ -121,7 +121,7 @@ async fn test_topic_and_topic_schema() -> Result<()> {
 
 #[tokio::test]
 async fn test_topic_offset_location() -> Result<()> {
-    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let simple_topic = initialize_test_topic(&admin, &namespace.name).await;
     let partitioned_topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
@@ -175,7 +175,7 @@ async fn test_topic_offset_location() -> Result<()> {
 
 #[tokio::test]
 async fn test_topic_partition_value() -> Result<()> {
-    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider();
+    let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
     let simple_topic = initialize_test_topic(&admin, &namespace.name).await;
     let partitioned_topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;

@@ -3,7 +3,6 @@ use snafu::Snafu;
 use tokio::{sync::mpsc::error::SendError, task::JoinError};
 use wings_client::ClientError;
 use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
-use wings_observability::ErrorKind;
 use wings_resources::ResourceError;
 
 use crate::log::Event;
@@ -41,18 +40,3 @@ pub enum CliError {
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
-
-impl CliError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::PushError { source } | Self::FetchError { source } => source.kind(),
-            Self::InvalidResourceName { .. } => ErrorKind::Validation,
-            Self::InvalidRemoteUrl { .. } => ErrorKind::Configuration,
-            Self::Connection { .. } => ErrorKind::Temporary,
-            Self::JoinError { .. } | Self::ArrowError { .. } | Self::EventChannelClosed { .. } => {
-                ErrorKind::Internal
-            }
-        }
-    }
-}

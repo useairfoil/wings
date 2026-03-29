@@ -1,7 +1,8 @@
 use sea_orm::{Condition, entity::prelude::*};
 use wings_control_plane_core::log_metadata::{FolioLocation, LogLocation};
 
-use crate::db::{Error, PartitionKey};
+use super::error::Error;
+use crate::db::PartitionKey;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "partition_locations")]

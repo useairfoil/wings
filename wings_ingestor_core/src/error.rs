@@ -3,7 +3,6 @@ use std::sync::Arc;
 use parquet::errors::ParquetError;
 use snafu::Snafu;
 use wings_control_plane_core::log_metadata::LogMetadataError;
-use wings_observability::ErrorKind;
 
 /// Ingestor error types.
 ///
@@ -55,15 +54,3 @@ pub enum IngestorError {
 }
 
 pub type Result<T, E = IngestorError> = std::result::Result<T, E>;
-
-impl IngestorError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::Validation { .. } | Self::Schema { .. } => ErrorKind::Validation,
-            Self::Parquet { .. } | Self::ObjectStore { .. } => ErrorKind::Temporary,
-            Self::LogMetadata { source, .. } => source.kind(),
-            Self::Internal { .. } => ErrorKind::Internal,
-            Self::ReplyChannelClosed => ErrorKind::Internal,
-        }
-    }
-}

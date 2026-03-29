@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use snafu::ResultExt;
 use tonic::{Request, Response, Status, async_trait};
 use wings_resources::NamespaceName;
 
 use crate::{
+    error::ResourceErrorExt,
     log_metadata::{
         CompleteTaskRequest, GetLogLocationRequest, ListPartitionsRequest, LogMetadata,
-        LogMetadataError, RequestTaskRequest, error::InvalidResourceNameSnafu,
+        LogMetadataError, RequestTaskRequest,
     },
     pb::{
         self,
@@ -15,7 +15,6 @@ use crate::{
             LogMetadataService as TonicService, LogMetadataServiceServer as TonicServer,
         },
     },
-    status::resource_error_to_status,
 };
 
 /// A tonic service for managing log metadata.
@@ -43,23 +42,19 @@ impl TonicService for LogMetadataServer {
         let request = request.into_inner();
 
         let namespace = NamespaceName::parse(&request.namespace)
-            .context(InvalidResourceNameSnafu {
-                resource: "namespace",
-            })
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(|err| err.to_log_metadata_error("namespace"))?;
 
         let pages = request
             .pages
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(LogMetadataError::from)?;
 
         let response = self
             .inner
             .commit_folio(namespace, request.file_ref, &pages)
-            .await
-            .map_err(log_metadata_error_to_status)?;
+            .await?;
 
         let pages = response.into_iter().map(Into::into).collect();
 
@@ -73,14 +68,9 @@ impl TonicService for LogMetadataServer {
         let request: GetLogLocationRequest = request
             .into_inner()
             .try_into()
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(LogMetadataError::from)?;
 
-        let response = self
-            .inner
-            .get_log_location(request)
-            .await
-            .map_err(log_metadata_error_to_status)?
-            .into();
+        let response = self.inner.get_log_location(request).await?.into();
 
         Ok(Response::new(response))
     }
@@ -92,14 +82,9 @@ impl TonicService for LogMetadataServer {
         let request: ListPartitionsRequest = request
             .into_inner()
             .try_into()
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(LogMetadataError::from)?;
 
-        let response = self
-            .inner
-            .list_partitions(request)
-            .await
-            .map_err(log_metadata_error_to_status)?
-            .into();
+        let response = self.inner.list_partitions(request).await?.into();
 
         Ok(Response::new(response))
     }
@@ -111,14 +96,9 @@ impl TonicService for LogMetadataServer {
         let request: RequestTaskRequest = request
             .into_inner()
             .try_into()
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(LogMetadataError::from)?;
 
-        let response = self
-            .inner
-            .request_task(request)
-            .await
-            .map_err(log_metadata_error_to_status)?
-            .into();
+        let response = self.inner.request_task(request).await?.into();
 
         Ok(Response::new(response))
     }
@@ -130,59 +110,10 @@ impl TonicService for LogMetadataServer {
         let request: CompleteTaskRequest = request
             .into_inner()
             .try_into()
-            .map_err(log_metadata_error_to_status)?;
+            .map_err(LogMetadataError::from)?;
 
-        let response = self
-            .inner
-            .complete_task(request)
-            .await
-            .map_err(log_metadata_error_to_status)?
-            .into();
+        let response = self.inner.complete_task(request).await?.into();
 
         Ok(Response::new(response))
-    }
-}
-
-fn log_metadata_error_to_status(error: LogMetadataError) -> Status {
-    match error {
-        LogMetadataError::DuplicatePartitionValue { topic, partition } => Status::already_exists(
-            format!("duplicate partition value: topic={topic}, partition={partition:?}",),
-        ),
-        LogMetadataError::UnorderedPageBatches { topic, partition } => Status::invalid_argument(
-            format!("unordered page batches: topic={topic}, partition={partition:?}",),
-        ),
-        LogMetadataError::NamespaceNotFound { namespace } => {
-            Status::not_found(format!("namespace not found: {namespace}"))
-        }
-        LogMetadataError::OffsetNotFound {
-            topic,
-            partition,
-            offset,
-        } => Status::not_found(format!(
-            "offset not found: topic={topic}, partition={partition:?}, offset={offset}",
-        )),
-        LogMetadataError::InvalidOffsetRange => Status::invalid_argument("invalid offset range"),
-        LogMetadataError::InvalidArgument { message } => Status::invalid_argument(message.clone()),
-        LogMetadataError::InvalidResourceName { resource, source } => {
-            resource_error_to_status(resource, source)
-        }
-        LogMetadataError::Internal { message } => {
-            Status::internal(format!("internal error: {message}"))
-        }
-        LogMetadataError::InvalidDeadline { source } => {
-            Status::invalid_argument(format!("invalid deadline: {source}"))
-        }
-        LogMetadataError::InvalidTimestamp { source } => {
-            Status::invalid_argument(format!("invalid timestamp: {source}"))
-        }
-        LogMetadataError::InvalidDuration { source } => {
-            Status::invalid_argument(format!("invalid duration: {source}"))
-        }
-        LogMetadataError::TaskNotFound { task_id } => {
-            Status::not_found(format!("task not found: task_id={task_id}"))
-        }
-        LogMetadataError::TaskValidation { message } => {
-            Status::not_found(format!("task validation failed: {message}"))
-        }
     }
 }

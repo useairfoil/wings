@@ -1,21 +1,39 @@
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
-use wings_control_plane_core::cluster_metadata::{
-    ListTopicsRequest, ListTopicsResponse, TopicView,
+use snafu::Snafu;
+use wings_control_plane_core::{
+    ClusterMetadataError,
+    cluster_metadata::{ListTopicsRequest, ListTopicsResponse, TopicView},
 };
 use wings_resources::{Topic, TopicName, TopicOptions, validate_compaction};
 
-use crate::{
-    Database,
-    db::{
-        entities,
-        error::{Error, Result},
-    },
-};
+use crate::{Database, db::entities};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("topic {name} already exists"))]
+    AlreadyExists { name: TopicName },
+    #[snafu(display("topic {name} not found"))]
+    NotFound { name: TopicName },
+    #[snafu(display("no field with id {key} found in schema"))]
+    InvalidPartitionKey { key: u64 },
+    #[snafu(display("invalid compaction configuration: {message}"))]
+    InvalidCompactionConfiguration { message: String },
+    #[snafu(transparent)]
+    Json { source: serde_json::Error },
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
-    pub async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+    pub async fn create_topic(
+        &self,
+        name: TopicName,
+        options: TopicOptions,
+    ) -> Result<Topic, Error> {
         let namespace_name = name.parent().clone();
         let tenant_id = namespace_name.parent().id().to_owned();
         let namespace_id = namespace_name.id().to_owned();
@@ -28,19 +46,13 @@ impl Database {
                 .fields_iter()
                 .any(|field| field.id == partition_key)
         {
-            return Err(Error::InvalidArgument {
-                resource: "topic",
-                message: format!("no field with id {partition_key} found in schema"),
-            });
+            return Err(Error::InvalidPartitionKey { key: partition_key });
         }
 
         // Validate compaction configuration
         if let Err(errors) = validate_compaction(&options.compaction) {
             let message = errors.join(", ");
-            return Err(Error::InvalidArgument {
-                resource: "topic",
-                message: format!("compaction configuration is invalid: {message}"),
-            });
+            return Err(Error::InvalidCompactionConfiguration { message });
         }
 
         let schema_fields = serde_json::to_value(&options.schema.fields)?;
@@ -74,23 +86,20 @@ impl Database {
                 .await?;
 
                 if existing.is_some() {
-                    return Err(Error::AlreadyExists {
-                        resource: "topic",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::AlreadyExists { name });
                 }
 
                 let entity = entities::topic::Entity::insert(topic)
                     .exec_with_returning(tx)
                     .await?;
 
-                entity.try_into()
+                entity.try_into().map_err(Into::into)
             })
         })
         .await
     }
 
-    pub async fn get_topic(&self, name: TopicName, _view: TopicView) -> Result<Topic> {
+    pub async fn get_topic(&self, name: TopicName, _view: TopicView) -> Result<Topic, Error> {
         let tenant_id = name.parent().parent().id().to_owned();
         let namespace_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
@@ -100,15 +109,15 @@ impl Database {
             .await?;
 
         match existing {
-            Some(entity) => entity.try_into(),
-            None => Err(Error::NotFound {
-                resource: "topic",
-                message: format!("name={name}"),
-            }),
+            Some(entity) => entity.try_into().map_err(Into::into),
+            None => Err(Error::NotFound { name }),
         }
     }
 
-    pub async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
+    pub async fn list_topics(
+        &self,
+        request: ListTopicsRequest,
+    ) -> Result<ListTopicsResponse, Error> {
         let tenant_id = request.parent.parent().id().to_owned();
         let namespace_id = request.parent.id().to_owned();
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1_000) as u64;
@@ -136,7 +145,7 @@ impl Database {
         let topics = entities
             .into_iter()
             .map(|entity| entity.try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ListTopicsResponse {
             topics,
@@ -144,7 +153,7 @@ impl Database {
         })
     }
 
-    pub async fn delete_topic(&self, name: TopicName, _force: bool) -> Result<()> {
+    pub async fn delete_topic(&self, name: TopicName, _force: bool) -> Result<(), Error> {
         let tenant_id = name.parent().parent().id().to_owned();
         let namespace_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
@@ -162,15 +171,42 @@ impl Database {
                 .await?;
 
                 if result.rows_affected == 0 {
-                    return Err(Error::NotFound {
-                        resource: "topic",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::NotFound { name });
                 }
 
                 Ok(())
             })
         })
         .await
+    }
+}
+
+impl From<Error> for ClusterMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::AlreadyExists { name } => ClusterMetadataError::AlreadyExists {
+                resource: "topic".to_string(),
+                name: name.to_string(),
+            },
+            Error::NotFound { name } => ClusterMetadataError::NotFound {
+                resource: "topic".to_string(),
+                name: name.to_string(),
+            },
+            Error::InvalidPartitionKey { .. } => ClusterMetadataError::InvalidArgument {
+                resource: "topic".to_string(),
+                message: err.to_string(),
+            },
+            Error::InvalidCompactionConfiguration { .. } => ClusterMetadataError::InvalidArgument {
+                resource: "topic".to_string(),
+                message: err.to_string(),
+            },
+            Error::Json { source } => ClusterMetadataError::Internal {
+                message: format!("json error: {source}"),
+            },
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => ClusterMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
     }
 }

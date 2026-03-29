@@ -19,16 +19,18 @@ pub fn validate_pages_to_commit(
         if page.topic_name.parent() != namespace {
             return Err(LogMetadataError::InvalidArgument {
                 message: format!(
-                    "Topic name {} does not belong to namespace {}",
+                    "topic {} does not belong to namespace {}",
                     page.topic_name, namespace
                 ),
             });
         }
 
         if !seen_partitions.insert((page.topic_name.clone(), page.partition_value.clone())) {
-            return Err(LogMetadataError::DuplicatePartitionValue {
-                topic: page.topic_name.clone(),
-                partition: page.partition_value.clone(),
+            return Err(LogMetadataError::InvalidArgument {
+                message: format!(
+                    "duplicate partition value for topic {}: {:?}",
+                    page.topic_name, page.partition_value
+                ),
             });
         }
 
@@ -40,9 +42,11 @@ pub fn validate_pages_to_commit(
             .iter()
             .is_sorted_by(|a, b| compare_batch_request_timestamps(a, b) != Ordering::Greater)
         {
-            return Err(LogMetadataError::UnorderedPageBatches {
-                topic: page.topic_name.clone(),
-                partition: page.partition_value.clone(),
+            return Err(LogMetadataError::InvalidArgument {
+                message: format!(
+                    "batches are not sorted by timestamp for topic {} partition {:?}",
+                    page.topic_name, page.partition_value
+                ),
             });
         }
     }

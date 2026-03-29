@@ -1,6 +1,5 @@
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_observability::ErrorKind;
 
 use crate::parquet_writer::parquet_name_index::DuplicateFieldNameError;
 
@@ -17,9 +16,3 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        ErrorKind::Internal
-    }
-}

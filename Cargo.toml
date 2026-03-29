@@ -11,7 +11,6 @@ members = [
     "wings",
     "wings_client",
     "wings_control_plane_core",
-    "wings_control_plane_memory",
     "wings_control_plane_sql",
     "wings_data_lake",
     "wings_flight",

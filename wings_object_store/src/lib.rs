@@ -19,7 +19,7 @@ use object_store::ObjectStore;
 use wings_resources::ObjectStoreName;
 
 pub use self::{
-    cloud::{CloudObjectStoreFactory, Error as CloudObjectStoreError},
+    cloud::CloudObjectStoreFactory,
     local::{LocalFileSystemFactory, TemporaryFileSystemFactory},
 };
 

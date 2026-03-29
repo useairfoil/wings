@@ -1,20 +1,34 @@
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder};
-use wings_control_plane_core::log_metadata::{GetLogLocationOptions, LogLocation};
-use wings_resources::{PartitionValue, TopicName};
+use sea_orm::{ColumnTrait, Condition, DbErr, EntityTrait, QueryFilter, QueryOrder};
+use snafu::Snafu;
+use wings_control_plane_core::log_metadata::{
+    GetLogLocationRequest, LogLocation, LogMetadataError,
+};
 
 use crate::{
     Database,
-    db::{PartitionKey, entities, error::Result},
+    db::{PartitionKey, entities},
 };
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
     pub async fn get_log_location(
         &self,
-        topic_name: TopicName,
-        partition_value: Option<PartitionValue>,
-        offset: u64,
-        options: GetLogLocationOptions,
-    ) -> Result<Vec<LogLocation>> {
+        request: GetLogLocationRequest,
+    ) -> Result<Vec<LogLocation>, Error> {
+        let GetLogLocationRequest {
+            topic_name,
+            partition_value,
+            offset,
+            options,
+        } = request;
+
         let target_offset = offset + options.min_rows as u64;
 
         self.with_transaction(|tx| {
@@ -40,11 +54,22 @@ impl Database {
                 let locations = entities
                     .into_iter()
                     .map(|entity| entity.try_into())
-                    .collect::<Result<Vec<LogLocation>>>()?;
+                    .collect::<Result<Vec<LogLocation>, _>>()?;
 
                 Ok(locations)
             })
         })
         .await
+    }
+}
+
+impl From<Error> for LogMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => LogMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
     }
 }

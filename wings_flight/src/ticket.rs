@@ -7,7 +7,10 @@ use arrow_flight::{
 use prost::{DecodeError, Message, bytes::Bytes};
 use prost_types::{DurationError, TimestampError};
 use snafu::{ResultExt, Snafu};
-use wings_control_plane_core::log_metadata::{CommittedBatch, LogMetadataError};
+use wings_control_plane_core::{
+    log_metadata::CommittedBatch,
+    pb::{WireError, schema::FromOptionalField},
+};
 use wings_resources::{PartitionValue, ResourceError, TopicName};
 
 use crate::error::FlightServerError;
@@ -43,22 +46,22 @@ pub struct FetchTicket {
 
 #[derive(Debug, Snafu)]
 pub enum TicketDecodeError {
-    #[snafu(display("Failed to decode prost message"))]
+    #[snafu(display("failed to decode prost message"))]
     Prost { source: DecodeError },
-    #[snafu(display("Failed to decode partition value"))]
-    PartitionValue { source: LogMetadataError },
-    #[snafu(display("Failed to decode committed batch"))]
-    CommittedBatch { source: LogMetadataError },
-    #[snafu(display("Failed to decode timestamp"))]
+    #[snafu(display("failed to decode partition value"))]
+    PartitionValue { source: WireError },
+    #[snafu(display("failed to decode committed batch"))]
+    CommittedBatch { source: WireError },
+    #[snafu(display("failed to decode timestamp"))]
     Timestamp { source: TimestampError },
-    #[snafu(display("Failed to decode duration"))]
+    #[snafu(display("failed to decode duration"))]
     Duration { source: DurationError },
-    #[snafu(display("Missing message field: {}", field))]
+    #[snafu(display("missing message field: {}", field))]
     MissingField { field: String },
-    #[snafu(display("Failed to decode {resource} name"))]
+    #[snafu(display("failed to decode {resource} name"))]
     ResourceName {
-        source: ResourceError,
         resource: &'static str,
+        source: ResourceError,
     },
 }
 
@@ -196,12 +199,8 @@ impl IngestionResponseMetadata {
         let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
         let result = proto
             .result
-            .ok_or_else(|| {
-                MissingFieldSnafu {
-                    field: "result".to_string(),
-                }
-                .build()
-            })?
+            .required("result")
+            .context(CommittedBatchSnafu {})?
             .try_into()
             .context(CommittedBatchSnafu {})?;
 

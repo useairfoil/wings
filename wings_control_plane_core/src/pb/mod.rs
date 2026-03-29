@@ -1,6 +1,9 @@
 mod cluster_metadata;
+mod error;
 mod log_metadata;
-mod schema;
+pub mod schema;
+
+pub use self::error::WireError;
 
 tonic::include_proto!("wings.v1.log_metadata");
 tonic::include_proto!("wings.v1.cluster_metadata");

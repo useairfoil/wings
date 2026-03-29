@@ -2,22 +2,33 @@ use std::time::SystemTime;
 
 use sea_orm::{
     ActiveValue::{NotSet, Set},
-    DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+    DatabaseTransaction, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
     sea_query::OnConflict,
 };
+use snafu::Snafu;
 use tracing::debug;
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch,
-    ListPartitionsResponse, RejectedBatchInfo,
+    ListPartitionsRequest, ListPartitionsResponse, LogMetadataError, RejectedBatchInfo,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
     validate_pages_to_commit,
 };
-use wings_resources::{NamespaceName, TopicName};
+use wings_resources::NamespaceName;
 
 use crate::{
     Database,
-    db::{PartitionKey, entities, error::Result},
+    db::{PartitionKey, entities},
 };
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("page token '{token}' is invalid"))]
+    InvalidPageToken { token: String },
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
     pub async fn commit_folio(
@@ -25,7 +36,7 @@ impl Database {
         namespace: NamespaceName,
         file_ref: String,
         pages: &[CommitPageRequest],
-    ) -> Result<Vec<CommitPageResponse>> {
+    ) -> Result<Vec<CommitPageResponse>, Error> {
         // TODO: decide how to forward validation errors.
         validate_pages_to_commit(&namespace, pages).unwrap();
 
@@ -50,10 +61,25 @@ impl Database {
 
     pub async fn list_partitions(
         &self,
-        topic_name: TopicName,
-        page_size: usize,
-        page: usize,
-    ) -> Result<ListPartitionsResponse> {
+        request: ListPartitionsRequest,
+    ) -> Result<ListPartitionsResponse, Error> {
+        let ListPartitionsRequest {
+            topic_name,
+            page_size,
+            page_token,
+        } = request;
+
+        let page_size = page_size.unwrap_or(100);
+
+        // TODO: we should use a more robust pagination strategy
+        let page = page_token
+            .map(|t| {
+                t.parse::<usize>()
+                    .map_err(|_| Error::InvalidPageToken { token: t })
+            })
+            .transpose()?
+            .unwrap_or(0);
+
         self.with_transaction(|tx| {
             Box::pin(async move {
                 let paginator = entities::partition_state::Entity::find()
@@ -65,7 +91,7 @@ impl Database {
                     .await?
                     .into_iter()
                     .map(|m| m.try_into())
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 let next_page_token = if partitions.len() == page_size {
                     Some((page + 1).to_string())
@@ -88,7 +114,7 @@ async fn commit_page(
     file_ref: String,
     page: CommitPageRequest,
     now_ts: SystemTime,
-) -> Result<CommitPageResponse> {
+) -> Result<CommitPageResponse, Error> {
     let partition_key = PartitionKey::new(&page.topic_name, page.partition_value.clone());
 
     let state = entities::partition_state::Entity::find_by_id(partition_key.clone())
@@ -223,4 +249,18 @@ async fn commit_page(
     };
 
     Ok(response)
+}
+
+impl From<Error> for LogMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::InvalidPageToken { .. } => LogMetadataError::InvalidArgument {
+                message: err.to_string(),
+            },
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => LogMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
+    }
 }

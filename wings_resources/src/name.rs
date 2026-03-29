@@ -5,23 +5,30 @@
 #![allow(dead_code)]
 
 use snafu::Snafu;
+use wings_observability::{ErrorExt, StatusCode};
 
 /// Errors that can occur when parsing resource names.
 #[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 pub enum ResourceError {
-    #[snafu(display("invalid resource name format: expected '{expected}' but got '{actual}'"))]
+    #[snafu(display("Invalid resource name format: expected '{expected}' but got '{actual}'"))]
     InvalidFormat { expected: String, actual: String },
-    #[snafu(display("invalid resource name: '{name}' does not match expected pattern"))]
+    #[snafu(display("Invalid resource name: '{name}' does not match expected pattern"))]
     InvalidName { name: String },
-    #[snafu(display("missing parent resource in name: '{name}'"))]
+    #[snafu(display("Missing parent resource in name: '{name}'"))]
     MissingParent { name: String },
     #[snafu(display(
-        "invalid resource id: '{id}' - must be at least 1 character long, start with lowercase letter, and contain only lowercase letters, numbers, hyphens, and underscores"
+        "Invalid resource id: '{id}' - must be at least 1 character long, start with lowercase letter, and contain only lowercase letters, numbers, hyphens, and underscores"
     ))]
     InvalidResourceId { id: String },
 }
 
 pub type ResourceResult<T, E = ResourceError> = ::std::result::Result<T, E>;
+
+impl ErrorExt for ResourceError {
+    fn status_code(&self) -> StatusCode {
+        StatusCode::ResourceName
+    }
+}
 
 /// Validate a resource ID according to Wings naming conventions.
 ///

@@ -4,7 +4,6 @@ use wings_control_plane_core::{
     cluster_metadata::ClusterMetadataError, log_metadata::LogMetadataError,
 };
 use wings_data_lake::DataLakeError;
-use wings_observability::ErrorKind;
 
 /// Errors that can occur in the worker pool.
 #[derive(Debug, Snafu)]
@@ -38,14 +37,3 @@ pub enum WorkerError {
 }
 
 pub type Result<T, E = WorkerError> = std::result::Result<T, E>;
-
-impl WorkerError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::LogMetadata { source, .. } => source.kind(),
-            Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::DataLake { source, .. } => source.kind(),
-            Self::DataFusion { .. } | Self::Query { .. } => ErrorKind::Temporary,
-        }
-    }
-}

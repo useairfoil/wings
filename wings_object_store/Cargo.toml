@@ -22,4 +22,4 @@ wings-resources.path = "../wings_resources"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-wings-control-plane-memory = { path = "../wings_control_plane_memory" }
+wings-control-plane-sql.path = "../wings_control_plane_sql"

@@ -1,7 +1,6 @@
 use deltalake_core::DeltaTableError;
 use snafu::Snafu;
 use wings_control_plane_core::ClusterMetadataError;
-use wings_observability::ErrorKind;
 use wings_schema::SchemaError;
 
 use crate::parquet_writer::error::Error as ParquetError;
@@ -37,19 +36,3 @@ pub enum DataLakeError {
 }
 
 pub type Result<T, E = DataLakeError> = std::result::Result<T, E>;
-
-impl DataLakeError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::ClusterMetadata { source, .. } => source.kind(),
-            Self::Internal { .. } | Self::Serialization { .. } => ErrorKind::Internal,
-            Self::ObjectStore { .. }
-            | Self::Parquet { .. }
-            | Self::DataFusion { .. }
-            | Self::Delta { .. } => ErrorKind::Temporary,
-            Self::Path { .. } | Self::UnsupportedOperation { .. } | Self::InvalidSchema { .. } => {
-                ErrorKind::Validation
-            }
-        }
-    }
-}

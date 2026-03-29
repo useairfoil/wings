@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::ClusterMetadata;
-use wings_control_plane_memory::InMemoryControlPlane;
+use wings_control_plane_sql::SqlControlPlane;
 use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_resources::{
@@ -11,13 +11,13 @@ use wings_resources::{
     NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName,
 };
 
-pub fn create_batch_ingestor() -> (
+pub async fn create_batch_ingestor() -> (
     JoinHandle<()>,
     BatchIngestorClient,
     Arc<dyn ClusterMetadata>,
     CancellationToken,
 ) {
-    let control_plane: Arc<_> = InMemoryControlPlane::new().into();
+    let control_plane: Arc<_> = SqlControlPlane::new_in_memory().await.into();
     let object_store_factory: Arc<_> = TemporaryFileSystemFactory::new(control_plane.clone())
         .expect("object store factory")
         .into();

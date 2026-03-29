@@ -3,7 +3,7 @@ use snafu::ResultExt;
 use time::OffsetDateTime;
 use wings_resources::{Tenant, TenantName};
 
-use crate::db::error::InvalidResourceNameSnafu;
+use super::error::{Error, InvalidResourceNameSnafu};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "tenants")]
@@ -44,7 +44,7 @@ impl Related<super::namespace::Entity> for Entity {
 }
 
 impl TryFrom<Model> for Tenant {
-    type Error = crate::db::error::Error;
+    type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         let name =
@@ -53,16 +53,13 @@ impl TryFrom<Model> for Tenant {
     }
 }
 
-pub async fn expect_exists(
-    tx: &DatabaseTransaction,
-    name: &TenantName,
-) -> Result<(), crate::db::Error> {
+pub async fn expect_exists(tx: &DatabaseTransaction, name: &TenantName) -> Result<(), Error> {
     let existing = Entity::find_by_id(name.id()).one(tx).await?;
 
     if existing.is_none() {
-        return Err(crate::db::Error::NotFound {
+        return Err(Error::NotFound {
             resource: "tenant",
-            message: format!("name={name}"),
+            name: name.to_string(),
         });
     }
 

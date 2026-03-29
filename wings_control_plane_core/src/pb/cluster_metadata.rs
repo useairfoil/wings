@@ -15,13 +15,15 @@ use wings_resources::{
 
 use crate::{
     cluster_metadata::{
-        ClusterMetadataError, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
-        ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
-        ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse,
-        Result as AdminResult, TopicView,
-        error::{InternalSnafu, InvalidResourceNameSnafu, SchemaSnafu},
+        ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest, ListNamespacesResponse,
+        ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
+        ListTopicsRequest, ListTopicsResponse, TopicView,
     },
-    pb,
+    pb::{
+        self,
+        error::{ResourceSnafu, Result, WireError},
+        schema::FromOptionalField,
+    },
 };
 
 /*
@@ -44,11 +46,10 @@ impl From<Tenant> for pb::Tenant {
 }
 
 impl TryFrom<pb::Tenant> for Tenant {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(tenant: pb::Tenant) -> AdminResult<Self> {
-        let name = TenantName::parse(&tenant.name)
-            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+    fn try_from(tenant: pb::Tenant) -> Result<Self> {
+        let name = TenantName::parse(&tenant.name).context(ResourceSnafu { resource: "tenant" })?;
 
         Ok(Self { name })
     }
@@ -84,9 +85,9 @@ impl From<ListTenantsResponse> for pb::ListTenantsResponse {
 }
 
 impl TryFrom<pb::ListTenantsResponse> for ListTenantsResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: pb::ListTenantsResponse) -> AdminResult<Self> {
+    fn try_from(response: pb::ListTenantsResponse) -> Result<Self> {
         let tenants = response
             .tenants
             .into_iter()
@@ -128,22 +129,21 @@ impl From<Namespace> for pb::Namespace {
 }
 
 impl TryFrom<pb::Namespace> for Namespace {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
-        let name = NamespaceName::parse(&namespace.name).context(InvalidResourceNameSnafu {
+    fn try_from(namespace: pb::Namespace) -> Result<Self> {
+        let name = NamespaceName::parse(&namespace.name).context(ResourceSnafu {
             resource: "namespace",
         })?;
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
         let object_store =
-            ObjectStoreName::parse(&namespace.object_store).context(InvalidResourceNameSnafu {
+            ObjectStoreName::parse(&namespace.object_store).context(ResourceSnafu {
                 resource: "object store",
             })?;
-        let data_lake =
-            DataLakeName::parse(&namespace.data_lake).context(InvalidResourceNameSnafu {
-                resource: "data lake",
-            })?;
+        let data_lake = DataLakeName::parse(&namespace.data_lake).context(ResourceSnafu {
+            resource: "data lake",
+        })?;
 
         Ok(Self {
             name,
@@ -168,21 +168,20 @@ impl From<NamespaceOptions> for pb::Namespace {
 }
 
 impl TryFrom<pb::Namespace> for NamespaceOptions {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(namespace: pb::Namespace) -> AdminResult<Self> {
+    fn try_from(namespace: pb::Namespace) -> Result<Self> {
         let flush_size = ByteSize::b(namespace.flush_size_bytes);
         let flush_interval = Duration::from_millis(namespace.flush_interval_millis);
 
         let object_store =
-            ObjectStoreName::parse(&namespace.object_store).context(InvalidResourceNameSnafu {
+            ObjectStoreName::parse(&namespace.object_store).context(ResourceSnafu {
                 resource: "object store",
             })?;
 
-        let data_lake =
-            DataLakeName::parse(&namespace.data_lake).context(InvalidResourceNameSnafu {
-                resource: "data lake",
-            })?;
+        let data_lake = DataLakeName::parse(&namespace.data_lake).context(ResourceSnafu {
+            resource: "data lake",
+        })?;
 
         Ok(Self {
             flush_size,
@@ -204,11 +203,11 @@ impl From<ListNamespacesRequest> for pb::ListNamespacesRequest {
 }
 
 impl TryFrom<pb::ListNamespacesRequest> for ListNamespacesRequest {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::ListNamespacesRequest) -> AdminResult<Self> {
-        let parent = TenantName::parse(&request.parent)
-            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+    fn try_from(request: pb::ListNamespacesRequest) -> Result<Self> {
+        let parent =
+            TenantName::parse(&request.parent).context(ResourceSnafu { resource: "tenant" })?;
 
         Ok(Self {
             parent,
@@ -234,9 +233,9 @@ impl From<ListNamespacesResponse> for pb::ListNamespacesResponse {
 }
 
 impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: pb::ListNamespacesResponse) -> AdminResult<Self> {
+    fn try_from(response: pb::ListNamespacesResponse) -> Result<Self> {
         let namespaces = response
             .namespaces
             .into_iter()
@@ -266,9 +265,9 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
  */
 
 impl TryFrom<Topic> for pb::Topic {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(topic: Topic) -> AdminResult<Self> {
+    fn try_from(topic: Topic) -> Result<Self> {
         let schema = topic.schema().into();
         let compaction = topic.compaction.into();
         let status = topic.status.map(pb::TopicStatus::from);
@@ -285,32 +284,13 @@ impl TryFrom<Topic> for pb::Topic {
 }
 
 impl TryFrom<pb::Topic> for Topic {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let name = TopicName::parse(&topic.name)
-            .context(InvalidResourceNameSnafu { resource: "topic" })?;
-        let schema = topic
-            .schema
-            .as_ref()
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing schema field in Topic proto".to_string(),
-                }
-                .build()
-            })?
-            .try_into()
-            .context(SchemaSnafu {})?;
+    fn try_from(topic: pb::Topic) -> Result<Self> {
+        let name = TopicName::parse(&topic.name).context(ResourceSnafu { resource: "topic" })?;
+        let schema = topic.schema.as_ref().required("schema")?.try_into()?;
 
-        let compaction = topic
-            .compaction
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing compaction field in Topic proto".to_string(),
-                }
-                .build()
-            })?
-            .into();
+        let compaction = topic.compaction.required("compaction")?.into();
 
         let status = topic.status.map(Into::into);
 
@@ -326,29 +306,11 @@ impl TryFrom<pb::Topic> for Topic {
 }
 
 impl TryFrom<pb::Topic> for TopicOptions {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(topic: pb::Topic) -> AdminResult<Self> {
-        let schema = topic
-            .schema
-            .as_ref()
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing schema field in Topic proto".to_string(),
-                }
-                .build()
-            })?
-            .try_into()
-            .context(SchemaSnafu {})?;
-        let compaction = topic
-            .compaction
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing compaction field in Topic proto".to_string(),
-                }
-                .build()
-            })?
-            .into();
+    fn try_from(topic: pb::Topic) -> Result<Self> {
+        let schema = topic.schema.as_ref().required("schema")?.try_into()?;
+        let compaction = topic.compaction.required("compaction")?.into();
 
         Ok(Self {
             schema,
@@ -360,9 +322,9 @@ impl TryFrom<pb::Topic> for TopicOptions {
 }
 
 impl TryFrom<TopicOptions> for pb::Topic {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(options: TopicOptions) -> AdminResult<Self> {
+    fn try_from(options: TopicOptions) -> Result<Self> {
         let compaction = options.compaction.into();
         let schema = (&options.schema).into();
 
@@ -491,10 +453,10 @@ impl From<ListTopicsRequest> for pb::ListTopicsRequest {
 }
 
 impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::ListTopicsRequest) -> AdminResult<Self> {
-        let parent = NamespaceName::parse(&request.parent).context(InvalidResourceNameSnafu {
+    fn try_from(request: pb::ListTopicsRequest) -> Result<Self> {
+        let parent = NamespaceName::parse(&request.parent).context(ResourceSnafu {
             resource: "namespace",
         })?;
 
@@ -507,9 +469,9 @@ impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
 }
 
 impl TryFrom<ListTopicsResponse> for pb::ListTopicsResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: ListTopicsResponse) -> AdminResult<Self> {
+    fn try_from(response: ListTopicsResponse) -> Result<Self> {
         let topics = response
             .topics
             .into_iter()
@@ -524,9 +486,9 @@ impl TryFrom<ListTopicsResponse> for pb::ListTopicsResponse {
 }
 
 impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: pb::ListTopicsResponse) -> AdminResult<Self> {
+    fn try_from(response: pb::ListTopicsResponse) -> Result<Self> {
         let topics = response
             .topics
             .into_iter()
@@ -579,21 +541,15 @@ impl From<ObjectStoreConfiguration> for pb::ObjectStore {
 }
 
 impl TryFrom<pb::ObjectStore> for ObjectStore {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(object_store: pb::ObjectStore) -> AdminResult<Self> {
-        let name =
-            ObjectStoreName::parse(&object_store.name).context(InvalidResourceNameSnafu {
-                resource: "object store",
-            })?;
+    fn try_from(object_store: pb::ObjectStore) -> Result<Self> {
+        let name = ObjectStoreName::parse(&object_store.name).context(ResourceSnafu {
+            resource: "object store",
+        })?;
         let object_store_config = object_store
             .object_store_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing object_store_config field in ObjectStore proto".to_string(),
-                }
-                .build()
-            })?
+            .required("object_store_config")?
             .try_into()?;
 
         Ok(Self {
@@ -604,17 +560,12 @@ impl TryFrom<pb::ObjectStore> for ObjectStore {
 }
 
 impl TryFrom<pb::ObjectStore> for ObjectStoreConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(object_store: pb::ObjectStore) -> AdminResult<Self> {
+    fn try_from(object_store: pb::ObjectStore) -> Result<Self> {
         object_store
             .object_store_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing object_store_config field in ObjectStore proto".to_string(),
-                }
-                .build()
-            })?
+            .required("object_store_config")?
             .try_into()
     }
 }
@@ -639,9 +590,9 @@ impl From<ObjectStoreConfiguration> for pb::object_store::ObjectStoreConfig {
 }
 
 impl TryFrom<pb::object_store::ObjectStoreConfig> for ObjectStoreConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(config: pb::object_store::ObjectStoreConfig) -> AdminResult<Self> {
+    fn try_from(config: pb::object_store::ObjectStoreConfig) -> Result<Self> {
         use pb::object_store::ObjectStoreConfig;
         match config {
             ObjectStoreConfig::Aws(aws) => Ok(ObjectStoreConfiguration::Aws(aws.into())),
@@ -763,11 +714,11 @@ impl From<ListObjectStoresRequest> for pb::ListObjectStoresRequest {
 }
 
 impl TryFrom<pb::ListObjectStoresRequest> for ListObjectStoresRequest {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::ListObjectStoresRequest) -> AdminResult<Self> {
-        let parent = TenantName::parse(&request.parent)
-            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+    fn try_from(request: pb::ListObjectStoresRequest) -> Result<Self> {
+        let parent =
+            TenantName::parse(&request.parent).context(ResourceSnafu { resource: "tenant" })?;
 
         Ok(Self {
             parent,
@@ -793,9 +744,9 @@ impl From<ListObjectStoresResponse> for pb::ListObjectStoresResponse {
 }
 
 impl TryFrom<pb::ListObjectStoresResponse> for ListObjectStoresResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: pb::ListObjectStoresResponse) -> AdminResult<Self> {
+    fn try_from(response: pb::ListObjectStoresResponse) -> Result<Self> {
         let object_stores = response
             .object_stores
             .into_iter()
@@ -848,20 +799,15 @@ impl From<DataLakeConfiguration> for pb::DataLake {
 }
 
 impl TryFrom<pb::DataLake> for DataLake {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(data_lake: pb::DataLake) -> AdminResult<Self> {
-        let name = DataLakeName::parse(&data_lake.name).context(InvalidResourceNameSnafu {
+    fn try_from(data_lake: pb::DataLake) -> Result<Self> {
+        let name = DataLakeName::parse(&data_lake.name).context(ResourceSnafu {
             resource: "data lake",
         })?;
         let data_lake_config = data_lake
             .data_lake_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing data_lake_config field in DataLake proto".to_string(),
-                }
-                .build()
-            })?
+            .required("data_lake_config")?
             .try_into()?;
 
         Ok(Self {
@@ -882,9 +828,9 @@ impl From<DataLakeConfiguration> for pb::data_lake::DataLakeConfig {
 }
 
 impl TryFrom<pb::data_lake::DataLakeConfig> for DataLakeConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(config: pb::data_lake::DataLakeConfig) -> AdminResult<Self> {
+    fn try_from(config: pb::data_lake::DataLakeConfig) -> Result<Self> {
         use pb::data_lake::DataLakeConfig;
 
         match config {
@@ -906,9 +852,9 @@ impl From<ParquetConfiguration> for pb::ParquetConfiguration {
 }
 
 impl TryFrom<pb::ParquetConfiguration> for ParquetConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(_config: pb::ParquetConfiguration) -> AdminResult<Self> {
+    fn try_from(_config: pb::ParquetConfiguration) -> Result<Self> {
         Ok(ParquetConfiguration {})
     }
 }
@@ -920,9 +866,9 @@ impl From<IcebergConfiguration> for pb::IcebergConfiguration {
 }
 
 impl TryFrom<pb::IcebergConfiguration> for IcebergConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(_config: pb::IcebergConfiguration) -> AdminResult<Self> {
+    fn try_from(_config: pb::IcebergConfiguration) -> Result<Self> {
         Ok(IcebergConfiguration {})
     }
 }
@@ -936,13 +882,13 @@ impl From<DeltaConfiguration> for pb::DeltaConfiguration {
 }
 
 impl TryFrom<pb::DeltaConfiguration> for DeltaConfiguration {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(config: pb::DeltaConfiguration) -> AdminResult<Self> {
+    fn try_from(config: pb::DeltaConfiguration) -> Result<Self> {
         let object_store = match &config.object_store {
             None => None,
             Some(name) => {
-                let name = ObjectStoreName::parse(name).context(InvalidResourceNameSnafu {
+                let name = ObjectStoreName::parse(name).context(ResourceSnafu {
                     resource: "object store",
                 })?;
                 Some(name)
@@ -953,31 +899,21 @@ impl TryFrom<pb::DeltaConfiguration> for DeltaConfiguration {
 }
 
 impl TryFrom<pb::CreateDataLakeRequest> for (DataLakeName, DataLakeConfiguration) {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::CreateDataLakeRequest) -> AdminResult<Self> {
-        let tenant_name = TenantName::parse(&request.parent)
-            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
-        let data_lake_name = DataLakeName::new(request.data_lake_id, tenant_name).context(
-            InvalidResourceNameSnafu {
+    fn try_from(request: pb::CreateDataLakeRequest) -> Result<Self> {
+        let tenant_name =
+            TenantName::parse(&request.parent).context(ResourceSnafu { resource: "tenant" })?;
+        let data_lake_name =
+            DataLakeName::new(request.data_lake_id, tenant_name).context(ResourceSnafu {
                 resource: "data lake",
-            },
-        )?;
+            })?;
+
         let data_lake_config = request
             .data_lake
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing data_lake field in CreateDataLakeRequest".to_string(),
-                }
-                .build()
-            })?
+            .required("data_lake")?
             .data_lake_config
-            .ok_or_else(|| {
-                InternalSnafu {
-                    message: "missing data_lake_config field in DataLake".to_string(),
-                }
-                .build()
-            })?
+            .required("data_lake_config")?
             .try_into()?;
 
         Ok((data_lake_name, data_lake_config))
@@ -985,10 +921,10 @@ impl TryFrom<pb::CreateDataLakeRequest> for (DataLakeName, DataLakeConfiguration
 }
 
 impl TryFrom<pb::GetDataLakeRequest> for DataLakeName {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::GetDataLakeRequest) -> AdminResult<Self> {
-        DataLakeName::parse(&request.name).context(InvalidResourceNameSnafu {
+    fn try_from(request: pb::GetDataLakeRequest) -> Result<Self> {
+        DataLakeName::parse(&request.name).context(ResourceSnafu {
             resource: "data lake",
         })
     }
@@ -1005,11 +941,11 @@ impl From<ListDataLakesRequest> for pb::ListDataLakesRequest {
 }
 
 impl TryFrom<pb::ListDataLakesRequest> for ListDataLakesRequest {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::ListDataLakesRequest) -> AdminResult<Self> {
-        let parent = TenantName::parse(&request.parent)
-            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+    fn try_from(request: pb::ListDataLakesRequest) -> Result<Self> {
+        let parent =
+            TenantName::parse(&request.parent).context(ResourceSnafu { resource: "tenant" })?;
 
         Ok(Self {
             parent,
@@ -1029,14 +965,14 @@ impl From<ListDataLakesResponse> for pb::ListDataLakesResponse {
 }
 
 impl TryFrom<pb::ListDataLakesResponse> for ListDataLakesResponse {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(response: pb::ListDataLakesResponse) -> AdminResult<Self> {
+    fn try_from(response: pb::ListDataLakesResponse) -> Result<Self> {
         let data_lakes = response
             .data_lakes
             .into_iter()
             .map(TryInto::try_into)
-            .collect::<AdminResult<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             data_lakes,
@@ -1050,10 +986,10 @@ impl TryFrom<pb::ListDataLakesResponse> for ListDataLakesResponse {
 }
 
 impl TryFrom<pb::DeleteDataLakeRequest> for DataLakeName {
-    type Error = ClusterMetadataError;
+    type Error = WireError;
 
-    fn try_from(request: pb::DeleteDataLakeRequest) -> AdminResult<Self> {
-        DataLakeName::parse(&request.name).context(InvalidResourceNameSnafu {
+    fn try_from(request: pb::DeleteDataLakeRequest) -> Result<Self> {
+        DataLakeName::parse(&request.name).context(ResourceSnafu {
             resource: "data lake",
         })
     }

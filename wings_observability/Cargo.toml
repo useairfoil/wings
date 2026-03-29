@@ -9,7 +9,9 @@ opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 snafu.workspace = true
+strum = { version = "0.28.0", features = ["derive"] }
 time.workspace = true
+tonic.workspace = true
 tracing.workspace = true
 tracing-opentelemetry = "0.32.0"
 tracing-subscriber.workspace = true

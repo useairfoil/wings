@@ -1,38 +1,53 @@
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
-use wings_control_plane_core::cluster_metadata::{ListNamespacesRequest, ListNamespacesResponse};
+use snafu::Snafu;
+use wings_control_plane_core::{
+    ClusterMetadataError,
+    cluster_metadata::{ListNamespacesRequest, ListNamespacesResponse},
+};
 use wings_resources::{Namespace, NamespaceName, NamespaceOptions};
 
-use crate::{
-    Database,
-    db::{
-        entities,
-        error::{Error, Result},
+use crate::{Database, db::entities};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("namespace {name} already exists"))]
+    AlreadyExists { name: NamespaceName },
+    #[snafu(display("namespace {name} not found"))]
+    NotFound { name: NamespaceName },
+    #[snafu(display("{resource} must have the same parent as the namespace"))]
+    InvalidParent { resource: &'static str },
+    #[snafu(display("namespace {name} has {topics_count} topics and cannot be deleted"))]
+    NotEmpty {
+        name: NamespaceName,
+        topics_count: u64,
     },
-};
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
     pub async fn create_namespace(
         &self,
         name: NamespaceName,
         options: NamespaceOptions,
-    ) -> Result<Namespace> {
+    ) -> Result<Namespace, Error> {
         let tenant_name = name.parent().clone();
         let tenant_id = tenant_name.id().to_owned();
         let id = name.id().to_owned();
 
         if options.data_lake.parent() != name.parent() {
-            return Err(Error::InvalidArgument {
+            return Err(Error::InvalidParent {
                 resource: "namespace",
-                message: "data lake must have the same parent as the namespace".to_string(),
             });
         }
 
         if options.object_store.parent() != name.parent() {
-            return Err(Error::InvalidArgument {
+            return Err(Error::InvalidParent {
                 resource: "namespace",
-                message: "object store must have the same parent as the namespace".to_string(),
             });
         }
 
@@ -56,23 +71,20 @@ impl Database {
                     .await?;
 
                 if existing.is_some() {
-                    return Err(Error::AlreadyExists {
-                        resource: "namespace",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::AlreadyExists { name });
                 }
 
                 let entity = entities::namespace::Entity::insert(namespace)
                     .exec_with_returning(tx)
                     .await?;
 
-                entity.try_into()
+                entity.try_into().map_err(Into::into)
             })
         })
         .await
     }
 
-    pub async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace> {
+    pub async fn get_namespace(&self, name: NamespaceName) -> Result<Namespace, Error> {
         let tenant_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
@@ -81,18 +93,15 @@ impl Database {
             .await?;
 
         match existing {
-            Some(entity) => entity.try_into(),
-            None => Err(Error::NotFound {
-                resource: "namespace",
-                message: format!("name={name}"),
-            }),
+            Some(entity) => entity.try_into().map_err(Into::into),
+            None => Err(Error::NotFound { name }),
         }
     }
 
     pub async fn list_namespaces(
         &self,
         request: ListNamespacesRequest,
-    ) -> Result<ListNamespacesResponse> {
+    ) -> Result<ListNamespacesResponse, Error> {
         let tenant_id = request.parent.id().to_owned();
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1_000) as u64;
 
@@ -118,7 +127,7 @@ impl Database {
         let namespaces = entities
             .into_iter()
             .map(|entity| entity.try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ListNamespacesResponse {
             namespaces,
@@ -126,7 +135,7 @@ impl Database {
         })
     }
 
-    pub async fn delete_namespace(&self, name: NamespaceName) -> Result<()> {
+    pub async fn delete_namespace(&self, name: NamespaceName) -> Result<(), Error> {
         let tenant_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
@@ -142,12 +151,7 @@ impl Database {
                     .await?;
 
                 if topics_count > 0 {
-                    return Err(Error::InvalidArgument {
-                        resource: "namespace",
-                        message: format!(
-                            "namespace has {topics_count} topics and cannot be deleted"
-                        ),
-                    });
+                    return Err(Error::NotEmpty { name, topics_count });
                 }
 
                 let result = entities::namespace::Entity::delete_by_id((tenant_id, id))
@@ -155,15 +159,38 @@ impl Database {
                     .await?;
 
                 if result.rows_affected == 0 {
-                    return Err(Error::NotFound {
-                        resource: "namespace",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::NotFound { name });
                 }
 
                 Ok(())
             })
         })
         .await
+    }
+}
+
+impl From<Error> for ClusterMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::AlreadyExists { name } => ClusterMetadataError::AlreadyExists {
+                resource: "namespace".to_string(),
+                name: name.to_string(),
+            },
+            Error::NotFound { name } => ClusterMetadataError::NotFound {
+                resource: "namespace".to_string(),
+                name: name.to_string(),
+            },
+            Error::InvalidParent { .. } => ClusterMetadataError::InvalidArgument {
+                resource: "namespace".to_string(),
+                message: err.to_string(),
+            },
+            Error::NotEmpty { .. } => ClusterMetadataError::FailedPrecondition {
+                message: err.to_string(),
+            },
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => ClusterMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
     }
 }

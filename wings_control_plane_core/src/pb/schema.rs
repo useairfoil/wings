@@ -18,11 +18,12 @@
 // under the License.
 use std::sync::Arc;
 
-use wings_schema::{
-    DataType, Datum, Field, FieldRef, Schema, SchemaBuilder, SchemaError, TimeUnit, error::Result,
-};
+use wings_schema::{DataType, Datum, Field, FieldRef, Schema, SchemaBuilder, TimeUnit};
 
-use crate::pb;
+use crate::pb::{
+    self,
+    error::{Result, WireError},
+};
 
 impl From<&Schema> for pb::Schema {
     fn from(value: &Schema) -> Self {
@@ -40,7 +41,7 @@ impl From<&Schema> for pb::Schema {
 }
 
 impl TryFrom<&pb::Schema> for Schema {
-    type Error = SchemaError;
+    type Error = WireError;
 
     fn try_from(schema: &pb::Schema) -> Result<Self> {
         let fields = schema
@@ -52,6 +53,7 @@ impl TryFrom<&pb::Schema> for Schema {
         SchemaBuilder::new(fields)
             .with_metadata(schema.metadata.clone())
             .build()
+            .map_err(Into::into)
     }
 }
 
@@ -69,7 +71,7 @@ impl From<&Field> for pb::Field {
 }
 
 impl TryFrom<&pb::Field> for Field {
-    type Error = SchemaError;
+    type Error = WireError;
 
     fn try_from(field: &pb::Field) -> Result<Self> {
         let datatype: &pb::ArrowType = field.arrow_type.as_ref().required("arrow_type")?;
@@ -158,16 +160,16 @@ impl From<&DataType> for pb::arrow_type::ArrowTypeEnum {
 }
 
 impl TryFrom<&pb::Datum> for Datum {
-    type Error = SchemaError;
+    type Error = WireError;
 
     fn try_from(datum: &pb::Datum) -> Result<Self> {
         let data_type: DataType = datum.r#type.as_ref().required("type")?.try_into()?;
-        Datum::try_from_bytes(data_type, &datum.content)
+        Datum::try_from_bytes(data_type, &datum.content).map_err(Into::into)
     }
 }
 
 impl TryFrom<&pb::ArrowType> for DataType {
-    type Error = SchemaError;
+    type Error = WireError;
 
     fn try_from(arrow_type: &pb::ArrowType) -> Result<Self> {
         let arrow_type_enum = arrow_type
@@ -179,7 +181,7 @@ impl TryFrom<&pb::ArrowType> for DataType {
 }
 
 impl TryFrom<&pb::arrow_type::ArrowTypeEnum> for DataType {
-    type Error = SchemaError;
+    type Error = WireError;
 
     fn try_from(arrow_type_enum: &pb::arrow_type::ArrowTypeEnum) -> Result<Self> {
         use pb::arrow_type::ArrowTypeEnum;
@@ -231,8 +233,8 @@ pub trait FromOptionalField<T> {
 
 impl<T> FromOptionalField<T> for Option<T> {
     fn required(self, field: &str) -> Result<T> {
-        self.ok_or_else(|| SchemaError::ConversionError {
-            message: format!("Missing required field: {}", field),
+        self.ok_or_else(|| WireError::MissingField {
+            field_name: field.to_string(),
         })
     }
 }
@@ -241,9 +243,7 @@ pub fn parse_i32_to_time_unit(value: i32) -> Result<TimeUnit> {
     use pb::TimeUnit as ProtoTimeUnit;
 
     match ProtoTimeUnit::try_from(value) {
-        Err(_) | Ok(ProtoTimeUnit::Unspecified) => Err(SchemaError::ConversionError {
-            message: format!("unspecified time unit: {value}"),
-        }),
+        Err(_) | Ok(ProtoTimeUnit::Unspecified) => Err(WireError::UnspecifiedTimeUnit { value }),
         Ok(ProtoTimeUnit::Second) => Ok(TimeUnit::Second),
         Ok(ProtoTimeUnit::Millisecond) => Ok(TimeUnit::Millisecond),
         Ok(ProtoTimeUnit::Microsecond) => Ok(TimeUnit::Microsecond),

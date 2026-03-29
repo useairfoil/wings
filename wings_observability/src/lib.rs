@@ -17,7 +17,10 @@ use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
 
 use crate::format::WingsFormat;
-pub use crate::{error::ErrorKind, metrics::MetricsExporter};
+pub use crate::{
+    error::{ErrorExt, StatusCode},
+    metrics::MetricsExporter,
+};
 
 mod error;
 mod format;

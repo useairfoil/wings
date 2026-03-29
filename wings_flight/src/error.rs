@@ -1,9 +1,11 @@
 use snafu::Snafu;
-use wings_observability::ErrorKind;
+use wings_observability::{ErrorExt, StatusCode};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum FlightServerError {
+    #[snafu(display("invalid Flight ticket: {}", message))]
+    InvalidTicket { message: String },
     #[snafu(transparent)]
     Arrow {
         source: datafusion::common::arrow::error::ArrowError,
@@ -20,8 +22,6 @@ pub enum FlightServerError {
     Query {
         source: wings_query::TopicLogicalPlanError,
     },
-    #[snafu(display("Invalid Flight ticket: {}", message))]
-    InvalidTicket { message: String },
 }
 
 impl FlightServerError {
@@ -32,26 +32,18 @@ impl FlightServerError {
     }
 }
 
-impl FlightServerError {
-    pub fn kind(&self) -> ErrorKind {
+impl ErrorExt for FlightServerError {
+    fn status_code(&self) -> StatusCode {
         match self {
-            Self::Arrow { .. }
-            | Self::DataFusion { .. }
-            | Self::Flight { .. }
-            | Self::Query { .. } => ErrorKind::Temporary,
-            Self::InvalidTicket { .. } => ErrorKind::Validation,
+            Self::InvalidTicket { .. } => StatusCode::InvalidArgument,
+            _ => StatusCode::Internal,
         }
     }
 }
 
 impl From<FlightServerError> for tonic::Status {
     fn from(err: FlightServerError) -> Self {
-        let code = match err.kind() {
-            ErrorKind::Validation => tonic::Code::InvalidArgument,
-            ErrorKind::NotFound => tonic::Code::NotFound,
-            _ => tonic::Code::Internal,
-        };
-        let message = err.to_string();
-        tonic::Status::new(code, message)
+        let status_code = err.status_code();
+        tonic::Status::new(status_code.to_tonic_code(), err.to_string())
     }
 }

@@ -33,5 +33,5 @@ wings-resources = { path = "../wings_resources" }
 [dev-dependencies]
 bytesize.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-wings-control-plane-memory = { path = "../wings_control_plane_memory" }
+wings-control-plane-sql = { path = "../wings_control_plane_sql" }
 wings-schema = { path = "../wings_schema" }

@@ -1,41 +1,27 @@
 use std::{array::TryFromSliceError, string::FromUtf8Error};
 
 use snafu::Snafu;
-use wings_observability::ErrorKind;
+use wings_observability::{ErrorExt, StatusCode};
 
 use crate::DataType;
 
 #[derive(Debug, Snafu)]
 pub enum SchemaError {
-    #[snafu(display("Conversion error: {message}"))]
-    ConversionError { message: String },
-    #[snafu(display("Duplicate field id {id}: {f1_name} - {f2_name}"))]
+    #[snafu(display("duplicate field id {id}: {f1_name} - {f2_name}"))]
     DuplicateFieldId {
         id: u64,
         f1_name: String,
         f2_name: String,
     },
-    #[snafu(display("Failed to deserialize number"))]
+    #[snafu(display("failed to deserialize number"))]
     NumberDeserializationError { source: TryFromSliceError },
-    #[snafu(display("Failed to deserialize string"))]
+    #[snafu(display("failed to deserialize string"))]
     StringDeserializationError { source: FromUtf8Error },
-    #[snafu(display("Unsupported data type: {data_type}"))]
+    #[snafu(display("unsupported data type: {data_type}"))]
     UnsupportedDataType { data_type: DataType },
 }
 
 pub type Result<T, E = SchemaError> = std::result::Result<T, E>;
-
-impl SchemaError {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::ConversionError { .. } => ErrorKind::Validation,
-            Self::DuplicateFieldId { .. } => ErrorKind::Validation,
-            Self::UnsupportedDataType { .. } => ErrorKind::Validation,
-            Self::NumberDeserializationError { .. } => ErrorKind::Internal,
-            Self::StringDeserializationError { .. } => ErrorKind::Internal,
-        }
-    }
-}
 
 impl From<TryFromSliceError> for SchemaError {
     fn from(source: TryFromSliceError) -> Self {
@@ -49,8 +35,13 @@ impl From<FromUtf8Error> for SchemaError {
     }
 }
 
-impl From<SchemaError> for ErrorKind {
-    fn from(error: SchemaError) -> Self {
-        error.kind()
+impl ErrorExt for SchemaError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::DuplicateFieldId { .. } => StatusCode::DuplicateField,
+            Self::NumberDeserializationError { .. } => StatusCode::Schema,
+            Self::StringDeserializationError { .. } => StatusCode::Schema,
+            Self::UnsupportedDataType { .. } => StatusCode::DataType,
+        }
     }
 }

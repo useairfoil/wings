@@ -9,34 +9,10 @@ use std::sync::Arc;
 use object_store::{
     Error as ObjectStoreError, ObjectStore, aws::S3CopyIfNotExists, prefix::PrefixStore,
 };
-use snafu::Snafu;
-use wings_control_plane_core::{ClusterMetadata, ClusterMetadataError};
-use wings_observability::ErrorKind;
+use wings_control_plane_core::ClusterMetadata;
 use wings_resources::{ObjectStoreConfiguration, ObjectStoreName};
 
 use crate::ObjectStoreFactory;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum Error {
-    #[snafu(display("Failed to get object store configuration: {message}"))]
-    Configuration {
-        message: String,
-        source: ClusterMetadataError,
-    },
-
-    #[snafu(display("Failed to create {store_type} object store: {message}"))]
-    Creation {
-        store_type: &'static str,
-        message: String,
-        source: ObjectStoreError,
-    },
-
-    #[snafu(display("Unsupported object store configuration"))]
-    UnsupportedConfiguration,
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Factory for creating cloud object store instances.
 ///
@@ -71,18 +47,12 @@ impl ObjectStoreFactory for CloudObjectStoreFactory {
 
         // Create the appropriate object store based on configuration
         let store: Arc<dyn ObjectStore> = match &object_store.object_store {
-            ObjectStoreConfiguration::Aws(config) => create_aws_s3_store(config)
-                .await
-                .map_err(ObjectStoreError::from)?,
-            ObjectStoreConfiguration::Azure(config) => create_azure_blob_store(config)
-                .await
-                .map_err(ObjectStoreError::from)?,
-            ObjectStoreConfiguration::Google(config) => create_google_cloud_store(config)
-                .await
-                .map_err(ObjectStoreError::from)?,
-            ObjectStoreConfiguration::S3Compatible(config) => create_s3_compatible_store(config)
-                .await
-                .map_err(ObjectStoreError::from)?,
+            ObjectStoreConfiguration::Aws(config) => create_aws_s3_store(config).await?,
+            ObjectStoreConfiguration::Azure(config) => create_azure_blob_store(config).await?,
+            ObjectStoreConfiguration::Google(config) => create_google_cloud_store(config).await?,
+            ObjectStoreConfiguration::S3Compatible(config) => {
+                create_s3_compatible_store(config).await?
+            }
         };
 
         Ok(store)
@@ -92,7 +62,7 @@ impl ObjectStoreFactory for CloudObjectStoreFactory {
 /// Create AWS S3 object store
 async fn create_aws_s3_store(
     config: &wings_resources::AwsConfiguration,
-) -> Result<Arc<dyn ObjectStore>> {
+) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
     use object_store::aws::AmazonS3Builder;
 
     let mut builder = AmazonS3Builder::new()
@@ -106,11 +76,7 @@ async fn create_aws_s3_store(
         builder = builder.with_region(region);
     }
 
-    let store = builder.build().map_err(|e| Error::Creation {
-        store_type: "AWS S3",
-        message: "Failed to build AWS S3 object store".to_string(),
-        source: e,
-    })?;
+    let store = builder.build()?;
 
     let Some(prefix) = &config.prefix else {
         return Ok(Arc::new(store));
@@ -123,7 +89,7 @@ async fn create_aws_s3_store(
 /// Create Azure Blob Storage object store
 async fn create_azure_blob_store(
     config: &wings_resources::AzureConfiguration,
-) -> Result<Arc<dyn ObjectStore>> {
+) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
     use object_store::azure::MicrosoftAzureBuilder;
 
     let builder = MicrosoftAzureBuilder::new()
@@ -131,11 +97,7 @@ async fn create_azure_blob_store(
         .with_account(&config.storage_account_name)
         .with_access_key(&config.storage_account_key);
 
-    let store = builder.build().map_err(|e| Error::Creation {
-        store_type: "Azure Blob Storage",
-        message: "Failed to build Azure Blob Storage object store".to_string(),
-        source: e,
-    })?;
+    let store = builder.build()?;
 
     let Some(prefix) = &config.prefix else {
         return Ok(Arc::new(store));
@@ -148,18 +110,14 @@ async fn create_azure_blob_store(
 /// Create Google Cloud Storage object store
 async fn create_google_cloud_store(
     config: &wings_resources::GoogleConfiguration,
-) -> Result<Arc<dyn ObjectStore>> {
+) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
     use object_store::gcp::GoogleCloudStorageBuilder;
 
     let builder = GoogleCloudStorageBuilder::new()
         .with_bucket_name(&config.bucket_name)
         .with_service_account_key(&config.service_account_key);
 
-    let store = builder.build().map_err(|e| Error::Creation {
-        store_type: "Google Cloud Storage",
-        message: "Failed to build Google Cloud Storage object store".to_string(),
-        source: e,
-    })?;
+    let store = builder.build()?;
 
     Ok(Arc::new(store))
 }
@@ -167,7 +125,7 @@ async fn create_google_cloud_store(
 /// Create S3-compatible object store
 async fn create_s3_compatible_store(
     config: &wings_resources::S3CompatibleConfiguration,
-) -> Result<Arc<dyn ObjectStore>> {
+) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
     use object_store::aws::AmazonS3Builder;
 
     let mut builder = AmazonS3Builder::new()
@@ -185,11 +143,7 @@ async fn create_s3_compatible_store(
     // Allow HTTP for S3-compatible storage (like MinIO)
     builder = builder.with_allow_http(config.allow_http);
 
-    let store = builder.build().map_err(|e| Error::Creation {
-        store_type: "S3-compatible",
-        message: "Failed to build S3-compatible object store".to_string(),
-        source: e,
-    })?;
+    let store = builder.build()?;
 
     let Some(prefix) = &config.prefix else {
         return Ok(Arc::new(store));
@@ -197,33 +151,4 @@ async fn create_s3_compatible_store(
 
     let store = PrefixStore::new(store, prefix.as_str());
     Ok(Arc::new(store))
-}
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::Configuration { source, .. } => source.kind(),
-            Self::Creation { .. } => ErrorKind::Internal,
-            Self::UnsupportedConfiguration => ErrorKind::Validation,
-        }
-    }
-}
-
-impl From<Error> for ObjectStoreError {
-    fn from(err: Error) -> Self {
-        match err {
-            Error::Configuration { source, .. } => ObjectStoreError::Generic {
-                store: "CloudObjectStoreFactory",
-                source: Box::new(source),
-            },
-            Error::Creation { source, .. } => source,
-            Error::UnsupportedConfiguration => ObjectStoreError::Generic {
-                store: "CloudObjectStoreFactory",
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Unsupported object store configuration",
-                )),
-            },
-        }
-    }
 }

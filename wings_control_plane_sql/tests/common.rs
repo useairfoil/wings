@@ -1,6 +1,7 @@
 #![allow(unused)]
 use sea_orm::ConnectOptions;
-use wings_control_plane_sql::Database;
+use wings_control_plane_core::cluster_metadata::ClusterMetadata;
+use wings_control_plane_sql::{Database, SqlControlPlane};
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions,
     ObjectStoreConfiguration, ObjectStoreName, ParquetConfiguration, TenantName,
@@ -20,21 +21,21 @@ pub async fn new_test_db() -> Database {
     pool
 }
 
-pub async fn seed_tenant(db: &Database) {
+pub async fn seed_tenant(cp: &SqlControlPlane) {
     let name = TenantName::new_unchecked("abcd");
-    db.create_tenant(name.clone()).await.unwrap();
+    cp.create_tenant(name.clone()).await.unwrap();
 }
 
-pub async fn seed_data_lake(db: &Database) {
+pub async fn seed_data_lake(cp: &SqlControlPlane) {
     let name = DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
     let config = DataLakeConfiguration::Parquet(ParquetConfiguration::default());
 
-    db.create_data_lake(name.clone(), config.clone())
+    cp.create_data_lake(name.clone(), config.clone())
         .await
         .unwrap();
 }
 
-pub async fn seed_object_store(db: &Database) {
+pub async fn seed_object_store(cp: &SqlControlPlane) {
     let name = ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
     let config = ObjectStoreConfiguration::Aws(AwsConfiguration {
         bucket_name: "my-bucket".to_string(),
@@ -44,21 +45,21 @@ pub async fn seed_object_store(db: &Database) {
         region: None,
     });
 
-    db.create_object_store(name.clone(), config.clone())
+    cp.create_object_store(name.clone(), config.clone())
         .await
         .unwrap();
 }
 
-pub async fn seed_namespace(db: &Database) {
+pub async fn seed_namespace(cp: &SqlControlPlane) {
     let name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
     let object_store = ObjectStoreName::parse("tenants/abcd/object-stores/xyz").unwrap();
     let data_lake = DataLakeName::parse("tenants/abcd/data-lakes/xyz").unwrap();
     let options = NamespaceOptions::new(object_store, data_lake);
 
-    db.create_namespace(name, options).await.unwrap();
+    cp.create_namespace(name, options).await.unwrap();
 }
 
-pub async fn seed_topic(db: &Database) {
+pub async fn seed_topic(cp: &SqlControlPlane) {
     use wings_resources::{TopicName, TopicOptions};
 
     let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
@@ -67,5 +68,5 @@ pub async fn seed_topic(db: &Database) {
         .unwrap();
     let options = TopicOptions::new(schema);
 
-    db.create_topic(name, options).await.unwrap();
+    cp.create_topic(name, options).await.unwrap();
 }

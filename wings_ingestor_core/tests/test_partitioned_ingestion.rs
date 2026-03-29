@@ -62,7 +62,7 @@ async fn initialize_test_topic(
 
 #[tokio::test]
 async fn test_ingest_different_partitions() -> Result<()> {
-    let (ing_fut, client, admin, ct) = create_batch_ingestor();
+    let (ing_fut, client, admin, ct) = create_batch_ingestor().await;
     let (namespace, topic) = initialize_test_topic(&admin).await;
     let ct_guard = ct.drop_guard();
 
@@ -100,7 +100,7 @@ async fn test_ingest_different_partitions() -> Result<()> {
 
 #[tokio::test]
 async fn test_ingest_fails_with_invalid_partition_type() -> Result<()> {
-    let (ing_fut, client, admin, ct) = create_batch_ingestor();
+    let (ing_fut, client, admin, ct) = create_batch_ingestor().await;
     let (namespace, topic) = initialize_test_topic(&admin).await;
     let ct_guard = ct.drop_guard();
 
@@ -125,7 +125,7 @@ async fn test_ingest_fails_with_invalid_partition_type() -> Result<()> {
 
 #[tokio::test]
 async fn test_ingest_fails_with_missing_partition() -> Result<()> {
-    let (ing_fut, client, admin, ct) = create_batch_ingestor();
+    let (ing_fut, client, admin, ct) = create_batch_ingestor().await;
     let (namespace, topic) = initialize_test_topic(&admin).await;
     let ct_guard = ct.drop_guard();
 

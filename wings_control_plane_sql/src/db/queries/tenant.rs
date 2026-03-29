@@ -1,20 +1,35 @@
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
+use snafu::Snafu;
 use time::OffsetDateTime;
-use wings_control_plane_core::cluster_metadata::{ListTenantsRequest, ListTenantsResponse};
+use wings_control_plane_core::{
+    ClusterMetadataError,
+    cluster_metadata::{ListTenantsRequest, ListTenantsResponse},
+};
 use wings_resources::{Tenant, TenantName};
 
-use crate::{
-    Database,
-    db::{
-        entities,
-        error::{Error, Result},
+use crate::{Database, db::entities};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("tenant {name} already exists"))]
+    AlreadyExists { name: TenantName },
+    #[snafu(display("tenant {name} not found"))]
+    NotFound { name: TenantName },
+    #[snafu(display("tenant {name} has {namespaces_count} namespaces and cannot be deleted"))]
+    NotEmpty {
+        name: TenantName,
+        namespaces_count: u64,
     },
-};
+    #[snafu(transparent)]
+    Entity { source: entities::Error },
+    #[snafu(transparent)]
+    Db { source: DbErr },
+}
 
 impl Database {
-    pub async fn create_tenant(&self, name: TenantName) -> Result<Tenant> {
+    pub async fn create_tenant(&self, name: TenantName) -> Result<Tenant, Error> {
         let id = name.id().to_owned();
         let tenant = entities::tenant::ActiveModel {
             id: Set(id.clone()),
@@ -26,23 +41,20 @@ impl Database {
                 let existing = entities::tenant::Entity::find_by_id(&id).one(tx).await?;
 
                 if existing.is_some() {
-                    return Err(Error::AlreadyExists {
-                        resource: "tenant",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::AlreadyExists { name });
                 }
 
                 let entity = entities::tenant::Entity::insert(tenant)
                     .exec_with_returning(tx)
                     .await?;
 
-                entity.try_into()
+                entity.try_into().map_err(Into::into)
             })
         })
         .await
     }
 
-    pub async fn get_tenant(&self, name: TenantName) -> Result<Tenant> {
+    pub async fn get_tenant(&self, name: TenantName) -> Result<Tenant, Error> {
         let id = name.id();
 
         let existing = entities::tenant::Entity::find_by_id(id)
@@ -50,15 +62,15 @@ impl Database {
             .await?;
 
         match existing {
-            Some(entity) => entity.try_into(),
-            None => Err(Error::NotFound {
-                resource: "tenant",
-                message: format!("name={name}"),
-            }),
+            Some(entity) => entity.try_into().map_err(Into::into),
+            None => Err(Error::NotFound { name }),
         }
     }
 
-    pub async fn list_tenants(&self, request: ListTenantsRequest) -> Result<ListTenantsResponse> {
+    pub async fn list_tenants(
+        &self,
+        request: ListTenantsRequest,
+    ) -> Result<ListTenantsResponse, Error> {
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1_000) as u64;
 
         let mut query = entities::tenant::Entity::find().order_by_asc(entities::tenant::Column::Id);
@@ -81,7 +93,7 @@ impl Database {
         let tenants = entities
             .into_iter()
             .map(|entity| entity.try_into())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ListTenantsResponse {
             tenants,
@@ -89,38 +101,56 @@ impl Database {
         })
     }
 
-    pub async fn delete_tenant(&self, name: TenantName) -> Result<()> {
+    pub async fn delete_tenant(&self, name: TenantName) -> Result<(), Error> {
         let id = name.id().to_owned();
 
         self.with_transaction(|tx| {
             Box::pin(async move {
                 entities::tenant::expect_exists(tx, &name).await?;
 
-                let has_namespaces = entities::namespace::Entity::find()
+                let namespaces_count = entities::namespace::Entity::find()
                     .filter(entities::namespace::Column::TenantId.eq(&id))
-                    .one(tx)
-                    .await?
-                    .is_some();
+                    .count(tx)
+                    .await?;
 
-                if has_namespaces {
-                    return Err(Error::InvalidArgument {
-                        resource: "tenant",
-                        message: format!("{name} has namespaces and cannot be deleted"),
+                if namespaces_count > 0 {
+                    return Err(Error::NotEmpty {
+                        name,
+                        namespaces_count,
                     });
                 }
 
                 let result = entities::tenant::Entity::delete_by_id(&id).exec(tx).await?;
 
                 if result.rows_affected == 0 {
-                    return Err(Error::NotFound {
-                        resource: "tenant",
-                        message: format!("name={name}"),
-                    });
+                    return Err(Error::NotFound { name });
                 }
 
                 Ok(())
             })
         })
         .await
+    }
+}
+
+impl From<Error> for ClusterMetadataError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::AlreadyExists { name } => ClusterMetadataError::AlreadyExists {
+                resource: "tenant".to_string(),
+                name: name.to_string(),
+            },
+            Error::NotFound { name } => ClusterMetadataError::NotFound {
+                resource: "tenant".to_string(),
+                name: name.to_string(),
+            },
+            Error::NotEmpty { .. } => ClusterMetadataError::FailedPrecondition {
+                message: err.to_string(),
+            },
+            Error::Entity { source } => source.into(),
+            Error::Db { source } => ClusterMetadataError::Internal {
+                message: format!("db error: {source}"),
+            },
+        }
     }
 }
