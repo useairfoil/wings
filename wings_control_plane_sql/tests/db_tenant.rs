@@ -44,7 +44,7 @@ async fn test_list_tenants_pagination() {
 
     // Create multiple tenants
     for i in 0..5 {
-        let name = TenantName::new_unchecked(&format!("tenant{i}"));
+        let name = TenantName::new_unchecked(format!("tenant{i}"));
         cp.create_tenant(name).await.unwrap();
     }
 

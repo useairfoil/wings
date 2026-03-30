@@ -21,8 +21,6 @@ async fn test_metadata_system_tables() -> Result<()> {
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
-    tokio::time::pause();
-
     let provider = provider_factory
         .create_provider(namespace.name.clone())
         .await
@@ -65,8 +63,6 @@ async fn test_topic_and_topic_schema() -> Result<()> {
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())
@@ -138,6 +134,8 @@ async fn test_topic_offset_location() -> Result<()> {
     .await
     .unwrap();
 
+    tokio::time::resume();
+
     let provider = provider_factory
         .create_provider(namespace.name.clone())
         .await
@@ -191,6 +189,8 @@ async fn test_topic_partition_value() -> Result<()> {
     )
     .await
     .unwrap();
+
+    tokio::time::resume();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())

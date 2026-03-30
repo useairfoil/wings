@@ -137,7 +137,7 @@ pub enum DataType {
     /// nevertheless correct).
     ///
     /// ```
-    /// # use wings_control_plane::schema::{DataType, TimeUnit};
+    /// # use wings_schema::{DataType, TimeUnit};
     /// DataType::Timestamp(TimeUnit::Second, None);
     /// DataType::Timestamp(TimeUnit::Second, Some("literal".into()));
     /// DataType::Timestamp(TimeUnit::Second, Some("string".to_string().into()));

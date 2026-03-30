@@ -278,7 +278,7 @@ pub mod tests {
     use wings_schema::{DataType, Field, TimeUnit};
 
     fn round_trip_field(field: &Field) -> Field {
-        let pb_field: crate::pb::Field = field.try_into().expect("to proto");
+        let pb_field: crate::pb::Field = field.into();
         (&pb_field).try_into().expect("from proto")
     }
 
@@ -400,7 +400,7 @@ pub mod tests {
     #[test]
     fn test_list() {
         let item_field = Field::new("item", 2, DataType::Int32, false);
-        let data_type = DataType::List(Arc::new(item_field.into()));
+        let data_type = DataType::List(Arc::new(item_field));
         let field = Field::new("test_field", 1, data_type, false);
         let result = round_trip_field(&field);
         assert_eq!(field, result);

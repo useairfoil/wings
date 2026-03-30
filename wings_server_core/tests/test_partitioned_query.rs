@@ -15,8 +15,6 @@ async fn test_partitioned_query_with_no_data() -> Result<()> {
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
-    tokio::time::pause();
-
     let provider = provider_factory
         .create_provider(namespace.name.clone())
         .await
@@ -217,8 +215,6 @@ async fn test_partitioned_query_with_missing_partition_value() -> Result<()> {
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())

@@ -127,9 +127,12 @@ fn create_comprehensive_schema() -> SchemaRef {
         Field::new(
             "items",
             27,
-            DataType::List(Arc::new(
-                Field::new("item", 28, DataType::Struct(item_fields.into()), true).into(),
-            )),
+            DataType::List(Arc::new(Field::new(
+                "item",
+                28,
+                DataType::Struct(item_fields.into()),
+                true,
+            ))),
             true,
         ),
     ])
