@@ -7665,6 +7665,7 @@ dependencies = [
  "prost",
  "sea-orm",
  "sea-orm-migration",
+ "serde",
  "serde_json",
  "snafu",
  "time",

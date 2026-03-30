@@ -82,6 +82,53 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        manager
+            .create_table(
+                TableCreateStatement::new()
+                    .table("tasks")
+                    .if_not_exists()
+                    .col(ColumnDef::new("id").text().primary_key())
+                    .col(
+                        ColumnDef::new("created_at")
+                            .timestamp_with_time_zone()
+                            .default(Expr::current_timestamp()),
+                    )
+                    //  'Q' - queued
+                    //  'P' - processing
+                    //  'C' - completed (success)
+                    //  'F' - failed
+                    .col(ColumnDef::new("status").string_len(1).not_null())
+                    .col(
+                        ColumnDef::new("run_at")
+                            .timestamp_with_time_zone()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(ColumnDef::new("task_type_url").text().not_null())
+                    // Protobuf-serialized task payload
+                    .col(ColumnDef::new("task_payload_pb").binary().not_null())
+                    .col(ColumnDef::new("updated_at").timestamp_with_time_zone())
+                    .col(ColumnDef::new("attempts").integer().default(Expr::value(0)))
+                    .col(
+                        ColumnDef::new("max_attempts")
+                            .integer()
+                            .default(Expr::value(5)),
+                    )
+                    .col(ColumnDef::new("error_message").text())
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                IndexCreateStatement::new()
+                    .name("tasks_fetch_idx")
+                    .table("tasks")
+                    .col("run_at")
+                    .and_where(Expr::col("status").eq("Q"))
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 }

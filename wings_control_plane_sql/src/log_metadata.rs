@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use wings_control_plane_core::log_metadata::{
@@ -35,8 +35,20 @@ impl LogMetadata for SqlControlPlane {
         self.db.list_partitions(request).await.map_err(Into::into)
     }
 
-    async fn request_task(&self, _request: RequestTaskRequest) -> Result<RequestTaskResponse> {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    async fn request_task(&self, request: RequestTaskRequest) -> Result<RequestTaskResponse> {
+        // To avoid the client hammering the server, we poll for a task for a few seconds.
+        // Only then we return an empty response to the client.
+        let deadline = Instant::now() + Duration::from_secs(5);
+
+        while Instant::now() < deadline {
+            let response = self.db.request_task(&request).await?;
+            if response.task.is_some() {
+                return Ok(response);
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
         Ok(RequestTaskResponse { task: None })
     }
 

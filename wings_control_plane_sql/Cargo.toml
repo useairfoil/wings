@@ -14,6 +14,7 @@ path = "src/lib.rs"
 async-trait.workspace = true
 bytesize.workspace = true
 prost.workspace = true
+serde.workspace = true
 snafu.workspace = true
 sea-orm.workspace = true
 sea-orm-migration.workspace = true

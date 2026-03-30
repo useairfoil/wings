@@ -560,6 +560,14 @@ impl Task {
         }
     }
 
+    pub fn type_url(&self) -> &str {
+        match self {
+            Task::Compaction { .. } => CompactionTask::TYPE_URL,
+            Task::CreateTable { .. } => CreateTableTask::TYPE_URL,
+            Task::Commit { .. } => CommitTask::TYPE_URL,
+        }
+    }
+
     pub fn task_id(&self) -> &str {
         match self {
             Task::Compaction { metadata, .. } => &metadata.task_id,
@@ -613,4 +621,16 @@ impl CompleteTaskRequest {
             result: TaskCompletionResult::Failure(error_message),
         }
     }
+}
+
+impl CommitTask {
+    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CommitTask";
+}
+
+impl CompactionTask {
+    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CompactionTask";
+}
+
+impl CreateTableTask {
+    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CreateTableTask";
 }
