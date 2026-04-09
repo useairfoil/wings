@@ -2,19 +2,19 @@
 
 ## Project overview
 
-Airfoil Wings (from now, Wings) is a message queue written in Rust. Its main purpose is to provide a decoupled event bus for agent to agent communication. It's designed to be lightweight, efficient, and easy to use.
+Airfoil Wings (from now, Wings) is a data ingestion service and framework to ingest data from any source directly into the data lakehouse.
+Once the data is in the data lakehouse, it can be streamed _out_ of it too.
+It's designed to be lightweight, efficient, and easy to use.
 
-**Open standards**: Wings use Parquet files for long-term storage. Topics are compacted and partitioned so that any system that can read Parquet and Iceberg can consume the data.
+**Open standards**: Wings uses Parquet files for long-term storage. Topics are compacted and partitioned so that any system that can read Parquet and Iceberg can consume the data.
 
-**Multi tenant**: Wings supports multi-tenancy, allowing multiple organizations to share the same instance of Wings.
+**Multi tenant**: Wings supports multi-tenancy, allowing multiple teams to share the same instance of Wings.
 
-**Built-in schema registry**: Topic creation requires a schema. All ingested data must conform to the schema.
+**Built-in schema registry**: Data ingestion forces data to conform to the topic's schema. No misshaped data can enter the system.
 
 **Partitioning**: Topics are partitioned by key, with one partition for each unique value. Messages within the same partition are ordered, while no ordering is guaranteed between partitions.
 
-**Filtering**: Consumers can filter messages based on their content. Ordering is guaranteed as long as data belongs to the same partition.
-
-**Decoupled data from metadata**: Wings separates data from metadata. The metadata store is the only stateful component of Wings. It stores information about tenants, namespaces, topics, and partitions.
+**Decoupled data from metadata**: Wings separates data from metadata. The metadata store is the only stateful component of Wings. It stores metadata information about the cluster (tenants, namespaces, topics, etc.) and the log (offsets).
 
 **Decouple storage from compute**: Data is stored on object storage. The data layer (ingestor and query server) are stateless components that can be scaled horizontally.
 
@@ -36,7 +36,7 @@ At a high-level, Wings consists of the following components:
 
 **Ingestor**: Receives messages from producers and writes them to object storage. To limit S3 PUT requests, the ingestor batches messages and writes them in bulk. Roughly speaking, this is done every 250ms or 8MiB (configurable, use this to get a ballpark idea).
 
-**Query**: Receives queries from consumers and serves them data. Queries can be one-off or streaming.
+**Query**: Receives queries from consumers and serves them data. Queries are powered by DataFusion.
 
 **Metadata Store**: The metadata store is a stateful component that stores information about tenants, namespaces, topics, and partitions. This component is also used to assign offsets (sequence numbers) to messages.
 
@@ -52,9 +52,9 @@ Partition columns are not physically stored in the Parquet files, but they are e
 
 ## Vocabulary
 
-**Batch**: a batch is a group of messages (same topic and partition) pushed at the same time.
+**Batch**: a batch is a group of rows (same topic and partition) pushed at the same time.
 
-**Folio**: a folio is a collection of messages (by namespace). Data in a folio is grouped and sorted by topic and partition and contains data from multiple batches.
+**Folio**: a folio is a collection of rows by namespace. Data in a folio is grouped and sorted by topic and partition and contains data from multiple batches.
 
 **Segment**: a segment file is a Parquet file containing compacted data from a single topic and partition.
 
@@ -65,124 +65,21 @@ Partition columns are not physically stored in the Parquet files, but they are e
 - `cargo check`: Check the project for errors.
 - `cargo build`: Build the project.
 - `cargo test`: Run the unit tests.
+- `nix develop .#nightly -c cargo fmt`: Run cargo fmt. Nightly Rust is required.
+- `nix develop .#nightly -c code-coverage`: Run code coverage. Only works if the user has nix installed.
 
-## Repository organization
-
-**Common**
-
- - `common/object_store`: functions and traits to work with object storage.
- 
-**Metadata**
- 
- - `metadata/core`: functions to work with metadata and in-memory implementation.
- 
-**Ingestor**
- 
- - `ingestor/core`: functions and traits used by all ingestor implementations.
- - `ingestor/http`: ingestor that receives data over HTTP.
+Always use the `-p <crate-name>` flag to restrict commands to the crate you're currently working on.
 
 ## Style guide
 
 We follow the standard Rust style guide.
 
-**Important**: Do not call it "Wings message queue system", simply use "Wings".
-
-**Ultra Important**: You are an expert Rust developer, as such you do NOT need to add comments inside the implementation describing WHAT the code does. Your comments should describe WHY the code is written the way it is. The only place where you should describe WHAT the code does is in the documentation.
-
 ### Error handling
 
 We use the `snafu` crate for error handling. We create a custom error type per module (usually, in the `error.rs` file). Both the error and result types are exported by the module.
 
-#### Error Categories
-
-All error types implement a `kind()` method that returns an `ErrorKind` enum from `wings_control_plane`. This categorizes errors into:
-
-- **Configuration**: Bad configuration that needs user fix
-- **Validation**: Invalid input or user error
-- **NotFound**: Resource not found
-- **Conflict**: Resource already exists or locked
-- **Temporary**: Network/IO errors that may be retryable
-- **Internal**: Bugs or system errors
-
-The `ErrorKind` enum provides helper methods:
-- `is_retryable()`: Returns true for `Temporary` errors
-- `exit_code()`: Returns standard exit codes (EX_CONFIG, EX_USAGE, etc.)
-
-#### Error Type Pattern
-
-```rust
-// error.rs in each module
-use snafu::Snafu;
-use wings_control_plane::ErrorKind;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
-pub enum Error {
-    #[snafu(display("Invalid {field}: {reason}"))]
-    Validation { field: &'static str, reason: String },
-
-    #[snafu(display("{resource} not found"))]
-    NotFound { resource: &'static str },
-
-    #[snafu(display("Internal error: {message}"))]
-    Internal { message: String },
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::Validation { .. } => ErrorKind::Validation,
-            Self::NotFound { .. } => ErrorKind::NotFound,
-            Self::Internal { .. } => ErrorKind::Internal,
-        }
-    }
-}
-```
-
-#### Error Delegation
-
-For errors that wrap other error types (e.g., from dependencies or other modules), delegate `kind()` to the wrapped error:
-
-```rust
-#[snafu(display("Metadata error: {message}"))]
-Metadata {
-    message: &'static str,
-    source: ClusterMetadataError,
-}
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        match self {
-            Self::Metadata { source, .. } => source.kind(),
-            // ... other variants
-        }
-    }
-}
-```
-
-#### Usage Pattern
-
-Use context selectors for adding context to errors:
-
-```rust
-use snafu::prelude::*;
-
-fn do_something(input: &str) -> Result<()> {
-    do_fallible(input).context(InvalidInputSnafu { field: "input" })?;
-    Ok(())
-}
-```
-
-Or use `ensure!` for validation:
-
-```rust
-fn validate(value: usize) -> Result<()> {
-    ensure!(value > 0, ValueMustBePositiveSnafu);
-    Ok(())
-}
-```
+The project defines a `StatusCode` used to signal the error type to the user with a unique numerical code. 
+Errors at the boundary between the control plane and the broker should implement the `ErrorExt` trait defined in `wings_observability/src/error.rs` to allow error propagation over gRPC.
 
 ### Task cancellation
 
@@ -195,7 +92,7 @@ There is one root cancellation token, usually created by the main entry point. W
 
 Cancellation is signaled by calling `cancel` on the cancellation token. This is usually done by the main entry point when the user requests cancellation (e.g. by pressing ctrl-c).
 
-If a service spawns a number of child tasks, it should also cancel them on exit. This is usally done by 1) creating a `child_token` for the current service, 2) creating a `drop_guard` for this new token, and 3) `clone`ing the token for each child task.
+If a service spawns a number of child tasks, it should also cancel them on exit. This is usually done by 1) creating a `child_token` for the current service, 2) creating a `drop_guard` for this new token, and 3) `clone`ing the token for each child task.
 
 When cloning a cancellation token, we use a scoped shadowed variable to avoid naming the token `ct_clone`.
 

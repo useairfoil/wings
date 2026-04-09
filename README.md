@@ -1,96 +1,12 @@
 # Wings
 
-Wings is a distributed event streaming platform built on top of Apache Datafusion and object storage.
+Wings is a distributed data ingestion service and framework to ingest data from any source directly into the data lakehouse. Wings is built on top of Apache Datafusion and object storage.
 
 The goal is to simplify the common use case of syncing streams to a data lake, while providing a streaming interface for applications.
 
-## Architecture
-
-Wings is composed of a stateful, centralized control plane and a stateless data plane.
-
-```txt
-       ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-       │                     │▒ │                     │▒ │                     │▒
-       │       Cluster       │▒ │         Log         │▒ │        Index        │▒
-       │      Metadata       │▒ │      Metadata       │▒ │      Metadata       │▒
-       │                     │▒ │                     │▒ │                     │▒
-       └─────────────────────┘▒ └─────────────────────┘▒ └─────────────────────┘▒
-        ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
-
-Control P.
-═══════════════════════════════════════════════════════════════════════════════════════
-Data P.
-      ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │   Ingestor    │▒ │    Server     │▒ │   Compactor   │▒ │    Indexer    │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      │               │▒ │               │▒ │               │▒ │               │▒
-      └───────┬───────┘▒ └───────▲───────┘▒ └───────▲───────┘▒ └───────▲───────┘▒
-       ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒│▒▒▒▒▒▒▒▒▒
-              │                  │                  │                  │
-              │                  │                  │                  │
-       ┌ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ┐
-              │                  │    Liquid Cache  │                  │
-       └ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ┘
-       ┌──────▼──────────────────┴──────────────────▼──────────────────▼─────────┐
-       │                                                                         │▒
-       │                              Object Store                               │▒
-       │                                                                         │▒
-       └─────────────────────────────────────────────────────────────────────────┘▒
-        ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
-```
-
-**Control plane**
-
- - Manage tenants, namespaces, and topics
- - Commit and query logs metadata
- - Manage background jobs such as compaction and indexing
-
-**Data plane**
-
- - Prepare, upload, and commit write requests
- - Serve read queries, for both data and metadata
- - Run background jobs
-
-## Roadmap
-
-**MVP**
-
- - [x] Write and read data
- - [x] Built-in timestamp support
- - [ ] Arrow Flight for reading data
-   + [x] Flight SQL
- - [x] Arrow Flight for ingesting data
-   + [ ] Flight SQL
- - [ ] Compaction to Parquet files
- - [ ] Control plane persistence based on PostgreSQL
- - [ ] Schema management and evolution
- - [ ] Iceberg catalog support
-
-**Version 1.0**
-
- - [ ] Data retention policies
- - [ ] Secondary indexes
- - [ ] Transactions with clearly defined semantics
- - [ ] Extensible authentication and authorization
- - [ ] Extensible secret management (for object store credentials)
- - [ ] ["Distributed mmap"](https://www.warpstream.com/blog/minimizing-s3-api-costs-with-distributed-mmap) based on [LiquidCache](https://github.com/XiangpengHao/liquid-cache)
- - [ ] Cloud-native control plane persistence (DynamoDB, Azure CosmosDB, Google Cloud Spanner)
- - [ ] OpenDAL for writing data
- - [ ] Deterministic simulation testing
- - [ ] Read-only streams based on externally managed Iceberg catalogs
-
 ## License
 
-Copyright 2025 GNC Labs Limited
+Copyright 2026 GNC Labs Limited
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 this file except in compliance with the License. You may obtain a copy of the
