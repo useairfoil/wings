@@ -283,37 +283,192 @@ pub fn validate_compaction(compaction: &CompactionConfiguration) -> Result<(), V
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use bytesize::ByteSize;
     use wings_schema::{DataType, Field, SchemaBuilder};
 
-    use crate::{NamespaceName, TenantName, Topic, TopicName, TopicOptions};
+    use crate::{
+        CompactionConfiguration, NamespaceName, PartitionPosition, TenantName, TopicName,
+        TopicOptions, TopicStatus, validate_compaction,
+    };
 
     #[test]
-    fn test_topic_creation() {
+    fn test_topic_name_creation() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
         let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
+
+        assert_eq!(topic_name.id(), "test-topic");
+        assert_eq!(topic_name.parent(), &namespace_name);
+        assert_eq!(
+            topic_name.name(),
+            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+        );
+        assert_eq!(
+            topic_name.to_string(),
+            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+        );
+    }
+
+    #[test]
+    fn test_topic_name_parse() {
+        let topic_name =
+            TopicName::parse("tenants/test-tenant/namespaces/test-namespace/topics/test-topic")
+                .unwrap();
+        assert_eq!(topic_name.id(), "test-topic");
+
+        // Test parse with invalid format
+        let result = TopicName::parse("invalid-format");
+        assert!(result.is_err());
+
+        // Test parse with missing parent
+        let result = TopicName::parse("topics/test-topic");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_topic_name_from_str() {
+        let topic_name: TopicName =
+            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+                .parse()
+                .unwrap();
+        assert_eq!(topic_name.id(), "test-topic");
+
+        let result: Result<TopicName, _> = "invalid".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_topic_name_new_unchecked() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new_unchecked("test-topic", namespace_name);
+        assert_eq!(topic_name.id(), "test-topic");
+    }
+
+    #[test]
+    fn test_compaction_configuration_default() {
+        let config = CompactionConfiguration::default();
+
+        assert_eq!(config.freshness, Duration::from_mins(5));
+        assert_eq!(config.ttl, None);
+        assert_eq!(config.target_file_size, ByteSize::mb(512));
+    }
+
+    #[test]
+    fn test_validate_compaction_valid() {
+        let config = CompactionConfiguration::default();
+        let result = validate_compaction(&config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_compaction_invalid_freshness() {
+        let config = CompactionConfiguration {
+            freshness: Duration::from_secs(30), // Less than 1 minute
+            ttl: None,
+            target_file_size: ByteSize::mb(512),
+        };
+        let result = validate_compaction(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("freshness")));
+    }
+
+    #[test]
+    fn test_validate_compaction_invalid_ttl_too_short() {
+        let config = CompactionConfiguration {
+            freshness: Duration::from_mins(5),
+            ttl: Some(Duration::from_secs(30)), // Less than 1 minute
+            target_file_size: ByteSize::mb(512),
+        };
+        let result = validate_compaction(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("ttl")));
+    }
+
+    #[test]
+    fn test_validate_compaction_invalid_ttl_less_than_freshness() {
+        let config = CompactionConfiguration {
+            freshness: Duration::from_mins(10),
+            ttl: Some(Duration::from_mins(5)), // Less than freshness
+            target_file_size: ByteSize::mb(512),
+        };
+        let result = validate_compaction(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("ttl")));
+    }
+
+    #[test]
+    fn test_validate_compaction_multiple_errors() {
+        let config = CompactionConfiguration {
+            freshness: Duration::from_secs(30), // Invalid
+            ttl: Some(Duration::from_secs(15)), // Invalid: too short and <= freshness
+            target_file_size: ByteSize::mb(512),
+        };
+        let result = validate_compaction(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 2); // Should have at least freshness and ttl errors
+    }
+
+    #[test]
+    fn test_topic_options_with_description() {
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
+        let options = TopicOptions::new(schema).with_description("Test topic description");
+
+        assert_eq!(
+            options.description,
+            Some("Test topic description".to_string())
+        );
+    }
+
+    #[test]
+    fn test_topic_options_with_compaction() {
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
+        let compaction = CompactionConfiguration {
+            freshness: Duration::from_mins(10),
+            ttl: Some(Duration::from_hours(24)),
+            target_file_size: ByteSize::mb(256),
+        };
+        let options = TopicOptions::new(schema).with_compaction(compaction.clone());
+
+        assert_eq!(options.compaction.freshness, compaction.freshness);
+        assert_eq!(options.compaction.ttl, compaction.ttl);
+        assert_eq!(
+            options.compaction.target_file_size,
+            compaction.target_file_size
+        );
+    }
+
+    #[test]
+    fn test_topic_with_status() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
         let options = TopicOptions::new(schema);
-        let topic = Topic::new(topic_name.clone(), options);
+        let status = TopicStatus {
+            num_partitions: 10,
+            conditions: vec![],
+        };
+        let topic = crate::Topic::new(topic_name, options).with_status(status);
 
-        assert_eq!(topic.name, topic_name);
-        assert_eq!(topic.name.id(), "test-topic");
-        assert_eq!(topic.name.parent(), &namespace_name);
-        assert_eq!(
-            topic.name.name(),
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
-        );
-        assert_eq!(topic.schema().fields.len(), 1);
-        assert_eq!(topic.partition_key, None);
+        assert!(topic.status.is_some());
+        assert_eq!(topic.status.as_ref().unwrap().num_partitions, 10);
     }
 
     #[test]
-    fn test_topic_with_partition_key() {
-        let tenant_name = TenantName::new("test-tenant").unwrap();
-        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
+    fn test_topic_partition_field() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
@@ -321,10 +476,180 @@ mod tests {
         .build()
         .unwrap();
         let options = TopicOptions::new_with_partition_key(schema, Some(0));
-        let topic = Topic::new(topic_name.clone(), options);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
 
-        assert_eq!(topic.name, topic_name);
-        assert_eq!(topic.schema.fields.len(), 2);
-        assert_eq!(topic.partition_key, Some(0));
+        let partition_field = topic.partition_field();
+        assert!(partition_field.is_some());
+        assert_eq!(partition_field.unwrap().id, 0);
+        assert_eq!(partition_field.unwrap().name, "id");
+    }
+
+    #[test]
+    fn test_topic_partition_field_none() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new(schema); // No partition key
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let partition_field = topic.partition_field();
+        assert!(partition_field.is_none());
+    }
+
+    #[test]
+    fn test_topic_partition_field_data_type() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let data_type = topic.partition_field_data_type();
+        assert!(data_type.is_some());
+        assert_eq!(data_type.unwrap(), &DataType::Int64);
+    }
+
+    #[test]
+    fn test_topic_arrow_schema() {
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
+        let options = TopicOptions::new(schema);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let arrow_schema = topic.arrow_schema();
+        assert_eq!(arrow_schema.fields().len(), 1);
+    }
+
+    #[test]
+    fn test_topic_schema_without_partition_field() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let schema_without_partition = topic.schema_without_partition_field();
+        assert_eq!(schema_without_partition.fields.len(), 1); // Only message field
+        assert!(
+            schema_without_partition
+                .fields_iter()
+                .all(|f| f.name != "id")
+        );
+    }
+
+    #[test]
+    fn test_topic_arrow_schema_without_partition_field() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let arrow_schema = topic.arrow_schema_without_partition_field();
+        assert_eq!(arrow_schema.fields().len(), 1);
+    }
+
+    #[test]
+    fn test_topic_schema_with_metadata_skip() {
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
+        let options = TopicOptions::new(schema);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let schema_with_metadata = topic.schema_with_metadata(PartitionPosition::Skip).unwrap();
+        // Should have original field + offset + timestamp = 3 fields
+        assert_eq!(schema_with_metadata.fields.len(), 3);
+    }
+
+    #[test]
+    fn test_topic_schema_with_metadata_original() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let schema_with_metadata = topic
+            .schema_with_metadata(PartitionPosition::Original)
+            .unwrap();
+        // Should have all original fields + offset + timestamp
+        assert_eq!(schema_with_metadata.fields.len(), 4);
+    }
+
+    #[test]
+    fn test_topic_schema_with_metadata_last() {
+        let schema = SchemaBuilder::new(vec![
+            Field::new("id", 0, DataType::Int64, false),
+            Field::new("message", 1, DataType::Utf8, false),
+        ])
+        .build()
+        .unwrap();
+        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let schema_with_metadata = topic.schema_with_metadata(PartitionPosition::Last).unwrap();
+        // Should have all fields with partition last + offset + timestamp = 4
+        assert_eq!(schema_with_metadata.fields.len(), 4);
+    }
+
+    #[test]
+    fn test_topic_arrow_schema_with_metadata() {
+        let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
+            .build()
+            .unwrap();
+        let options = TopicOptions::new(schema);
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
+        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let topic = crate::Topic::new(topic_name, options);
+
+        let arrow_schema = topic
+            .arrow_schema_with_metadata(PartitionPosition::Skip)
+            .unwrap();
+        assert_eq!(arrow_schema.fields().len(), 3); // test + offset + timestamp
     }
 }

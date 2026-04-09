@@ -107,3 +107,138 @@ impl ObjectStore {
         ObjectStore { name, object_store }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_object_store_name_creation() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let object_store_name = ObjectStoreName::new("test-store", tenant_name.clone()).unwrap();
+
+        assert_eq!(object_store_name.id(), "test-store");
+        assert_eq!(object_store_name.parent(), &tenant_name);
+        assert_eq!(
+            object_store_name.name(),
+            "tenants/test-tenant/object-stores/test-store"
+        );
+        assert_eq!(
+            object_store_name.to_string(),
+            "tenants/test-tenant/object-stores/test-store"
+        );
+    }
+
+    #[test]
+    fn test_object_store_name_parse() {
+        let object_store_name =
+            ObjectStoreName::parse("tenants/test-tenant/object-stores/test-store").unwrap();
+        assert_eq!(object_store_name.id(), "test-store");
+
+        // Test parse with invalid format
+        let result = ObjectStoreName::parse("invalid-format");
+        assert!(result.is_err());
+
+        // Test parse with missing parent
+        let result = ObjectStoreName::parse("object-stores/test-store");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_object_store_name_from_str() {
+        let object_store_name: ObjectStoreName = "tenants/test-tenant/object-stores/test-store"
+            .parse()
+            .unwrap();
+        assert_eq!(object_store_name.id(), "test-store");
+
+        let result: Result<ObjectStoreName, _> = "invalid".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_object_store_name_new_unchecked() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let object_store_name = ObjectStoreName::new_unchecked("test-store", tenant_name);
+        assert_eq!(object_store_name.id(), "test-store");
+    }
+
+    #[test]
+    fn test_object_store_name_wings_object_store_url() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let object_store_name = ObjectStoreName::new("test-store", tenant_name).unwrap();
+
+        let url = object_store_name.wings_object_store_url().unwrap();
+        // ObjectStoreUrl always adds a trailing slash
+        assert_eq!(url.as_str(), "wings://test-store/");
+    }
+
+    #[test]
+    fn test_object_store_configuration_aws() {
+        let aws_config = AwsConfiguration {
+            bucket_name: "my-bucket".to_string(),
+            prefix: None,
+            access_key_id: "key".to_string(),
+            secret_access_key: "secret".to_string(),
+            region: None,
+        };
+        let config = ObjectStoreConfiguration::Aws(aws_config);
+
+        match &config {
+            ObjectStoreConfiguration::Aws(c) => assert_eq!(c.bucket_name, "my-bucket"),
+            _ => panic!("Expected AWS configuration"),
+        }
+    }
+
+    #[test]
+    fn test_object_store_configuration_azure() {
+        let azure_config = AzureConfiguration {
+            container_name: "my-container".to_string(),
+            prefix: None,
+            storage_account_name: "account".to_string(),
+            storage_account_key: "key".to_string(),
+        };
+        let config = ObjectStoreConfiguration::Azure(azure_config);
+
+        match &config {
+            ObjectStoreConfiguration::Azure(c) => assert_eq!(c.container_name, "my-container"),
+            _ => panic!("Expected Azure configuration"),
+        }
+    }
+
+    #[test]
+    fn test_object_store_configuration_google() {
+        let google_config = GoogleConfiguration {
+            bucket_name: "my-bucket".to_string(),
+            prefix: None,
+            service_account: "account".to_string(),
+            service_account_key: "key".to_string(),
+        };
+        let config = ObjectStoreConfiguration::Google(google_config);
+
+        match &config {
+            ObjectStoreConfiguration::Google(c) => assert_eq!(c.bucket_name, "my-bucket"),
+            _ => panic!("Expected Google configuration"),
+        }
+    }
+
+    #[test]
+    fn test_object_store_configuration_s3_compatible() {
+        let s3_config = S3CompatibleConfiguration {
+            bucket_name: "my-bucket".to_string(),
+            prefix: None,
+            access_key_id: "key".to_string(),
+            secret_access_key: "secret".to_string(),
+            endpoint: "http://localhost:9000".to_string(),
+            region: None,
+            allow_http: true,
+        };
+        let config = ObjectStoreConfiguration::S3Compatible(s3_config);
+
+        match &config {
+            ObjectStoreConfiguration::S3Compatible(c) => {
+                assert_eq!(c.endpoint, "http://localhost:9000")
+            }
+            _ => panic!("Expected S3 compatible configuration"),
+        }
+    }
+}

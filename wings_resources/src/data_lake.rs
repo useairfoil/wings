@@ -52,3 +52,57 @@ impl DataLake {
         Self { name, data_lake }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_lake_name_creation() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let data_lake_name = DataLakeName::new("test-lake", tenant_name.clone()).unwrap();
+
+        assert_eq!(data_lake_name.id(), "test-lake");
+        assert_eq!(data_lake_name.parent(), &tenant_name);
+        assert_eq!(
+            data_lake_name.name(),
+            "tenants/test-tenant/data-lakes/test-lake"
+        );
+        assert_eq!(
+            data_lake_name.to_string(),
+            "tenants/test-tenant/data-lakes/test-lake"
+        );
+    }
+
+    #[test]
+    fn test_data_lake_name_parse() {
+        let data_lake_name =
+            DataLakeName::parse("tenants/test-tenant/data-lakes/test-lake").unwrap();
+        assert_eq!(data_lake_name.id(), "test-lake");
+
+        // Test parse with invalid format
+        let result = DataLakeName::parse("invalid-format");
+        assert!(result.is_err());
+
+        // Test parse with missing parent
+        let result = DataLakeName::parse("data-lakes/test-lake");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_data_lake_name_from_str() {
+        let data_lake_name: DataLakeName =
+            "tenants/test-tenant/data-lakes/test-lake".parse().unwrap();
+        assert_eq!(data_lake_name.id(), "test-lake");
+
+        let result: Result<DataLakeName, _> = "invalid".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_data_lake_name_new_unchecked() {
+        let tenant_name = TenantName::new("test-tenant").unwrap();
+        let data_lake_name = DataLakeName::new_unchecked("test-lake", tenant_name);
+        assert_eq!(data_lake_name.id(), "test-lake");
+    }
+}
