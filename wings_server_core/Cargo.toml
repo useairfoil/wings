@@ -35,6 +35,7 @@ wings-resources = { path = "../wings_resources" }
 wings-schema = { path = "../wings_schema" }
 
 [dev-dependencies]
+insta.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 wings-control-plane-sql = { path = "../wings_control_plane_sql" }
 wings-ingestor-core = { path = "../wings_ingestor_core" }

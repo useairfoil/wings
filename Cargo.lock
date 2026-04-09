@@ -7902,6 +7902,7 @@ dependencies = [
  "async-trait",
  "datafusion",
  "futures",
+ "insta",
  "object_store",
  "opentelemetry_sdk",
  "parquet",

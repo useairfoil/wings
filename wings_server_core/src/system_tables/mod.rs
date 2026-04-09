@@ -1,5 +1,5 @@
 mod exec;
-mod helpers;
+pub mod helpers;
 mod metrics;
 mod namespace_info;
 mod provider;
