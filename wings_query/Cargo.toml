@@ -21,3 +21,8 @@ tracing.workspace = true
 uuid.workspace = true
 wings-schema = { path = "../wings_schema" }
 wings-resources = { path = "../wings_resources" }
+
+[dev-dependencies]
+insta.workspace = true
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread"] }
+wings-schema = { path = "../wings_schema" }
