@@ -36,7 +36,6 @@ tracing-subscriber = { version = "0.3.19", features = [
 time = { version = "0.3.41", features = ["formatting", "local-offset"] }
 ulid.workspace = true
 wings-ingestor-core = { path = "../wings_ingestor_core" }
-wings-ingestor-http = { path = "../wings_ingestor_http" }
 wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-observability = { path = "../wings_observability" }
 wings-client = { path = "../wings_client" }
