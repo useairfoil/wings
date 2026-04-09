@@ -23,6 +23,7 @@ time.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+ulid.workspace = true
 wings-control-plane-core.path = "../wings_control_plane_core"
 wings-observability.path = "../wings_observability"
 wings-resources.path = "../wings_resources"

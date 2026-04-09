@@ -13,6 +13,7 @@ use std::{
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use object_store::path::Path;
+use prost::Message;
 use time::UtcDateTime;
 use wings_resources::{NamespaceName, PartitionValue, TopicName};
 use wings_schema::Datum;
@@ -623,14 +624,36 @@ impl CompleteTaskRequest {
     }
 }
 
-impl CommitTask {
-    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CommitTask";
+pub trait DatabaseTask {
+    const TYPE_URL: &str;
+    type Serialized: Message;
+
+    fn into_serialized(self) -> Self::Serialized;
 }
 
-impl CompactionTask {
-    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CompactionTask";
+impl DatabaseTask for CommitTask {
+    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CommitTask";
+    type Serialized = crate::pb::CommitTask;
+
+    fn into_serialized(self) -> Self::Serialized {
+        self.into()
+    }
 }
 
-impl CreateTableTask {
-    pub const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CreateTableTask";
+impl DatabaseTask for CompactionTask {
+    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CompactionTask";
+    type Serialized = crate::pb::CompactionTask;
+
+    fn into_serialized(self) -> Self::Serialized {
+        self.into()
+    }
+}
+
+impl DatabaseTask for CreateTableTask {
+    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CreateTableTask";
+    type Serialized = crate::pb::CreateTableTask;
+
+    fn into_serialized(self) -> Self::Serialized {
+        self.into()
+    }
 }

@@ -7672,6 +7672,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "ulid",
  "wings-control-plane-core",
  "wings-observability",
  "wings-resources",

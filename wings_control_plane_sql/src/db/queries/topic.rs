@@ -2,9 +2,12 @@ use sea_orm::{
     ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
 use snafu::Snafu;
+use time::OffsetDateTime;
+use tracing::debug;
 use wings_control_plane_core::{
     ClusterMetadataError,
     cluster_metadata::{ListTopicsRequest, ListTopicsResponse, TopicView},
+    log_metadata::CreateTableTask,
 };
 use wings_resources::{Topic, TopicName, TopicOptions, validate_compaction};
 
@@ -92,6 +95,17 @@ impl Database {
                 let entity = entities::topic::Entity::insert(topic)
                     .exec_with_returning(tx)
                     .await?;
+
+                let task_id = entities::task::insert_task(
+                    tx,
+                    CreateTableTask {
+                        topic_name: name.clone(),
+                    },
+                    OffsetDateTime::now_utc(),
+                )
+                .await?;
+
+                debug!(task_id, topic = %name, "Inserted table create task");
 
                 entity.try_into().map_err(Into::into)
             })

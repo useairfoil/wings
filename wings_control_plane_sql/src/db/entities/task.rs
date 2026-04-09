@@ -1,7 +1,10 @@
-use sea_orm::entity::prelude::*;
+use prost::Message;
+use sea_orm::{ActiveValue::Set, DatabaseTransaction, entity::prelude::*};
 use time::OffsetDateTime;
 use wings_control_plane_core::{
-    log_metadata::{CommitTask, CompactionTask, CreateTableTask, Task, TaskMetadata, TaskStatus},
+    log_metadata::{
+        CommitTask, CompactionTask, CreateTableTask, DatabaseTask, Task, TaskMetadata, TaskStatus,
+    },
     pb,
 };
 
@@ -50,6 +53,29 @@ impl Model {
             updated_at: self.updated_at.unwrap_or(self.created_at).into(),
         }
     }
+}
+
+pub async fn insert_task<T: DatabaseTask>(
+    tx: &DatabaseTransaction,
+    task: T,
+    run_at: OffsetDateTime,
+) -> Result<String, Error> {
+    let id = ulid::Ulid::new();
+    let created_at = OffsetDateTime::now_utc();
+
+    let entity = Entity::insert(ActiveModel {
+        id: Set(id.to_string()),
+        created_at: Set(created_at),
+        status: Set(Status::Queued),
+        run_at: Set(run_at),
+        task_type_url: Set(T::TYPE_URL.to_string()),
+        task_payload_pb: Set(task.into_serialized().encode_to_vec()),
+        ..Default::default()
+    })
+    .exec_with_returning(tx)
+    .await?;
+
+    Ok(entity.id)
 }
 
 impl TryFrom<Model> for Task {
