@@ -17,3 +17,6 @@ parquet.workspace = true
 serde.workspace = true
 snafu.workspace = true
 wings-observability.path = "../wings_observability"
+
+[dev-dependencies]
+serde_json = "1.0"

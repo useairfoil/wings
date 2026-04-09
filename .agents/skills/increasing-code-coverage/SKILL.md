@@ -42,3 +42,4 @@ Useful commands:
  - DO NOT test creating structs for the sake of creating structs. Focus on testing functions.
  - Always test error paths too.
  - WARN users about flaky tests.
+ - Run `cargo clippy -p <crate-name> --tests` and fix any issues.

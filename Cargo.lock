@@ -7850,6 +7850,7 @@ dependencies = [
  "deltalake-core",
  "parquet",
  "serde",
+ "serde_json",
  "snafu",
  "wings-observability",
 ]
