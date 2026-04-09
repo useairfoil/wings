@@ -41,7 +41,17 @@
           ];
         };
 
-        nightlyToolChain = (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default));
+        nightlyToolChain = (
+          pkgs.rust-bin.selectLatestNightlyWith (
+            toolchain:
+            toolchain.default.override {
+              extensions = [
+                "rust-src"
+                "llvm-tools-preview"
+              ];
+            }
+          )
+        );
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
@@ -167,6 +177,11 @@
           ];
           text = builtins.readFile ./scripts/publish-docker-image.sh;
         };
+
+        codeCoverage = pkgs.writeShellApplication {
+          name = "code-coverage";
+          text = builtins.readFile ./scripts/code-coverage.sh;
+        };
       in
       {
         packages = {
@@ -197,7 +212,10 @@
           nightly = pkgs.mkShell {
             buildInputs = [
               nightlyToolChain
+              codeCoverage
+
               pkgs.cargo-udeps
+              pkgs.cargo-llvm-cov
             ];
           };
         };
