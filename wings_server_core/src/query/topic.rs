@@ -18,6 +18,7 @@ use wings_control_plane_core::log_metadata::{
 use wings_resources::{Namespace, PartitionPosition, PartitionValue, Topic};
 
 use crate::{
+    datafusion_helpers::apply_projection,
     options::SessionConfigExt,
     query::{
         exec::{DataLakeExec, FolioExec},
@@ -166,11 +167,13 @@ impl TableProvider for TopicTableProvider {
             })
             .collect::<Result<Vec<_>, DataFusionError>>()?;
 
-        match locations_exec.as_slice() {
-            [] => Ok(Arc::new(EmptyExec::new(output_schema))),
-            [exec] => Ok(exec.clone()),
-            _ => Ok(UnionExec::try_new(locations_exec)?),
-        }
+        let exec = match locations_exec.as_slice() {
+            [] => Arc::new(EmptyExec::new(output_schema)),
+            [exec] => exec.clone(),
+            _ => UnionExec::try_new(locations_exec)?,
+        };
+
+        apply_projection(exec, projection)
     }
 }
 

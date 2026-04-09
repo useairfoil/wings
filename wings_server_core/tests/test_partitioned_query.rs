@@ -2,7 +2,10 @@ use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_partitioned_topic,
     schema_without_partition,
 };
-use datafusion::common::{arrow::array::RecordBatch, create_array};
+use datafusion::{
+    assert_batches_sorted_eq,
+    common::{arrow::array::RecordBatch, create_array},
+};
 use wings_ingestor_core::{Result, WriteBatchRequest};
 use wings_resources::PartitionValue;
 
@@ -45,8 +48,6 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
     let namespace = initialize_test_namespace(&admin).await;
     let topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     {
         let records = RecordBatch::try_new(
@@ -141,31 +142,27 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .await
         .expect("new_session_context");
 
-    let out = ctx
+    let df = ctx
         .sql("SELECT * FROM my_partitioned_topic WHERE __offset__ BETWEEN 0 AND 100 AND region_id = 100")
         .await
         .expect("sql")
         .drop_columns(&["__timestamp__"])
-        .expect("drop columns");
+        .expect("drop timestamp");
 
-    let out = out.collect().await.expect("collect");
-    let row_count = out.into_iter().map(|rb| rb.num_rows()).sum::<usize>();
-    assert_eq!(row_count, 6);
-    /*
+    let out = df.collect().await.expect("collect");
     let expected = vec![
-        "+-----------+-----+---------+-----+------------+",
-        "| region_id | id  | name    | age | __offset__ |",
-        "+-----------+-----+---------+-----+------------+",
-        "| 100       | 101 | Alice   | 32  | 0          |",
-        "| 100       | 102 | Bob     | 27  | 1          |",
-        "| 100       | 103 | Charlie | 99  | 2          |",
-        "| 100       | 201 | Frank   | 28  | 3          |",
-        "| 100       | 202 | Grace   | 31  | 4          |",
-        "| 100       | 203 | Henry   | 45  | 5          |",
-        "+-----------+-----+---------+-----+------------+",
+        "+-----+---------+-----+-----------+------------+",
+        "| id  | name    | age | region_id | __offset__ |",
+        "+-----+---------+-----+-----------+------------+",
+        "| 101 | Alice   | 32  | 100       | 0          |",
+        "| 102 | Bob     | 27  | 100       | 1          |",
+        "| 103 | Charlie | 99  | 100       | 2          |",
+        "| 201 | Frank   | 28  | 100       | 3          |",
+        "| 202 | Grace   | 31  | 100       | 4          |",
+        "| 203 | Henry   | 45  | 100       | 5          |",
+        "+-----+---------+-----+-----------+------------+",
     ];
     assert_batches_sorted_eq!(expected, &out);
-    */
 
     drop(ct_guard);
     ing_fut.await.expect("ingestion terminated");
@@ -179,8 +176,6 @@ async fn test_partitioned_query_with_missing_offset_bounds() -> Result<()> {
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())

@@ -200,6 +200,10 @@
             ];
 
             inputsFrom = [ binaries ];
+
+            buildInputs = [
+              pkgs.cargo-insta
+            ];
           };
 
           ci = pkgs.mkShell {

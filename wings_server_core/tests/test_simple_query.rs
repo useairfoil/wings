@@ -2,7 +2,10 @@ use common::{
     create_ingestor_and_provider, initialize_test_namespace, initialize_test_topic,
     schema_without_partition,
 };
-use datafusion::common::{arrow::array::RecordBatch, create_array};
+use datafusion::{
+    assert_batches_sorted_eq,
+    common::{arrow::array::RecordBatch, create_array},
+};
 use wings_ingestor_core::{Result, WriteBatchRequest};
 
 mod common;
@@ -13,8 +16,6 @@ async fn test_simple_query_with_no_data() -> Result<()> {
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())
@@ -46,8 +47,6 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
     let namespace = initialize_test_namespace(&admin).await;
     let topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     {
         let records = RecordBatch::try_new(
@@ -112,17 +111,15 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .await
         .expect("new_session_context");
 
-    let out = ctx
+    let df = ctx
         .sql("SELECT * FROM my_topic WHERE __offset__ BETWEEN 0 AND 100")
         .await
         .expect("sql")
         .drop_columns(&["__timestamp__"])
-        .expect("drop columns");
+        .expect("drop timestamp");
 
-    let out = out.collect().await.expect("collect");
-    let row_count = out.into_iter().map(|rb| rb.num_rows()).sum::<usize>();
-    assert_eq!(row_count, 5);
-    /*
+    let out = df.collect().await.expect("collect");
+
     let expected = vec![
         "+----+---------+-----+------------+",
         "| id | name    | age | __offset__ |",
@@ -135,7 +132,6 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         "+----+---------+-----+------------+",
     ];
     assert_batches_sorted_eq!(expected, &out);
-    */
 
     drop(ct_guard);
     ing_fut.await.expect("ingestion terminated");
@@ -149,8 +145,6 @@ async fn test_simple_query_with_missing_offset_bounds() -> Result<()> {
     let namespace = initialize_test_namespace(&admin).await;
     let _topic = initialize_test_topic(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
-
-    tokio::time::pause();
 
     let provider = provider_factory
         .create_provider(namespace.name.clone())
