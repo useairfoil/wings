@@ -1,130 +1,106 @@
-use std::{fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
-use futures_util::{StreamExt, stream::FuturesUnordered};
+use futures::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::mpsc;
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
-use tracing::debug;
-use wings_control_plane_core::log_metadata::{
-    CommitPageRequest, CommitPageResponse, CommittedBatch, LogMetadata,
-};
+use wings_control_plane_core::log_metadata::LogMetadata;
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
-    BatchIngestorClient, WriteBatchError,
-    batcher::{NamespaceFolio, NamespaceFolioWriter},
-    client::WriteBatchRequestWithReply,
+    client::{IngestorClient, WriteBatchRequestWithNamespace},
     error::Result,
+    namespace_writer::{NamespaceFolio, NamespaceFolioWriter},
+    reply::WithReply,
     uploader::FolioUploader,
-    write::{ReplyWithWriteBatchError, WithReplyChannel},
 };
 
-const BATCH_CHANNEL_SIZE: usize = 100;
+const INGESTOR_CHANNEL_SIZE: usize = 128;
 
-pub struct BatchIngestor {
-    tx: mpsc::Sender<WriteBatchRequestWithReply>,
-    rx: mpsc::Receiver<WriteBatchRequestWithReply>,
+pub struct Ingestor {
+    rx: mpsc::Receiver<WithReply<WriteBatchRequestWithNamespace>>,
+    client: IngestorClient,
     uploader: FolioUploader,
-    log_metadata: Arc<dyn LogMetadata>,
 }
 
-pub async fn run_background_ingestor(ingestor: BatchIngestor, ct: CancellationToken) -> Result<()> {
-    ingestor.run(ct).await
-}
-
-#[derive(Debug)]
-struct CommittedFolio {
-    pages: Vec<CommitPageResponse<WithReplyChannel<CommittedBatch>>>,
-}
-
-impl BatchIngestor {
+impl Ingestor {
     pub fn new(
         object_store_factory: Arc<dyn ObjectStoreFactory>,
-        log_metadata: Arc<dyn LogMetadata>,
+        log_meta: Arc<dyn LogMetadata>,
     ) -> Self {
-        let (tx, rx) = mpsc::channel(BATCH_CHANNEL_SIZE);
+        let (tx, rx) = mpsc::channel(INGESTOR_CHANNEL_SIZE);
+        let client = IngestorClient { log_meta, tx };
         let uploader = FolioUploader::new_ulid(object_store_factory);
-
         Self {
-            tx,
-            rx,
+            client,
             uploader,
-            log_metadata,
+            rx,
         }
     }
 
-    /// Creates a new client for the batch ingestor.
-    pub fn client(&self) -> BatchIngestorClient {
-        BatchIngestorClient {
-            tx: self.tx.clone(),
-        }
+    pub fn client(&self) -> IngestorClient {
+        self.client.clone()
     }
 
     pub async fn run(mut self, ct: CancellationToken) -> Result<()> {
         let _ct_guard = ct.child_token().drop_guard();
+        let uploader = self.uploader;
         let mut folio_timer = DelayQueue::new();
         let mut folio_writer = NamespaceFolioWriter::default();
-        let folio_uploader = self.uploader;
-        let committer = self.log_metadata;
         let mut upload_tasks = FuturesUnordered::new();
 
         loop {
             tokio::select! {
                 _ = ct.cancelled() => {
+                    // Exit gracefully.
                     break;
                 }
                 expired = folio_timer.next(), if !folio_timer.is_empty() => {
                     let Some(entry) = expired else {
                         continue;
                     };
-
-                    let Some((folio, error)) = folio_writer.expire_namespace(entry.into_inner()) else {
+                    // Remove the expired folio from the writer.
+                    let Some(folio) = folio_writer.expire_namespace(entry.into_inner()) else {
                         continue;
                     };
 
-                    debug!(folio = ?folio, error = ?error, "timer expired. ready to upload and commit");
-
-                    error.send_to_all();
-
                     // Try to remove any duplicate timer keys.
                     folio_timer.try_remove(&folio.timer_key);
-
-                    upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio));
+                    // Start the upload task.
+                    upload_tasks.push(upload_folio(uploader.clone(), folio));
                 }
                 batch_with_reply = self.rx.recv() => {
                     let Some(request) = batch_with_reply else {
                         break;
                     };
 
-                    debug!(queue_size = self.rx.len(), "received batch");
+                    let reply = request.reply;
+                    let namespace = request.data.namespace;
+                    let request = request.data.request;
 
-                    match folio_writer.write_batch(request, &mut folio_timer) {
-                        Ok(None) => {
-                            debug!("batch written to folio");
+                    match folio_writer.write_batch(namespace, request, reply, &mut folio_timer) {
+                        None => {
+                            // Batch written to folio, more can be written before it is uploaded.
                         },
-                        Ok(Some((folio, error))) => {
+                        Some(folio) => {
+                            // The folio is big enough to be uploaded immediately.
                             folio_timer.remove(&folio.timer_key);
 
-                            debug!(folio = ?folio, error = ?error, "batch full. ready to upload and commit");
-
-                            error.send_to_all();
-
-                            upload_tasks.push(upload_and_commit_folio(folio_uploader.clone(), committer.clone(), folio));
-                        }
-                        Err(error) => {
-                            debug!(error = ?error, "failed to write batch");
-                            error.send_to_all();
+                            // Start the upload task.
+                            upload_tasks.push(upload_folio(uploader.clone(), folio));
                         }
                     }
                 }
                 task = upload_tasks.next(), if !upload_tasks.is_empty() => {
                     match task {
-                        None => break,
-                        Some(Ok(committed_folio)) => {
-                            debug!(folio = ?committed_folio, "folio uploaded and committed");
-                            reply_with_committed_folio(committed_folio);
-                        }
-                        Some(Err(errors)) => {
-                            errors.send_to_all();
+                        None => {
+                            // This should never happen.
+                            break
+                        },
+                        Some(()) => {
+                            // Upload task completed.
+                            // Notice that the task has no return value because
+                            // we expect it to also submit the success or error
+                            // replies.
                         }
                     }
                 }
@@ -135,102 +111,6 @@ impl BatchIngestor {
     }
 }
 
-async fn upload_and_commit_folio(
-    uploader: FolioUploader,
-    log_metadata: Arc<dyn LogMetadata>,
-    folio: NamespaceFolio,
-) -> Result<CommittedFolio, ReplyWithWriteBatchError> {
-    let uploaded = uploader.upload_folio(folio).await?;
-
-    let (pages_replies, pages_to_commit): (Vec<_>, Vec<_>) = uploaded
-        .pages
-        .into_iter()
-        .map(|page| {
-            let (replies, batches): (Vec<_>, Vec<_>) = page
-                .batches
-                .into_iter()
-                .map(|batch| (batch.reply, batch.data))
-                .unzip();
-
-            let request = CommitPageRequest {
-                topic_name: page.topic_name,
-                partition_value: page.partition_value,
-                num_rows: page.num_rows,
-                offset_bytes: page.offset_bytes,
-                batch_size_bytes: page.batch_size_bytes,
-                batches,
-            };
-            (replies, request)
-        })
-        .unzip();
-
-    let commits = match log_metadata
-        .commit_folio(
-            uploaded.namespace.name.clone(),
-            uploaded.file_ref,
-            &pages_to_commit,
-        )
-        .await
-    {
-        Ok(commits) => commits,
-        Err(source) => {
-            let error = WriteBatchError::LogMetadata {
-                message: "failed to commit folio".to_string(),
-                source: source.into(),
-            };
-            let replies = pages_replies.into_iter().flatten().collect::<Vec<_>>();
-            return ReplyWithWriteBatchError::new_fanout(error, replies).into();
-        }
-    };
-
-    assert_eq!(
-        commits.len(),
-        pages_replies.len(),
-        "folio pages and replies length mismatch"
-    );
-
-    let committed_pages = commits
-        .into_iter()
-        .zip(pages_replies.into_iter())
-        .map(|(commit_response, replies)| {
-            assert_eq!(
-                commit_response.batches.len(),
-                replies.len(),
-                "page batches and replies length mismatch"
-            );
-            let batches = commit_response
-                .batches
-                .into_iter()
-                .zip(replies.into_iter())
-                .map(|(data, reply)| WithReplyChannel { reply, data })
-                .collect::<Vec<_>>();
-
-            CommitPageResponse {
-                topic_name: commit_response.topic_name,
-                partition_value: commit_response.partition_value,
-                batches,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Ok(CommittedFolio {
-        pages: committed_pages,
-    })
-}
-
-fn reply_with_committed_folio(committed_folio: CommittedFolio) {
-    for page in committed_folio.pages.into_iter() {
-        for batch in page.batches.into_iter() {
-            match batch.data {
-                CommittedBatch::Accepted(accepted) => {
-                    let _ = batch.reply.send(Ok(accepted));
-                }
-                CommittedBatch::Rejected(rejected) => {
-                    let _ = batch
-                        .reply
-                        .send(Err(WriteBatchError::BatchRejected { info: rejected }));
-                }
-            }
-        }
-    }
+async fn upload_folio(uploader: FolioUploader, folio: NamespaceFolio) {
+    uploader.upload_folio(folio).await;
 }

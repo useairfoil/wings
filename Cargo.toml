@@ -66,6 +66,7 @@ http-body = "1.0.1"
 iceberg = "0.8.0"
 insta = "1.47.2"
 moka = { version = "0.12.10", features = ["future"] }
+mockall = "0.14.0"
 object_store = { version = "0.12.2", features = ["aws", "azure", "gcp"] }
 opentelemetry = "0.31.0"
 opentelemetry-otlp = { version = "0.31.0", features = ["trace", "metrics", "grpc-tonic"] }

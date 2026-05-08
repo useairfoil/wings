@@ -17,6 +17,7 @@ async-trait.workspace = true
 bytes.workspace = true
 bytesize.workspace = true
 datafusion.workspace = true
+futures.workspace = true
 futures-util.workspace = true
 object_store.workspace = true
 parquet.workspace = true
@@ -29,9 +30,11 @@ wings-control-plane-core = { path = "../wings_control_plane_core" }
 wings-observability = { path = "../wings_observability" }
 wings-object-store = { path = "../wings_object_store" }
 wings-resources = { path = "../wings_resources" }
+wings-schema = { path = "../wings_schema" }
 
 [dev-dependencies]
 bytesize.workspace = true
+mockall.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 wings-control-plane-sql = { path = "../wings_control_plane_sql" }
 wings-schema = { path = "../wings_schema" }
