@@ -77,7 +77,7 @@ impl IngestorClient {
             match response {
                 Ok(response) => responses.push(response),
                 Err(err) => rejected.push(CommittedBatch::Rejected(RejectedBatchInfo {
-                    batch_id: batch_id,
+                    batch_id,
                     num_rows,
                     reason: err.to_string(),
                 })),
@@ -94,7 +94,7 @@ impl IngestorClient {
         out: Vec<CommittedBatch>,
     ) -> Result<Vec<CommittedBatch>> {
         if responses.is_empty() {
-            return Ok(Vec::new());
+            return Ok(out);
         }
 
         let batches = responses

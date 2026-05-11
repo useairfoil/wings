@@ -1,10 +1,11 @@
 mod common;
 
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use common::{
-    MockLogMetadataService, TestIngestor, initialize_test_namespace,
-    initialize_test_partitioned_topic, initialize_test_topic, people_records, sort_by_batch_id,
+    MockLogMetadataService, MockObjectStoreFactory, MockObjectStorePutOpts, TestIngestor,
+    initialize_test_namespace, initialize_test_partitioned_topic, initialize_test_topic,
+    people_records, sort_by_batch_id,
 };
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo,
@@ -149,10 +150,58 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
         end_offset: 1
         timestamp: "[timestamp]"
     - Accepted:
-        batch_id: 1
+        batch_id: 2
         start_offset: 2
         end_offset: 3
         timestamp: "[timestamp]"
+    "#);
+
+    ingestor.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_batch_when_object_store_put_fails() -> Result<()> {
+    let log_meta = MockLogMetadataService::new();
+
+    let mut object_store = MockObjectStorePutOpts::new();
+    object_store
+        .expect_put_opts()
+        .times(1)
+        .returning(|_location, _payload, _opts| {
+            Box::pin(async { Err(object_store::Error::NotImplemented) })
+        });
+
+    let object_store: Arc<dyn object_store::ObjectStore> = Arc::new(object_store);
+    let object_store_factory = Arc::new(MockObjectStoreFactory::new(object_store));
+
+    let ingestor = TestIngestor::start_with_factory(log_meta, object_store_factory).await;
+    let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
+    let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
+
+    let mut responses = ingestor
+        .ingest(
+            namespace.clone(),
+            vec![
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(1, "Alice", 32)]))
+                    .with_batch_id(0),
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(2, "Bob", 32)]))
+                    .with_batch_id(1),
+            ],
+        )
+        .await?;
+
+    sort_by_batch_id(&mut responses);
+
+    insta::assert_yaml_snapshot!(responses, @r#"
+    - Rejected:
+        batch_id: 0
+        num_rows: 1
+        reason: "object store error: failed to upload folio"
+    - Rejected:
+        batch_id: 1
+        num_rows: 1
+        reason: "object store error: failed to upload folio"
     "#);
 
     ingestor.shutdown().await;
@@ -228,6 +277,7 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
         move |_namespace, batches| {
             insta::assert_yaml_snapshot!(batches, {
                 "[].file_ref" => "[file-ref]",
+                "[].page_offset_bytes" => "[page-offset-bytes]",
                 "[].timestamp" => "[timestamp]"
             }, @r#"
             - batch_id: 0
@@ -235,7 +285,7 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
               partition_value:
                 Int64: 100
               file_ref: "[file-ref]"
-              page_offset_bytes: 0
+              page_offset_bytes: "[page-offset-bytes]"
               page_size_bytes: 1309
               timestamp: "[timestamp]"
               num_rows: 2
@@ -244,7 +294,7 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
               partition_value:
                 Int64: 200
               file_ref: "[file-ref]"
-              page_offset_bytes: 1309
+              page_offset_bytes: "[page-offset-bytes]"
               page_size_bytes: 1281
               timestamp: "[timestamp]"
               num_rows: 1
@@ -253,7 +303,7 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
               partition_value:
                 Int64: 100
               file_ref: "[file-ref]"
-              page_offset_bytes: 0
+              page_offset_bytes: "[page-offset-bytes]"
               page_size_bytes: 1309
               timestamp: "[timestamp]"
               num_rows: 1

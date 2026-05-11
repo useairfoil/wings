@@ -8,8 +8,8 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use bytesize::ByteSize;
-use futures::TryStreamExt;
-use mockall::mock;
+use futures::{StreamExt, TryStreamExt};
+use mockall::{automock, mock};
 use object_store::ObjectStore;
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -64,12 +64,113 @@ mock! {
     }
 }
 
+#[automock]
+pub trait ObjectStorePutOpts {
+    fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> impl Future<Output = object_store::Result<object_store::PutResult>> + Send;
+}
+
+impl std::fmt::Display for MockObjectStorePutOpts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MockObjectStore")
+    }
+}
+
+#[async_trait::async_trait]
+impl object_store::ObjectStore for MockObjectStorePutOpts {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        ObjectStorePutOpts::put_opts(self, location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        _location: &object_store::path::Path,
+        _opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        Err(object_store::Error::NotImplemented)
+    }
+
+    async fn get_opts(
+        &self,
+        _location: &object_store::path::Path,
+        _options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        Err(object_store::Error::NotImplemented)
+    }
+
+    async fn delete(&self, _location: &object_store::path::Path) -> object_store::Result<()> {
+        Ok(())
+    }
+
+    fn list(
+        &self,
+        _prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        futures::stream::empty().boxed()
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        _prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        Ok(object_store::ListResult {
+            objects: vec![],
+            common_prefixes: vec![],
+        })
+    }
+
+    async fn copy(
+        &self,
+        _from: &object_store::path::Path,
+        _to: &object_store::path::Path,
+    ) -> object_store::Result<()> {
+        Ok(())
+    }
+
+    async fn copy_if_not_exists(
+        &self,
+        _from: &object_store::path::Path,
+        _to: &object_store::path::Path,
+    ) -> object_store::Result<()> {
+        Ok(())
+    }
+}
+
+pub struct MockObjectStoreFactory {
+    store: Arc<dyn object_store::ObjectStore>,
+}
+
+impl MockObjectStoreFactory {
+    pub fn new(store: Arc<dyn object_store::ObjectStore>) -> Self {
+        Self { store }
+    }
+}
+
+#[async_trait::async_trait]
+impl ObjectStoreFactory for MockObjectStoreFactory {
+    async fn create_object_store(
+        &self,
+        _object_store_name: ObjectStoreName,
+    ) -> std::result::Result<Arc<dyn object_store::ObjectStore>, object_store::Error> {
+        Ok(self.store.clone())
+    }
+}
+
 pub struct TestIngestor {
     task: JoinHandle<()>,
     ct_guard: DropGuard,
     pub client: IngestorClient,
     pub cluster_meta: Arc<dyn ClusterMetadata>,
-    object_store_factory: Arc<InMemoryFactory>,
+    object_store_factory: Arc<dyn ObjectStoreFactory>,
 }
 
 impl TestIngestor {
@@ -77,11 +178,8 @@ impl TestIngestor {
         let control_plane = Arc::new(SqlControlPlane::new_in_memory().await);
         let cluster_meta: Arc<dyn ClusterMetadata> = control_plane.clone();
         let log_meta: Arc<dyn LogMetadata> = Arc::new(log_meta);
-        let object_store_factory = Arc::new(InMemoryFactory::new());
-        let ingestor = Ingestor::new(
-            object_store_factory.clone() as Arc<dyn ObjectStoreFactory>,
-            log_meta,
-        );
+        let object_store_factory: Arc<dyn ObjectStoreFactory> = Arc::new(InMemoryFactory::new());
+        let ingestor = Ingestor::new(object_store_factory.clone(), log_meta);
         let client = ingestor.client();
         let ct = CancellationToken::new();
         let ct_guard = ct.clone().drop_guard();
@@ -95,6 +193,30 @@ impl TestIngestor {
             client,
             cluster_meta,
             object_store_factory,
+        }
+    }
+
+    pub async fn start_with_factory(
+        log_meta: MockLogMetadataService,
+        object_store_factory: Arc<dyn ObjectStoreFactory>,
+    ) -> Self {
+        let control_plane = Arc::new(SqlControlPlane::new_in_memory().await);
+        let cluster_meta: Arc<dyn ClusterMetadata> = control_plane.clone();
+        let log_meta: Arc<dyn LogMetadata> = Arc::new(log_meta);
+        let ingestor = Ingestor::new(object_store_factory, log_meta);
+        let client = ingestor.client();
+        let ct = CancellationToken::new();
+        let ct_guard = ct.clone().drop_guard();
+        let task = tokio::spawn(async move {
+            ingestor.run(ct).await.expect("ingestor run");
+        });
+
+        Self {
+            task,
+            ct_guard,
+            client,
+            cluster_meta,
+            object_store_factory: Arc::new(InMemoryFactory::new()),
         }
     }
 
@@ -120,7 +242,9 @@ impl TestIngestor {
     pub async fn assert_folio_written(&self, namespace: &Namespace) {
         let store = self
             .object_store_factory
-            .get(namespace.object_store.clone());
+            .create_object_store(namespace.object_store.clone())
+            .await
+            .expect("create object store");
         let objects = store
             .list(None)
             .try_collect::<Vec<_>>()
