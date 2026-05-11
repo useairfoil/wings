@@ -5,6 +5,7 @@ use wings_resources::{PartitionValue, TopicName};
 /// The response to a [`WriteBatchRequest`].
 #[derive(Debug, Clone)]
 pub struct WriteBatchResponse {
+    pub batch_id: u32,
     pub topic_name: TopicName,
     pub partition_value: Option<PartitionValue>,
     pub folio: FolioPageMetadata,
@@ -13,7 +14,7 @@ pub struct WriteBatchResponse {
     /// The number of rows in the batch.
     pub num_rows: u32,
     /// The timestamp assigned to the batch.
-    pub timestamp: SystemTime,
+    pub timestamp: Option<SystemTime>,
 }
 
 /// Metadata about a Folio page.

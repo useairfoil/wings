@@ -79,6 +79,8 @@ pub enum CommittedBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedBatchInfo {
+    /// The request id used to correlate the request with the response.
+    pub batch_id: u32,
     /// The number of rows in the batch.
     pub num_rows: u32,
     /// The reason for rejection.
@@ -87,6 +89,8 @@ pub struct RejectedBatchInfo {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct AcceptedBatchInfo {
+    /// The request id used to correlate the request with the response.
+    pub batch_id: u32,
     /// The offset of the first row in the batch.
     pub start_offset: u64,
     /// The offset of the last row in the batch.
@@ -98,6 +102,8 @@ pub struct AcceptedBatchInfo {
 /// Represents a single write operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitBatchRequest {
+    /// The request id used to correlate the request with the response.
+    pub batch_id: u32,
     /// The topic id of the batch to commit.
     pub topic_name: TopicName,
     /// The partition value, if any.
@@ -395,6 +401,7 @@ impl LogOffset {
 impl CommitBatchRequest {
     pub fn new(num_rows: u32) -> Self {
         Self {
+            batch_id: 0,
             topic_name: TopicName::new_unchecked(
                 "test-topic",
                 NamespaceName::new_unchecked(
@@ -413,6 +420,7 @@ impl CommitBatchRequest {
 
     pub fn new_with_timestamp(num_rows: u32, timestamp: SystemTime) -> Self {
         Self {
+            batch_id: 0,
             topic_name: TopicName::new_unchecked(
                 "test-topic",
                 NamespaceName::new_unchecked(
@@ -488,6 +496,15 @@ impl FolioLocation {
     }
 }
 
+impl CommittedBatch {
+    pub fn batch_id(&self) -> u32 {
+        match self {
+            CommittedBatch::Rejected(info) => info.batch_id,
+            CommittedBatch::Accepted(info) => info.batch_id,
+        }
+    }
+}
+
 impl AcceptedBatchInfo {
     pub fn num_rows(&self) -> u32 {
         (self.end_offset - self.start_offset + 1) as u32
@@ -508,6 +525,7 @@ impl fmt::Debug for AcceptedBatchInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let timestamp: UtcDateTime = self.timestamp.into();
         f.debug_struct("AcceptedBatchInfo")
+            .field("batch_id", &self.batch_id)
             .field("start_offset", &self.start_offset)
             .field("end_offset", &self.end_offset)
             .field("timestamp", &timestamp)

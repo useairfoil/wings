@@ -67,6 +67,7 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
 
         let Some(timestamp) = meta.timestamp else {
             return Ok(CommitBatchRequest {
+                batch_id: meta.batch_id,
                 topic_name,
                 partition_value,
                 file_ref: meta.file_ref,
@@ -83,6 +84,7 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
         let timestamp = timestamp.try_into()?;
 
         Ok(CommitBatchRequest {
+            batch_id: meta.batch_id,
             topic_name,
             partition_value,
             file_ref: meta.file_ref,
@@ -99,6 +101,7 @@ impl From<&CommitBatchRequest> for pb::CommitBatchRequest {
         let timestamp = meta.timestamp.map(Into::into);
 
         pb::CommitBatchRequest {
+            batch_id: meta.batch_id,
             topic: meta.topic_name.to_string(),
             partition: meta.partition_value.as_ref().map(Into::into),
             timestamp,
@@ -148,8 +151,8 @@ impl From<CommittedBatch> for pb::CommittedBatch {
             CommittedBatch::Accepted(info) => pb::CommittedBatch {
                 result: Some(Result::Accepted(info.into())),
             },
-            CommittedBatch::Rejected(rejected) => pb::CommittedBatch {
-                result: Some(Result::Rejected(rejected.into())),
+            CommittedBatch::Rejected(info) => pb::CommittedBatch {
+                result: Some(Result::Rejected(info.into())),
             },
         }
     }
@@ -162,6 +165,7 @@ impl TryFrom<pb::committed_batch::Accepted> for AcceptedBatchInfo {
         let timestamp = info.timestamp.required("timestamp")?.try_into()?;
 
         Ok(AcceptedBatchInfo {
+            batch_id: info.batch_id,
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             timestamp,
@@ -172,6 +176,7 @@ impl TryFrom<pb::committed_batch::Accepted> for AcceptedBatchInfo {
 impl From<AcceptedBatchInfo> for pb::committed_batch::Accepted {
     fn from(info: AcceptedBatchInfo) -> Self {
         pb::committed_batch::Accepted {
+            batch_id: info.batch_id,
             start_offset: info.start_offset,
             end_offset: info.end_offset,
             timestamp: Some(info.timestamp.into()),
@@ -182,6 +187,7 @@ impl From<AcceptedBatchInfo> for pb::committed_batch::Accepted {
 impl From<pb::committed_batch::Rejected> for RejectedBatchInfo {
     fn from(info: pb::committed_batch::Rejected) -> Self {
         RejectedBatchInfo {
+            batch_id: info.batch_id,
             num_rows: info.num_rows,
             reason: info.reason,
         }
@@ -191,6 +197,7 @@ impl From<pb::committed_batch::Rejected> for RejectedBatchInfo {
 impl From<RejectedBatchInfo> for pb::committed_batch::Rejected {
     fn from(info: RejectedBatchInfo) -> Self {
         pb::committed_batch::Rejected {
+            batch_id: info.batch_id,
             num_rows: info.num_rows,
             reason: info.reason,
         }

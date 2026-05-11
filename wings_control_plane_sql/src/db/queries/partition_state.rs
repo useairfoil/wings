@@ -159,6 +159,7 @@ async fn commit_partition_batches(
         match validate_timestamp_in_request(&current_offset, batch) {
             ValidateRequestResult::Reject { reason } => {
                 let rejected = RejectedBatchInfo {
+                    batch_id: batch.batch_id,
                     num_rows: batch.num_rows,
                     reason: reason.to_string(),
                 };
@@ -176,6 +177,7 @@ async fn commit_partition_batches(
                 next_offset,
             } => {
                 let accepted = AcceptedBatchInfo {
+                    batch_id: batch.batch_id,
                     start_offset,
                     end_offset,
                     timestamp: timestamp.unwrap_or(now_ts),

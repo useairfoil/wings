@@ -98,12 +98,22 @@ pub async fn process_ingestion_stream(
                     continue;
                 };
 
+                let committed_request_id = request_id
+                    .try_into()
+                    .expect("ingestion request id was validated before write");
                 let response = match response {
-                    Ok(info) => CommittedBatch::Accepted(info),
+                    Ok(mut info) => {
+                        info.batch_id = committed_request_id;
+                        CommittedBatch::Accepted(info)
+                    },
                     // TODO: this is a more general write error and not a rejected batch
                     Err(err) => {
                         debug!(err = ?err, "failed to commit batch");
-                        CommittedBatch::Rejected(RejectedBatchInfo { num_rows, reason: "INTERNAL_ERROR".to_string() })
+                        CommittedBatch::Rejected(RejectedBatchInfo {
+                            batch_id: committed_request_id,
+                            num_rows,
+                            reason: "INTERNAL_ERROR".to_string(),
+                        })
                     },
                 };
 
@@ -133,6 +143,9 @@ pub async fn process_ingestion_stream(
                 };
 
                 let request_id = metadata.request_id;
+                let write_request_id = request_id.try_into().map_err(|_| {
+                    FlightServerError::invalid_ticket("request_id exceeds u32 range")
+                })?;
                 let num_rows = batch.num_rows() as u32;
                 let namespace = namespace.clone();
                 let topic = topic.clone();
@@ -143,6 +156,7 @@ pub async fn process_ingestion_stream(
                 ingestion_fut.push(async move {
                     let response = ingestor
                         .write(WriteBatchRequest {
+                            batch_id: write_request_id,
                             namespace,
                             topic,
                             partition: metadata.partition_value,

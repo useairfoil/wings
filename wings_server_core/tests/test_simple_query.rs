@@ -68,6 +68,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
         ingestion
             .write(WriteBatchRequest {
+                batch_id: 0,
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: None,
@@ -91,6 +92,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
         ingestion
             .write(WriteBatchRequest {
+                batch_id: 0,
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: None,

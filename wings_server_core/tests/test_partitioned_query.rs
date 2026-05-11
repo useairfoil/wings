@@ -69,6 +69,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
 
         ingestion
             .write(WriteBatchRequest {
+                batch_id: 0,
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),
@@ -92,6 +93,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
 
         ingestion
             .write(WriteBatchRequest {
+                batch_id: 0,
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(200)),
@@ -122,6 +124,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
 
         ingestion
             .write(WriteBatchRequest {
+                batch_id: 0,
                 namespace: namespace.clone(),
                 topic: topic.clone(),
                 partition: Some(PartitionValue::Int64(100)),

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use object_store::{PutMode, PutOptions, PutPayload};
@@ -72,12 +72,13 @@ impl FolioUploader {
 
             for reply in page.replies.into_iter() {
                 let response = WriteBatchResponse {
+                    batch_id: reply.data.batch_id,
                     topic_name: page.topic_name.clone(),
                     partition_value: page.partition_value.clone(),
                     folio: folio_page_meta.clone(),
                     num_rows: reply.data.num_rows as _,
                     offset: reply.data.offset_rows as _,
-                    timestamp: reply.data.timestamp.unwrap_or_else(SystemTime::now),
+                    timestamp: reply.data.timestamp,
                 };
                 replies.push((reply.reply, response));
             }

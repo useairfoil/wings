@@ -25,8 +25,8 @@ use wings_ingestor_core::{Ingestor, IngestorClient, Result, WriteBatchRequest};
 use wings_object_store::{InMemoryFactory, ObjectStoreFactory};
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
-    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, PartitionValue, TenantName, Topic,
-    TopicName, TopicOptions, TopicRef,
+    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Topic, TopicName,
+    TopicOptions,
 };
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
@@ -211,19 +211,6 @@ pub async fn initialize_test_partitioned_topic(
         .await
         .expect("create_topic")
         .into()
-}
-
-pub fn write_request(
-    topic: TopicRef,
-    partition: Option<PartitionValue>,
-    records: RecordBatch,
-) -> WriteBatchRequest {
-    WriteBatchRequest {
-        topic,
-        partition,
-        records,
-        timestamp: None,
-    }
 }
 
 pub fn people_records(topic: &Topic, people: &[(i32, &str, i32)]) -> RecordBatch {

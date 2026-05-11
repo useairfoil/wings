@@ -98,6 +98,7 @@ async fn process_push_request(
             .map(|ts| SystemTime::UNIX_EPOCH + Duration::from_millis(ts));
 
         let batch = WriteBatchRequest {
+            batch_id: 0,
             topic: topic_ref,
             partition: batch.partition,
             records: record_batch,

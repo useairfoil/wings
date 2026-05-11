@@ -32,6 +32,7 @@ pub struct FolioPage {
 /// The output metadata of a write operation.
 #[derive(Debug, Clone)]
 pub struct WriteOutputMetadata {
+    pub batch_id: u32,
     pub num_rows: usize,
     pub offset_rows: usize,
     pub timestamp: Option<SystemTime>,
@@ -128,6 +129,7 @@ impl PartitionPageWriter {
         self.num_rows += num_rows;
 
         let output_meta = WriteOutputMetadata {
+            batch_id: batch.batch_id,
             num_rows,
             offset_rows,
             timestamp: batch.timestamp,
@@ -254,9 +256,11 @@ mod tests {
         assert!(!page.data.is_empty());
         assert_eq!(page.replies.len(), 2);
 
+        assert_eq!(page.replies[0].data.batch_id, 0);
         assert_eq!(page.replies[0].data.num_rows, 2);
         assert_eq!(page.replies[0].data.offset_rows, 0);
         assert_eq!(page.replies[0].data.timestamp, Some(first_timestamp));
+        assert_eq!(page.replies[1].data.batch_id, 0);
         assert_eq!(page.replies[1].data.num_rows, 3);
         assert_eq!(page.replies[1].data.offset_rows, 2);
         assert_eq!(page.replies[1].data.timestamp, None);

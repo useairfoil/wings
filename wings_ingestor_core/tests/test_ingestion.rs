@@ -2,12 +2,12 @@ mod common;
 
 use common::{
     MockLogMetadataService, TestIngestor, assert_accepted_batch, initialize_test_namespace,
-    initialize_test_partitioned_topic, initialize_test_topic, people_records, write_request,
+    initialize_test_partitioned_topic, initialize_test_topic, people_records,
 };
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommitBatchRequest, CommittedBatch,
 };
-use wings_ingestor_core::Result;
+use wings_ingestor_core::{Result, WriteBatchRequest};
 use wings_resources::{NamespaceName, PartitionValue, TenantName, TopicName};
 
 #[derive(Clone)]
@@ -43,9 +43,8 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
     let responses = ingestor
         .ingest(
             namespace.clone(),
-            vec![write_request(
+            vec![WriteBatchRequest::new(
                 topic.clone(),
-                None,
                 people_records(&topic, &[(1, "Alice", 32)]),
             )],
         )
@@ -93,16 +92,15 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
         .ingest(
             namespace.clone(),
             vec![
-                write_request(
+                WriteBatchRequest::new(
                     topic.clone(),
-                    None,
                     people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
                 ),
-                write_request(
+                WriteBatchRequest::new(
                     topic.clone(),
-                    None,
                     people_records(&topic, &[(3, "Charlie", 99), (4, "Dylan", 75)]),
-                ),
+                )
+                .with_batch_id(1),
             ],
         )
         .await?;
@@ -144,11 +142,11 @@ async fn ingests_single_message_with_partition_value() -> Result<()> {
     let responses = ingestor
         .ingest(
             namespace.clone(),
-            vec![write_request(
+            vec![WriteBatchRequest::new(
                 topic.clone(),
-                Some(partition.clone()),
                 people_records(&topic, &[(1, "Alice", 32)]),
-            )],
+            )
+            .with_partition(partition.clone())],
         )
         .await?;
 
@@ -203,21 +201,23 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
         .ingest(
             namespace.clone(),
             vec![
-                write_request(
+                WriteBatchRequest::new(
                     topic.clone(),
-                    Some(partition_100.clone()),
                     people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
-                ),
-                write_request(
+                )
+                .with_partition(partition_100.clone()),
+                WriteBatchRequest::new(
                     topic.clone(),
-                    Some(partition_200.clone()),
                     people_records(&topic, &[(3, "Charlie", 99)]),
-                ),
-                write_request(
+                )
+                .with_partition(partition_200.clone())
+                .with_batch_id(1),
+                WriteBatchRequest::new(
                     topic.clone(),
-                    Some(partition_100.clone()),
                     people_records(&topic, &[(4, "Dylan", 75)]),
-                ),
+                )
+                .with_partition(partition_100.clone())
+                .with_batch_id(2),
             ],
         )
         .await?;
@@ -246,7 +246,8 @@ fn assert_commit_request(
     assert_eq!(namespace, expected_namespace);
     assert_eq!(batches.len(), expected_batches.len());
 
-    for (batch, expected_batch) in batches.iter().zip(expected_batches) {
+    for (batch_id, (batch, expected_batch)) in batches.iter().zip(expected_batches).enumerate() {
+        assert_eq!(batch.batch_id, batch_id as u32);
         assert_eq!(batch.topic_name, expected_batch.topic_name);
         assert_eq!(batch.partition_value, expected_batch.partition_value);
         assert_eq!(batch.num_rows, expected_batch.num_rows);
@@ -274,8 +275,10 @@ fn assert_commit_request(
 fn committed_batches(offsets: &[(u64, u64)]) -> Vec<CommittedBatch> {
     offsets
         .iter()
-        .map(|(start_offset, end_offset)| {
+        .enumerate()
+        .map(|(batch_id, (start_offset, end_offset))| {
             CommittedBatch::Accepted(AcceptedBatchInfo {
+                batch_id: batch_id as u32,
                 start_offset: *start_offset,
                 end_offset: *end_offset,
                 timestamp: std::time::SystemTime::now(),

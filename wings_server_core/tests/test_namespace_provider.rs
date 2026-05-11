@@ -253,6 +253,7 @@ async fn ingest_some_data(
     // Write together so they're in the same folio.
     {
         let first_write = client.write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -261,6 +262,7 @@ async fn ingest_some_data(
         });
 
         let second_write = client.write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -269,6 +271,7 @@ async fn ingest_some_data(
         });
 
         let third_write = client.write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),
@@ -277,6 +280,7 @@ async fn ingest_some_data(
         });
 
         let fourth_write = client.write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(200)),
@@ -294,6 +298,7 @@ async fn ingest_some_data(
 
     client
         .write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: simple_topic.clone(),
             partition: None,
@@ -304,6 +309,7 @@ async fn ingest_some_data(
 
     client
         .write(WriteBatchRequest {
+            batch_id: 0,
             namespace: namespace.clone(),
             topic: partitioned_topic.clone(),
             partition: Some(PartitionValue::Int64(100)),

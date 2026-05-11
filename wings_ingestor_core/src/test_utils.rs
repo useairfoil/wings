@@ -103,6 +103,7 @@ pub fn generate_write_request_for(
     timestamp: Option<SystemTime>,
 ) -> WriteBatchRequest {
     WriteBatchRequest {
+        batch_id: 0,
         topic,
         partition,
         records,

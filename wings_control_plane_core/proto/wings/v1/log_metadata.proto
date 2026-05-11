@@ -37,6 +37,8 @@ message CommitBatchRequest {
   uint64 offset_bytes = 6;
   /// The batch size, in bytes.
   uint64 batch_size_bytes = 7;
+  /// The request id used to correlate the request with the response.
+  uint32 batch_id = 8;
 }
 
 message CommitResponse {
@@ -108,6 +110,8 @@ message PartitionMetadata {
 
 message CommittedBatch {
   message Accepted {
+    /// The request id used to correlate the request with the response.
+    uint32 batch_id = 4;
     /// The offset assigned to the first row in the batch.
     uint64 start_offset = 1;
     /// The offset assigned to the last row in the batch.
@@ -117,6 +121,8 @@ message CommittedBatch {
   }
 
   message Rejected {
+    // The request id used to correlate the request with the response.
+    uint32 batch_id = 3;
     // How many rows were rejected.
     uint32 num_rows = 1;
     // The reason for rejection.

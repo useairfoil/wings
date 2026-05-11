@@ -3,7 +3,9 @@ use std::sync::Arc;
 use futures::{Stream, StreamExt, stream::FuturesOrdered};
 use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
-use wings_control_plane_core::log_metadata::{CommitBatchRequest, CommittedBatch, LogMetadata};
+use wings_control_plane_core::log_metadata::{
+    CommitBatchRequest, CommittedBatch, LogMetadata, RejectedBatchInfo,
+};
 use wings_resources::NamespaceRef;
 
 use crate::{
@@ -39,6 +41,9 @@ impl IngestorClient {
         let mut replies = FuturesOrdered::new();
 
         while let Some(request) = batches.next().await {
+            let batch_id = request.batch_id;
+            let num_rows = request.records.num_rows() as u32;
+
             let (tx, rx) = oneshot::channel();
             // TODO: return validation error
             assert_eq!(&namespace.name, request.topic.name.parent());
@@ -56,15 +61,34 @@ impl IngestorClient {
                 .await
                 .map_err(|_| IngestorError::ChannelClosed)?;
 
-            replies.push_back(rx);
+            replies.push_back(async move {
+                let response = rx
+                    .await
+                    .map_err(|_| IngestorError::ChannelClosed)
+                    .and_then(|response| response);
+                (batch_id, num_rows, response)
+            });
         }
 
         let mut responses = Vec::new();
+        let mut rejected = Vec::new();
         while let Some(response) = replies.next().await {
-            responses.push(response.map_err(|_| IngestorError::ChannelClosed)??);
+            let (batch_id, num_rows, response) = response;
+            match response {
+                Ok(response) => responses.push(response),
+                Err(err) => rejected.push(CommittedBatch::Rejected(RejectedBatchInfo {
+                    batch_id: batch_id,
+                    num_rows,
+                    reason: err.to_string(),
+                })),
+            }
         }
 
-        self.commit_responses(namespace, responses).await
+        let mut committed = self.commit_responses(namespace, responses).await?;
+        committed.extend(rejected);
+        committed.sort_by_key(CommittedBatch::batch_id);
+
+        Ok(committed)
     }
 
     async fn commit_responses(
@@ -72,15 +96,20 @@ impl IngestorClient {
         namespace: NamespaceRef,
         responses: Vec<WriteBatchResponse>,
     ) -> Result<Vec<CommittedBatch>> {
+        if responses.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let batches = responses
             .into_iter()
             .map(|response| CommitBatchRequest {
+                batch_id: response.batch_id,
                 topic_name: response.topic_name,
                 partition_value: response.partition_value,
                 file_ref: response.folio.file_ref,
                 offset_bytes: response.folio.offset_bytes,
                 batch_size_bytes: response.folio.size_bytes,
-                timestamp: Some(response.timestamp),
+                timestamp: response.timestamp,
                 num_rows: response.num_rows,
             })
             .collect::<Vec<_>>();
