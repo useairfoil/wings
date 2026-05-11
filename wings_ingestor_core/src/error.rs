@@ -22,10 +22,7 @@ pub enum IngestorError {
         source: Arc<object_store::Error>,
     },
     #[snafu(display("log metadata error"))]
-    LogMetadata {
-        #[snafu(source(from(LogMetadataError, Arc::new)))]
-        source: Arc<LogMetadataError>,
-    },
+    LogMetadata { source: LogMetadataError },
     #[snafu(display("response channel closed"))]
     ChannelClosed,
 }

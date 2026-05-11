@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use wings_control_plane_core::log_metadata::{
-    CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
+    CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
     GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
     RequestTaskRequest, RequestTaskResponse, Result,
 };
@@ -12,16 +12,12 @@ use crate::SqlControlPlane;
 
 #[async_trait]
 impl LogMetadata for SqlControlPlane {
-    async fn commit_folio(
+    async fn commit(
         &self,
         namespace: NamespaceName,
-        file_ref: String,
-        pages: &[CommitPageRequest],
-    ) -> Result<Vec<CommitPageResponse>> {
-        self.db
-            .commit_folio(namespace, file_ref, pages)
-            .await
-            .map_err(Into::into)
+        batches: Vec<CommitBatchRequest>,
+    ) -> Result<Vec<CommittedBatch>> {
+        self.db.commit(namespace, batches).await.map_err(Into::into)
     }
 
     async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {

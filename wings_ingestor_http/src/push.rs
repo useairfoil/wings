@@ -13,7 +13,7 @@ use axum::{
 use datafusion::common::arrow::{
     compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
 };
-use futures::{StreamExt, stream::FuturesOrdered};
+use futures::stream;
 use wings_ingestor_core::WriteBatchRequest;
 use wings_resources::{NamespaceName, TopicName};
 
@@ -53,7 +53,7 @@ async fn process_push_request(
         })?;
 
     let mut seen = HashSet::new();
-    let mut writes = FuturesOrdered::new();
+    let mut writes = Vec::with_capacity(request.batches.len());
 
     for batch in request.batches {
         let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
@@ -98,28 +98,31 @@ async fn process_push_request(
             .map(|ts| SystemTime::UNIX_EPOCH + Duration::from_millis(ts));
 
         let batch = WriteBatchRequest {
-            namespace: namespace_ref.clone(),
             topic: topic_ref,
             partition: batch.partition,
             records: record_batch,
             timestamp,
         };
 
-        writes.push_back(state.batch_ingestion.write(batch));
+        writes.push(batch);
     }
 
-    let mut batches = Vec::with_capacity(writes.len());
-    while let Some(write_result) = writes.next().await {
-        match write_result {
-            Ok(accepted) => batches.push(BatchResponse::Success {
-                start_offset: accepted.start_offset,
-                end_offset: accepted.end_offset,
-            }),
-            Err(err) => batches.push(BatchResponse::Error {
-                message: err.to_string(),
-            }),
-        }
+    if writes.is_empty() {
+        return Ok(PushResponse {
+            batches: Vec::new(),
+        });
     }
+
+    let batches = state
+        .batch_ingestion
+        .ingest(namespace_ref, stream::iter(writes))
+        .await
+        .map_err(|err| HttpIngestorError::Internal {
+            message: format!("failed to ingest batches: {err}"),
+        })?
+        .into_iter()
+        .map(BatchResponse::from)
+        .collect();
 
     Ok(PushResponse { batches })
 }

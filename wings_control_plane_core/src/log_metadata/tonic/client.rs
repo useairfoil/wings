@@ -7,7 +7,7 @@ use wings_resources::NamespaceName;
 
 use crate::{
     log_metadata::{
-        CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
+        CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
         GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
         LogMetadata, RequestTaskRequest, RequestTaskResponse, Result,
     },
@@ -47,22 +47,20 @@ where
     T::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<StdError> + Send,
 {
-    async fn commit_folio(
+    async fn commit(
         &self,
         namespace: NamespaceName,
-        file_ref: String,
-        pages: &[CommitPageRequest],
-    ) -> Result<Vec<CommitPageResponse>> {
-        let pages = pages.iter().map(Into::into).collect::<Vec<_>>();
-        let request = pb::CommitFolioRequest {
+        batches: Vec<CommitBatchRequest>,
+    ) -> Result<Vec<CommittedBatch>> {
+        let batches = batches.iter().map(Into::into).collect::<Vec<_>>();
+        let request = pb::CommitRequest {
             namespace: namespace.to_string(),
-            file_ref,
-            pages,
+            batches,
         };
 
         self.client
             .clone()
-            .commit_folio(request)
+            .commit(request)
             .await?
             .into_inner()
             .try_into()

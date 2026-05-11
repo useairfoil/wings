@@ -10,7 +10,7 @@ use axum::{Router, routing::post};
 pub use error::{HttpIngestorError, Result};
 pub use types::{Batch, PushRequest, PushResponse};
 use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
-use wings_ingestor_core::BatchIngestorClient;
+use wings_ingestor_core::IngestorClient;
 
 use crate::push::push_handler;
 
@@ -23,7 +23,7 @@ pub struct HttpIngestor {
 pub struct HttpIngestorState {
     topic_cache: TopicCache,
     namespace_cache: NamespaceCache,
-    batch_ingestion: BatchIngestorClient,
+    batch_ingestion: IngestorClient,
 }
 
 impl HttpIngestor {
@@ -31,7 +31,7 @@ impl HttpIngestor {
     pub fn new(
         topic_cache: TopicCache,
         namespace_cache: NamespaceCache,
-        batch_ingestion: BatchIngestorClient,
+        batch_ingestion: IngestorClient,
     ) -> Self {
         let state = HttpIngestorState {
             topic_cache,

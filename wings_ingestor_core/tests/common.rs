@@ -7,20 +7,22 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use bytesize::ByteSize;
+use futures::TryStreamExt;
 use mockall::mock;
+use object_store::ObjectStore;
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use wings_control_plane_core::{
     cluster_metadata::ClusterMetadata,
     log_metadata::{
-        CommitPageRequest, CommitPageResponse, CompleteTaskRequest, CompleteTaskResponse,
+        CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
         GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
         LogMetadata, RequestTaskRequest, RequestTaskResponse,
     },
 };
 use wings_control_plane_sql::SqlControlPlane;
 use wings_ingestor_core::{Ingestor, IngestorClient, Result, WriteBatchRequest};
-use wings_object_store::{ObjectStoreFactory, TemporaryFileSystemFactory};
+use wings_object_store::{InMemoryFactory, ObjectStoreFactory};
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
     NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, PartitionValue, TenantName, Topic,
@@ -33,12 +35,11 @@ mock! {
 
     #[async_trait::async_trait]
     impl LogMetadata for LogMetadataService {
-        async fn commit_folio(
+        async fn commit(
             &self,
             namespace: NamespaceName,
-            file_ref: String,
-            pages: &[CommitPageRequest],
-        ) -> wings_control_plane_core::log_metadata::Result<Vec<CommitPageResponse>>;
+            batches: Vec<CommitBatchRequest>,
+        ) -> wings_control_plane_core::log_metadata::Result<Vec<CommittedBatch>>;
 
         async fn get_log_location(
             &self,
@@ -67,6 +68,7 @@ pub struct TestIngestor {
     ct_guard: DropGuard,
     pub client: IngestorClient,
     pub cluster_meta: Arc<dyn ClusterMetadata>,
+    object_store_factory: Arc<InMemoryFactory>,
 }
 
 impl TestIngestor {
@@ -74,10 +76,11 @@ impl TestIngestor {
         let control_plane = Arc::new(SqlControlPlane::new_in_memory().await);
         let cluster_meta: Arc<dyn ClusterMetadata> = control_plane.clone();
         let log_meta: Arc<dyn LogMetadata> = Arc::new(log_meta);
-        let object_store_factory: Arc<dyn ObjectStoreFactory> = Arc::new(
-            TemporaryFileSystemFactory::new(cluster_meta.clone()).expect("object store factory"),
+        let object_store_factory = Arc::new(InMemoryFactory::new());
+        let ingestor = Ingestor::new(
+            object_store_factory.clone() as Arc<dyn ObjectStoreFactory>,
+            log_meta,
         );
-        let ingestor = Ingestor::new(object_store_factory, log_meta);
         let client = ingestor.client();
         let ct = CancellationToken::new();
         let ct_guard = ct.clone().drop_guard();
@@ -90,6 +93,7 @@ impl TestIngestor {
             ct_guard,
             client,
             cluster_meta,
+            object_store_factory,
         }
     }
 
@@ -110,6 +114,29 @@ impl TestIngestor {
         )
         .await
         .expect("ingestion timed out")
+    }
+
+    pub async fn assert_folio_written(&self, namespace: &Namespace) {
+        let store = self
+            .object_store_factory
+            .get(namespace.object_store.clone());
+        let objects = store
+            .list(None)
+            .try_collect::<Vec<_>>()
+            .await
+            .expect("list objects");
+
+        assert_eq!(objects.len(), 1);
+
+        let data = store
+            .get(&objects[0].location)
+            .await
+            .expect("get folio")
+            .bytes()
+            .await
+            .expect("read folio");
+
+        assert!(!data.is_empty());
     }
 }
 

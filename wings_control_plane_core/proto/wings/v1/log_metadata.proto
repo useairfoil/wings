@@ -8,7 +8,7 @@ import "google/protobuf/timestamp.proto";
 import "schema/arrow_type.proto";
 
 service LogMetadataService {
-  rpc CommitFolio(CommitFolioRequest) returns (CommitFolioResponse);
+  rpc Commit(CommitRequest) returns (CommitResponse);
 
   rpc GetLogLocation(GetLogLocationRequest) returns (GetLogLocationResponse);
 
@@ -19,36 +19,28 @@ service LogMetadataService {
   rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
 }
 
-message CommitFolioRequest {
+message CommitRequest {
   string namespace = 1;
-  string file_ref = 2;
-  repeated CommitPageRequest pages = 3;
-}
-
-message CommitPageRequest {
-  string topic = 1;
-  optional PartitionValue partition = 2;
-  uint32 num_rows = 3;
-  uint64 offset_bytes = 4;
-  uint64 batch_size_bytes = 5;
-  repeated CommitBatchRequest batches = 6;
+  repeated CommitBatchRequest batches = 2;
 }
 
 message CommitBatchRequest {
-  /// The requested timestamp (if any) of the batch.
-  optional google.protobuf.Timestamp timestamp = 1;
-  /// The number of rows in the batch.
-  uint32 num_rows = 2;
-}
-
-message CommitFolioResponse {
-  repeated CommitPageResponse pages = 1;
-}
-
-message CommitPageResponse {
   string topic = 1;
   optional PartitionValue partition = 2;
-  repeated CommittedBatch batches = 3;
+  /// The requested timestamp (if any) of the batch.
+  optional google.protobuf.Timestamp timestamp = 3;
+  /// The number of rows in the batch.
+  uint32 num_rows = 4;
+  /// The folio file containing the batch.
+  string file_ref = 5;
+  /// The start offset of the batch's page in the folio file.
+  uint64 offset_bytes = 6;
+  /// The batch size, in bytes.
+  uint64 batch_size_bytes = 7;
+}
+
+message CommitResponse {
+  repeated CommittedBatch batches = 1;
 }
 
 message GetLogLocationRequest {

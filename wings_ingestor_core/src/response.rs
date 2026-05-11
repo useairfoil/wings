@@ -11,7 +11,7 @@ pub struct WriteBatchResponse {
     // The offset of the first row in the Parquet file.
     pub offset: u64,
     /// The number of rows in the batch.
-    pub num_rows: u64,
+    pub num_rows: u32,
     /// The timestamp assigned to the batch.
     pub timestamp: SystemTime,
 }

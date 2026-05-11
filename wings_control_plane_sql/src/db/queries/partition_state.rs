@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{collections::HashMap, time::SystemTime};
 
 use sea_orm::{
     ActiveValue::{NotSet, Set},
@@ -8,10 +8,10 @@ use sea_orm::{
 use snafu::Snafu;
 use tracing::debug;
 use wings_control_plane_core::log_metadata::{
-    AcceptedBatchInfo, CommitPageRequest, CommitPageResponse, CommittedBatch,
-    ListPartitionsRequest, ListPartitionsResponse, LogMetadataError, RejectedBatchInfo,
+    AcceptedBatchInfo, CommitBatchRequest, CommittedBatch, ListPartitionsRequest,
+    ListPartitionsResponse, LogMetadataError, LogOffset, RejectedBatchInfo,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
-    validate_pages_to_commit,
+    validate_batches_to_commit,
 };
 use wings_resources::NamespaceName;
 
@@ -31,29 +31,54 @@ pub enum Error {
 }
 
 impl Database {
-    pub async fn commit_folio(
+    pub async fn commit(
         &self,
         namespace: NamespaceName,
-        file_ref: String,
-        pages: &[CommitPageRequest],
-    ) -> Result<Vec<CommitPageResponse>, Error> {
+        batches: Vec<CommitBatchRequest>,
+    ) -> Result<Vec<CommittedBatch>, Error> {
         // TODO: decide how to forward validation errors.
-        validate_pages_to_commit(&namespace, pages).unwrap();
+        validate_batches_to_commit(&namespace, &batches).unwrap();
 
         // Assign the same timestamp to all batches across pages.
         let now_ts = SystemTime::now();
-        let pages = pages.to_vec();
 
         self.with_transaction(|tx| {
             Box::pin(async move {
-                let mut committed_pages = Vec::new();
+                let mut committed_batches = vec![None; batches.len()];
+                let mut partitions =
+                    HashMap::<PartitionKey, Vec<(usize, CommitBatchRequest)>>::new();
 
-                for page in pages {
-                    let response = commit_page(tx, file_ref.clone(), page, now_ts).await?;
-                    committed_pages.push(response);
+                for (index, batch) in batches.into_iter().enumerate() {
+                    partitions
+                        .entry(PartitionKey::new(
+                            &batch.topic_name,
+                            batch.partition_value.clone(),
+                        ))
+                        .or_default()
+                        .push((index, batch));
                 }
 
-                Ok(committed_pages)
+                for (partition_key, batches) in partitions {
+                    commit_partition_batches(
+                        tx,
+                        partition_key,
+                        batches,
+                        now_ts,
+                        &mut committed_batches,
+                    )
+                    .await?;
+                }
+
+                committed_batches
+                    .into_iter()
+                    .map(|batch| {
+                        batch.ok_or_else(|| Error::Db {
+                            source: DbErr::Custom(
+                                "failed to collect committed batch response".to_string(),
+                            ),
+                        })
+                    })
+                    .collect()
             })
         })
         .await
@@ -109,14 +134,13 @@ impl Database {
     }
 }
 
-async fn commit_page(
+async fn commit_partition_batches(
     tx: &DatabaseTransaction,
-    file_ref: String,
-    page: CommitPageRequest,
+    partition_key: PartitionKey,
+    batches: Vec<(usize, CommitBatchRequest)>,
     now_ts: SystemTime,
-) -> Result<CommitPageResponse, Error> {
-    let partition_key = PartitionKey::new(&page.topic_name, page.partition_value.clone());
-
+    committed_batches: &mut [Option<CommittedBatch>],
+) -> Result<(), Error> {
     let state = entities::partition_state::Entity::find_by_id(partition_key.clone())
         .lock_exclusive()
         .one(tx)
@@ -126,20 +150,24 @@ async fn commit_page(
         .map(|state| state.next_log_offset())
         .unwrap_or_default();
 
-    let mut batches = Vec::new();
-
     let mut current_offset = start_offset;
+    let mut locations = HashMap::<FolioBatchLocationKey, PendingFolioLocation>::new();
 
     // TODO: check that the timestamp is assigned correctly
     // we want the state to have the timestamp of the most recently assigned batch
-    for batch in page.batches.iter() {
+    for (response_index, batch) in batches.iter() {
         match validate_timestamp_in_request(&current_offset, batch) {
             ValidateRequestResult::Reject { reason } => {
                 let rejected = RejectedBatchInfo {
                     num_rows: batch.num_rows,
                     reason: reason.to_string(),
                 };
-                batches.push(CommittedBatch::Rejected(rejected));
+                let committed = CommittedBatch::Rejected(rejected);
+                locations
+                    .entry(FolioBatchLocationKey::from(batch))
+                    .or_insert_with(|| PendingFolioLocation::new(batch))
+                    .push(batch.num_rows, committed.clone(), None);
+                committed_batches[*response_index] = Some(committed);
             }
             ValidateRequestResult::Accept {
                 start_offset,
@@ -153,7 +181,16 @@ async fn commit_page(
                     timestamp: timestamp.unwrap_or(now_ts),
                 };
                 current_offset = next_offset;
-                batches.push(CommittedBatch::Accepted(accepted));
+                let committed = CommittedBatch::Accepted(accepted);
+                locations
+                    .entry(FolioBatchLocationKey::from(batch))
+                    .or_insert_with(|| PendingFolioLocation::new(batch))
+                    .push(
+                        batch.num_rows,
+                        committed.clone(),
+                        Some((start_offset, end_offset)),
+                    );
+                committed_batches[*response_index] = Some(committed);
             }
         }
     }
@@ -162,50 +199,16 @@ async fn commit_page(
     if current_offset != start_offset {
         current_offset = current_offset.with_timestamp(now_ts);
 
-        let end_offset = current_offset.previous();
+        for location in locations
+            .into_values()
+            .filter(|location| location.has_accepted())
+        {
+            insert_folio_location(tx, &partition_key, location, now_ts).await?;
+        }
 
         debug!(
-            topic = %page.topic_name,
-            partition_value = ?page.partition_value,
-            start_offset = ?start_offset,
-            end_offset = ?end_offset,
-            file_ref = %file_ref,
-            "Inserting partition folio"
-        );
-
-        let location = {
-            use entities::partition_location::LocationType;
-            use prost::Message;
-            use wings_control_plane_core::pb::CommittedBatches;
-
-            let partition_key = partition_key.clone();
-            let folio_batches_pb = CommittedBatches::new(batches.clone()).encode_to_vec();
-
-            entities::partition_location::ActiveModel {
-                id: NotSet,
-                tenant_id: Set(partition_key.tenant_id),
-                namespace_id: Set(partition_key.namespace_id),
-                topic_id: Set(partition_key.topic_id),
-                partition_value: Set(partition_key.partition_value),
-                start_offset: Set(start_offset.offset as _),
-                end_offset: Set(end_offset.offset as _),
-                file_ref: Set(file_ref),
-                num_rows: Set(page.num_rows as _),
-                location_type: Set(LocationType::Folio),
-                folio_offset_bytes: Set(Some(page.offset_bytes as _)),
-                folio_size_bytes: Set(Some(page.batch_size_bytes as _)),
-                folio_batches_pb: Set(Some(folio_batches_pb)),
-                parquet_metadata_pb: NotSet,
-            }
-        };
-
-        entities::partition_location::Entity::insert(location)
-            .exec(tx)
-            .await?;
-
-        debug!(
-            topic = %page.topic_name,
-            partition_value = ?page.partition_value,
+            topic = %partition_key.topic_id,
+            partition_value = ?partition_key.partition_value,
             next_offset = ?current_offset,
             "Updating partition state"
         );
@@ -242,13 +245,117 @@ async fn commit_page(
             .await?;
     }
 
-    let response = CommitPageResponse {
-        topic_name: page.topic_name.clone(),
-        partition_value: page.partition_value.clone(),
-        batches,
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct FolioBatchLocationKey {
+    file_ref: String,
+    offset_bytes: u64,
+    batch_size_bytes: u64,
+}
+
+impl From<&CommitBatchRequest> for FolioBatchLocationKey {
+    fn from(batch: &CommitBatchRequest) -> Self {
+        Self {
+            file_ref: batch.file_ref.clone(),
+            offset_bytes: batch.offset_bytes,
+            batch_size_bytes: batch.batch_size_bytes,
+        }
+    }
+}
+
+struct PendingFolioLocation {
+    file_ref: String,
+    offset_bytes: u64,
+    batch_size_bytes: u64,
+    num_rows: u32,
+    start_offset: Option<u64>,
+    end_offset: Option<u64>,
+    batches: Vec<CommittedBatch>,
+}
+
+impl PendingFolioLocation {
+    fn new(batch: &CommitBatchRequest) -> Self {
+        Self {
+            file_ref: batch.file_ref.clone(),
+            offset_bytes: batch.offset_bytes,
+            batch_size_bytes: batch.batch_size_bytes,
+            num_rows: 0,
+            start_offset: None,
+            end_offset: None,
+            batches: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, num_rows: u32, batch: CommittedBatch, accepted_offsets: Option<(u64, u64)>) {
+        self.num_rows += num_rows;
+        if let Some((start_offset, end_offset)) = accepted_offsets {
+            self.start_offset.get_or_insert(start_offset);
+            self.end_offset = Some(end_offset);
+        }
+        self.batches.push(batch);
+    }
+
+    fn has_accepted(&self) -> bool {
+        self.start_offset.is_some() && self.end_offset.is_some()
+    }
+}
+
+async fn insert_folio_location(
+    tx: &DatabaseTransaction,
+    partition_key: &PartitionKey,
+    location: PendingFolioLocation,
+    now_ts: SystemTime,
+) -> Result<(), Error> {
+    let start_offset = LogOffset {
+        offset: location.start_offset.expect("accepted folio start offset"),
+        timestamp: now_ts,
+    };
+    let end_offset = LogOffset {
+        offset: location.end_offset.expect("accepted folio end offset"),
+        timestamp: now_ts,
     };
 
-    Ok(response)
+    debug!(
+        topic = %partition_key.topic_id,
+        partition_value = ?partition_key.partition_value,
+        start_offset = ?start_offset,
+        end_offset = ?end_offset,
+        file_ref = %location.file_ref,
+        "Inserting partition folio"
+    );
+
+    let location = {
+        use entities::partition_location::LocationType;
+        use prost::Message;
+        use wings_control_plane_core::pb::CommittedBatches;
+
+        let folio_batches_pb = CommittedBatches::new(location.batches).encode_to_vec();
+
+        entities::partition_location::ActiveModel {
+            id: NotSet,
+            tenant_id: Set(partition_key.tenant_id.clone()),
+            namespace_id: Set(partition_key.namespace_id.clone()),
+            topic_id: Set(partition_key.topic_id.clone()),
+            partition_value: Set(partition_key.partition_value.clone()),
+            start_offset: Set(start_offset.offset as _),
+            end_offset: Set(end_offset.offset as _),
+            file_ref: Set(location.file_ref),
+            num_rows: Set(location.num_rows as _),
+            location_type: Set(LocationType::Folio),
+            folio_offset_bytes: Set(Some(location.offset_bytes as _)),
+            folio_size_bytes: Set(Some(location.batch_size_bytes as _)),
+            folio_batches_pb: Set(Some(folio_batches_pb)),
+            parquet_metadata_pb: NotSet,
+        }
+    };
+
+    entities::partition_location::Entity::insert(location)
+        .exec(tx)
+        .await?;
+
+    Ok(())
 }
 
 impl From<Error> for LogMetadataError {

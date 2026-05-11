@@ -11,6 +11,7 @@
 
 pub mod cloud;
 pub mod local;
+pub mod memory;
 pub mod paths;
 
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use wings_resources::ObjectStoreName;
 pub use self::{
     cloud::CloudObjectStoreFactory,
     local::{LocalFileSystemFactory, TemporaryFileSystemFactory},
+    memory::InMemoryFactory,
 };
 
 /// Factory trait for creating ObjectStore instances from object store configurations.

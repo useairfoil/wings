@@ -35,30 +35,27 @@ impl LogMetadataServer {
 
 #[async_trait]
 impl TonicService for LogMetadataServer {
-    async fn commit_folio(
+    async fn commit(
         &self,
-        request: Request<pb::CommitFolioRequest>,
-    ) -> Result<Response<pb::CommitFolioResponse>, Status> {
+        request: Request<pb::CommitRequest>,
+    ) -> Result<Response<pb::CommitResponse>, Status> {
         let request = request.into_inner();
 
         let namespace = NamespaceName::parse(&request.namespace)
             .map_err(|err| err.to_log_metadata_error("namespace"))?;
 
-        let pages = request
-            .pages
+        let batches = request
+            .batches
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()
             .map_err(LogMetadataError::from)?;
 
-        let response = self
-            .inner
-            .commit_folio(namespace, request.file_ref, &pages)
-            .await?;
+        let response = self.inner.commit(namespace, batches).await?;
 
-        let pages = response.into_iter().map(Into::into).collect();
+        let batches = response.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(pb::CommitFolioResponse { pages }))
+        Ok(Response::new(pb::CommitResponse { batches }))
     }
 
     async fn get_log_location(

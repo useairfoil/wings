@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use futures::{Stream, StreamExt, stream::FuturesOrdered};
+use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
-use wings_control_plane_core::log_metadata::{
-    CommitBatchRequest, CommitPageRequest, CommittedBatch, LogMetadata,
-};
+use wings_control_plane_core::log_metadata::{CommitBatchRequest, CommittedBatch, LogMetadata};
 use wings_resources::NamespaceRef;
 
 use crate::{
-    error::{IngestorError, Result},
+    error::{IngestorError, LogMetadataSnafu, Result},
     reply::WithReply,
     request::WriteBatchRequest,
     response::WriteBatchResponse,
@@ -73,141 +72,25 @@ impl IngestorClient {
         namespace: NamespaceRef,
         responses: Vec<WriteBatchResponse>,
     ) -> Result<Vec<CommittedBatch>> {
-        let mut files = Vec::<CommitFile>::new();
-
-        for (response_index, response) in responses.into_iter().enumerate() {
-            let file_index = files
-                .iter()
-                .position(|file| file.file_ref == response.folio.file_ref)
-                .unwrap_or_else(|| {
-                    files.push(CommitFile {
-                        file_ref: response.folio.file_ref.clone(),
-                        pages: Vec::new(),
-                    });
-                    files.len() - 1
-                });
-
-            let pages = &mut files[file_index].pages;
-            let page_index = pages
-                .iter()
-                .position(|page| page.matches(&response))
-                .unwrap_or_else(|| {
-                    pages.push(CommitPage::new(&response));
-                    pages.len() - 1
-                });
-
-            pages[page_index].push_batch(response_index, response)?;
-        }
-
-        let mut committed_batches = vec![None; files.iter().map(|f| f.num_batches()).sum()];
-
-        for file in files {
-            let pages = file
-                .pages
-                .iter()
-                .map(CommitPage::to_request)
-                .collect::<Vec<_>>();
-
-            let page_responses = self
-                .log_meta
-                .commit_folio(namespace.name.clone(), file.file_ref, &pages)
-                .await
-                .map_err(|source| IngestorError::LogMetadata {
-                    source: Arc::new(source),
-                })?;
-
-            for (page, response) in file.pages.into_iter().zip(page_responses) {
-                for (response_index, batch) in
-                    page.response_indexes.into_iter().zip(response.batches)
-                {
-                    committed_batches[response_index] = Some(batch);
-                }
-            }
-        }
-
-        committed_batches
+        let batches = responses
             .into_iter()
-            .map(|batch| {
-                batch.ok_or_else(|| IngestorError::Validation {
-                    message: "log metadata did not return all committed batches".to_string(),
-                })
+            .map(|response| CommitBatchRequest {
+                topic_name: response.topic_name,
+                partition_value: response.partition_value,
+                file_ref: response.folio.file_ref,
+                offset_bytes: response.folio.offset_bytes,
+                batch_size_bytes: response.folio.size_bytes,
+                timestamp: Some(response.timestamp),
+                num_rows: response.num_rows,
             })
-            .collect()
-    }
-}
+            .collect::<Vec<_>>();
 
-struct CommitFile {
-    file_ref: String,
-    pages: Vec<CommitPage>,
-}
+        let committed = self
+            .log_meta
+            .commit(namespace.name.clone(), batches)
+            .await
+            .context(LogMetadataSnafu)?;
 
-impl CommitFile {
-    fn num_batches(&self) -> usize {
-        self.pages
-            .iter()
-            .map(|page| page.batches.len())
-            .sum::<usize>()
-    }
-}
-
-struct CommitPage {
-    topic_name: wings_resources::TopicName,
-    partition_value: Option<wings_resources::PartitionValue>,
-    offset_bytes: u64,
-    size_bytes: u64,
-    num_rows: u32,
-    batches: Vec<CommitBatchRequest>,
-    response_indexes: Vec<usize>,
-}
-
-impl CommitPage {
-    fn new(response: &WriteBatchResponse) -> Self {
-        Self {
-            topic_name: response.topic_name.clone(),
-            partition_value: response.partition_value.clone(),
-            offset_bytes: response.folio.offset_bytes,
-            size_bytes: response.folio.size_bytes,
-            num_rows: 0,
-            batches: Vec::new(),
-            response_indexes: Vec::new(),
-        }
-    }
-
-    fn matches(&self, response: &WriteBatchResponse) -> bool {
-        self.topic_name == response.topic_name
-            && self.partition_value == response.partition_value
-            && self.offset_bytes == response.folio.offset_bytes
-            && self.size_bytes == response.folio.size_bytes
-    }
-
-    fn push_batch(&mut self, response_index: usize, response: WriteBatchResponse) -> Result<()> {
-        let num_rows = u32::try_from(response.num_rows).map_err(|_| IngestorError::Validation {
-            message: "batch row count exceeds u32::MAX".to_string(),
-        })?;
-
-        self.num_rows =
-            self.num_rows
-                .checked_add(num_rows)
-                .ok_or_else(|| IngestorError::Validation {
-                    message: "page row count exceeds u32::MAX".to_string(),
-                })?;
-        self.batches.push(CommitBatchRequest {
-            timestamp: Some(response.timestamp),
-            num_rows,
-        });
-        self.response_indexes.push(response_index);
-
-        Ok(())
-    }
-
-    fn to_request(&self) -> CommitPageRequest {
-        CommitPageRequest {
-            topic_name: self.topic_name.clone(),
-            partition_value: self.partition_value.clone(),
-            batches: self.batches.clone(),
-            num_rows: self.num_rows,
-            offset_bytes: self.offset_bytes,
-            batch_size_bytes: self.size_bytes,
-        }
+        Ok(committed)
     }
 }

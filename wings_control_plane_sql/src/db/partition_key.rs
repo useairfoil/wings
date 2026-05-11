@@ -1,7 +1,7 @@
 use wings_resources::{PartitionValue, TopicName};
 
 /// Represents a partition's key in the database.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PartitionKey {
     pub tenant_id: String,
     pub namespace_id: String,

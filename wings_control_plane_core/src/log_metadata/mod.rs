@@ -20,7 +20,7 @@ use wings_schema::Datum;
 
 pub use self::{
     error::{LogMetadataError, Result},
-    validation::validate_pages_to_commit,
+    validation::validate_batches_to_commit,
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -36,13 +36,12 @@ pub struct FileMetadata {
 
 #[async_trait]
 pub trait LogMetadata: Send + Sync {
-    /// Commit a folio with several batches across topics and partitions.
-    async fn commit_folio(
+    /// Commit several batches across topics and partitions.
+    async fn commit(
         &self,
         namespace: NamespaceName,
-        file_ref: String,
-        pages: &[CommitPageRequest],
-    ) -> Result<Vec<CommitPageResponse>>;
+        batches: Vec<CommitBatchRequest>,
+    ) -> Result<Vec<CommittedBatch>>;
 
     /// Retrieves the locations of the logs for the specified topic and partition.
     async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>>;
@@ -96,37 +95,19 @@ pub struct AcceptedBatchInfo {
     pub timestamp: SystemTime,
 }
 
-/// Request to commit a page of batches.
+/// Represents a single write operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitPageRequest<B = CommitBatchRequest> {
+pub struct CommitBatchRequest {
     /// The topic id of the batch to commit.
     pub topic_name: TopicName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The individual batches to commit.
-    pub batches: Vec<B>,
-    /// The number of rows in the batch.
-    pub num_rows: u32,
-    /// The start offset of the batch in the folio file.
+    /// The folio file containing the batch.
+    pub file_ref: String,
+    /// The start offset of the batch's page in the folio file.
     pub offset_bytes: u64,
     /// The batch size, in bytes.
     pub batch_size_bytes: u64,
-}
-
-/// A page that has been successfully committed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitPageResponse<B = CommittedBatch> {
-    /// The topic id of the batch that was committed.
-    pub topic_name: TopicName,
-    /// The partition value, if any.
-    pub partition_value: Option<PartitionValue>,
-    /// The result of committing the batches.
-    pub batches: Vec<B>,
-}
-
-/// Represents a single write operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitBatchRequest {
     /// The requested timestamp for the write request.
     pub timestamp: Option<SystemTime>,
     /// The number of rows in the write request.
@@ -414,6 +395,17 @@ impl LogOffset {
 impl CommitBatchRequest {
     pub fn new(num_rows: u32) -> Self {
         Self {
+            topic_name: TopicName::new_unchecked(
+                "test-topic",
+                NamespaceName::new_unchecked(
+                    "test-namespace",
+                    wings_resources::TenantName::new_unchecked("test-tenant"),
+                ),
+            ),
+            partition_value: None,
+            file_ref: "test-folio".to_string(),
+            offset_bytes: 0,
+            batch_size_bytes: 0,
             num_rows,
             timestamp: None,
         }
@@ -421,6 +413,17 @@ impl CommitBatchRequest {
 
     pub fn new_with_timestamp(num_rows: u32, timestamp: SystemTime) -> Self {
         Self {
+            topic_name: TopicName::new_unchecked(
+                "test-topic",
+                NamespaceName::new_unchecked(
+                    "test-namespace",
+                    wings_resources::TenantName::new_unchecked("test-tenant"),
+                ),
+            ),
+            partition_value: None,
+            file_ref: "test-folio".to_string(),
+            offset_bytes: 0,
+            batch_size_bytes: 0,
             num_rows,
             timestamp: Some(timestamp),
         }

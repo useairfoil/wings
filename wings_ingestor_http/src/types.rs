@@ -1,6 +1,7 @@
 //! Request and response types for the HTTP ingestor push endpoint.
 
 use serde::{Deserialize, Serialize};
+use wings_control_plane_core::log_metadata::CommittedBatch;
 use wings_resources::PartitionValue;
 
 /// Request payload for the /v1/push endpoint.
@@ -74,5 +75,19 @@ impl BatchResponse {
 
     pub fn is_error(&self) -> bool {
         matches!(self, BatchResponse::Error { .. })
+    }
+}
+
+impl From<CommittedBatch> for BatchResponse {
+    fn from(committed: CommittedBatch) -> Self {
+        match committed {
+            CommittedBatch::Accepted(accepted) => BatchResponse::Success {
+                start_offset: accepted.start_offset,
+                end_offset: accepted.end_offset,
+            },
+            CommittedBatch::Rejected(rejected) => BatchResponse::Error {
+                message: rejected.reason,
+            },
+        }
     }
 }

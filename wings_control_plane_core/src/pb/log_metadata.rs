@@ -9,13 +9,13 @@ use wings_schema::Datum;
 
 use crate::{
     log_metadata::{
-        AcceptedBatchInfo, CommitBatchRequest, CommitPageRequest, CommitPageResponse, CommitResult,
-        CommitTask, CommittedBatch, CompactionOperation, CompactionResult, CompactionTask,
-        CompleteTaskRequest, CompleteTaskResponse, CreateTableResult, CreateTableTask,
-        DataLakeLocation, FileInfo, FileMetadata, FolioLocation, GetLogLocationOptions,
-        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-        LogOffset, PartitionMetadata, RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse,
-        Task, TaskCompletionResult, TaskMetadata, TaskResult, TaskStatus,
+        AcceptedBatchInfo, CommitBatchRequest, CommitResult, CommitTask, CommittedBatch,
+        CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest,
+        CompleteTaskResponse, CreateTableResult, CreateTableTask, DataLakeLocation, FileInfo,
+        FileMetadata, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
+        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogOffset, PartitionMetadata,
+        RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskCompletionResult,
+        TaskMetadata, TaskResult, TaskStatus,
     },
     pb::{
         self,
@@ -57,53 +57,21 @@ impl From<LogOffset> for pb::LogOffset {
  *    ░░░░░░░░░     ░░░░░░░    ░░░░░     ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░
  */
 
-impl TryFrom<pb::CommitPageRequest> for CommitPageRequest {
-    type Error = WireError;
-
-    fn try_from(request: pb::CommitPageRequest) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&request.topic).context(ResourceSnafu { resource: "topic" })?;
-
-        let partition_value = request.partition.map(TryFrom::try_from).transpose()?;
-
-        let batches = request
-            .batches
-            .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
-            topic_name,
-            partition_value,
-            batches,
-            num_rows: request.num_rows,
-            offset_bytes: request.offset_bytes,
-            batch_size_bytes: request.batch_size_bytes,
-        })
-    }
-}
-
-impl From<&CommitPageRequest> for pb::CommitPageRequest {
-    fn from(request: &CommitPageRequest) -> Self {
-        let batches = request.batches.iter().map(Into::into).collect::<Vec<_>>();
-
-        pb::CommitPageRequest {
-            topic: request.topic_name.to_string(),
-            partition: request.partition_value.as_ref().map(Into::into),
-            num_rows: request.num_rows,
-            offset_bytes: request.offset_bytes,
-            batch_size_bytes: request.batch_size_bytes,
-            batches,
-        }
-    }
-}
-
 impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
     type Error = WireError;
 
     fn try_from(meta: pb::CommitBatchRequest) -> Result<Self, Self::Error> {
+        let topic_name =
+            TopicName::parse(&meta.topic).context(ResourceSnafu { resource: "topic" })?;
+        let partition_value = meta.partition.map(TryFrom::try_from).transpose()?;
+
         let Some(timestamp) = meta.timestamp else {
             return Ok(CommitBatchRequest {
+                topic_name,
+                partition_value,
+                file_ref: meta.file_ref,
+                offset_bytes: meta.offset_bytes,
+                batch_size_bytes: meta.batch_size_bytes,
                 timestamp: None,
                 num_rows: meta.num_rows,
             });
@@ -115,6 +83,11 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
         let timestamp = timestamp.try_into()?;
 
         Ok(CommitBatchRequest {
+            topic_name,
+            partition_value,
+            file_ref: meta.file_ref,
+            offset_bytes: meta.offset_bytes,
+            batch_size_bytes: meta.batch_size_bytes,
             timestamp: Some(timestamp),
             num_rows: meta.num_rows,
         })
@@ -126,51 +99,26 @@ impl From<&CommitBatchRequest> for pb::CommitBatchRequest {
         let timestamp = meta.timestamp.map(Into::into);
 
         pb::CommitBatchRequest {
+            topic: meta.topic_name.to_string(),
+            partition: meta.partition_value.as_ref().map(Into::into),
             timestamp,
             num_rows: meta.num_rows,
+            file_ref: meta.file_ref.clone(),
+            offset_bytes: meta.offset_bytes,
+            batch_size_bytes: meta.batch_size_bytes,
         }
     }
 }
 
-impl TryFrom<pb::CommitFolioResponse> for Vec<CommitPageResponse> {
+impl TryFrom<pb::CommitResponse> for Vec<CommittedBatch> {
     type Error = WireError;
 
-    fn try_from(response: pb::CommitFolioResponse) -> Result<Self, Self::Error> {
-        response.pages.into_iter().map(TryFrom::try_from).collect()
-    }
-}
-
-impl TryFrom<pb::CommitPageResponse> for CommitPageResponse {
-    type Error = WireError;
-
-    fn try_from(response: pb::CommitPageResponse) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&response.topic).context(ResourceSnafu { resource: "topic" })?;
-
-        let partition_value = response.partition.map(TryFrom::try_from).transpose()?;
-
-        let batches = response
+    fn try_from(response: pb::CommitResponse) -> Result<Self, Self::Error> {
+        response
             .batches
             .into_iter()
             .map(TryFrom::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
-            topic_name,
-            partition_value,
-            batches,
-        })
-    }
-}
-
-impl From<CommitPageResponse> for pb::CommitPageResponse {
-    fn from(response: CommitPageResponse) -> Self {
-        let batches = response.batches.into_iter().map(Into::into).collect();
-        Self {
-            topic: response.topic_name.to_string(),
-            partition: response.partition_value.as_ref().map(Into::into),
-            batches,
-        }
+            .collect()
     }
 }
 

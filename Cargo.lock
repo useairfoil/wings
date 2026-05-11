@@ -7894,6 +7894,7 @@ name = "wings-object-store"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dashmap",
  "object_store",
  "percent-encoding",
  "snafu",
