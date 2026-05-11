@@ -8,9 +8,10 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use bytesize::ByteSize;
-use futures::{StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use mockall::{automock, mock};
 use object_store::ObjectStore;
+use serde::Serialize;
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use wings_control_plane_core::{
@@ -165,6 +166,12 @@ impl ObjectStoreFactory for MockObjectStoreFactory {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct ObjectMeta {
+    pub path: String,
+    pub size: u64,
+}
+
 pub struct TestIngestor {
     task: JoinHandle<()>,
     ct_guard: DropGuard,
@@ -239,29 +246,28 @@ impl TestIngestor {
         .expect("ingestion timed out")
     }
 
-    pub async fn assert_folio_written(&self, namespace: &Namespace) {
+    pub async fn ingest_stream(
+        &self,
+        namespace: Arc<Namespace>,
+        requests: impl Stream<Item = WriteBatchRequest>,
+    ) -> Result<Vec<CommittedBatch>> {
+        self.client.ingest(namespace, requests).await
+    }
+
+    pub async fn list_files(&self, namespace: &Namespace) -> Vec<ObjectMeta> {
         let store = self
             .object_store_factory
             .create_object_store(namespace.object_store.clone())
             .await
             .expect("create object store");
-        let objects = store
+        store
             .list(None)
             .try_collect::<Vec<_>>()
             .await
-            .expect("list objects");
-
-        assert_eq!(objects.len(), 1);
-
-        let data = store
-            .get(&objects[0].location)
-            .await
-            .expect("get folio")
-            .bytes()
-            .await
-            .expect("read folio");
-
-        assert!(!data.is_empty());
+            .expect("list objects")
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 }
 
@@ -388,4 +394,13 @@ pub fn mismatched_records(num_rows: usize) -> RecordBatch {
 
 pub fn sort_by_batch_id(responses: &mut [CommittedBatch]) {
     responses.sort_by_key(CommittedBatch::batch_id);
+}
+
+impl From<object_store::ObjectMeta> for ObjectMeta {
+    fn from(m: object_store::ObjectMeta) -> Self {
+        Self {
+            path: m.location.to_string(),
+            size: m.size,
+        }
+    }
 }

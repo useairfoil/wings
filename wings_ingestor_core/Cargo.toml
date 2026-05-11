@@ -36,6 +36,8 @@ wings-schema = { path = "../wings_schema" }
 bytesize.workspace = true
 mockall.workspace = true
 insta.workspace = true
+serde.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+tokio-stream.workspace = true
 wings-control-plane-sql = { path = "../wings_control_plane_sql" }
 wings-schema = { path = "../wings_schema" }

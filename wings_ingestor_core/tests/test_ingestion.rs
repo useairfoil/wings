@@ -1,12 +1,17 @@
 mod common;
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use common::{
     MockLogMetadataService, MockObjectStoreFactory, MockObjectStorePutOpts, TestIngestor,
     initialize_test_namespace, initialize_test_partitioned_topic, initialize_test_topic,
     people_records, sort_by_batch_id,
 };
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo,
 };
@@ -56,8 +61,6 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
-
     insta::assert_yaml_snapshot!(responses, {
         "[].timestamp" => "[timestamp]"
     }, @r#"
@@ -66,6 +69,16 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
         start_offset: 0
         end_offset: 0
         timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => insta::dynamic_redaction(|value, _path| {
+            assert!(value.as_str().unwrap().starts_with("tenants/test/namespaces/test-ns/folio/"));
+            "[path]"
+        })
+    }, @r#"
+    - path: "[path]"
+      size: 1256
     "#);
 
     ingestor.shutdown().await;
@@ -139,7 +152,124 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
+    insta::assert_yaml_snapshot!(responses, {
+        "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 1
+        timestamp: "[timestamp]"
+    - Accepted:
+        batch_id: 2
+        start_offset: 2
+        end_offset: 3
+        timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => "[path]"
+    }, @r#"
+    - path: "[path]"
+      size: 1315
+    "#);
+
+    ingestor.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ingests_multiple_messages_belonging_to_different_folio() -> Result<()> {
+    let mut log_meta = MockLogMetadataService::new();
+    log_meta.expect_commit().times(1).returning({
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1270
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1270
+              timestamp: "[timestamp]"
+              num_rows: 2
+            "#);
+
+            Ok(vec![
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 0,
+                    start_offset: 0,
+                    end_offset: 1,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 2,
+                    start_offset: 2,
+                    end_offset: 3,
+                    timestamp: SystemTime::now(),
+                }),
+            ])
+        }
+    });
+
+    let ingestor = TestIngestor::start(log_meta).await;
+    let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
+    let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
+
+    let (tx, rx) = mpsc::channel(128);
+
+    let handle = tokio::spawn(async move {
+        let response = ingestor
+            .ingest_stream(namespace.clone(), ReceiverStream::new(rx))
+            .await
+            .expect("ingest stream");
+
+        insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+            "[].path" => insta::dynamic_redaction(|value, _path| {
+                assert!(value.as_str().unwrap().starts_with("tenants/test/namespaces/test-ns/folio/"));
+                "[path]"
+            })
+        }, @r#"
+        - path: "[path]"
+          size: 1270
+        - path: "[path]"
+          size: 1270
+        "#);
+
+        response
+    });
+
+    let _ = tx
+        .send(WriteBatchRequest::new(
+            topic.clone(),
+            people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
+        ))
+        .await;
+
+    // Wait for the first batch to be flushed to the folio
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let _ = tx
+        .send(WriteBatchRequest::new(
+            topic.clone(),
+            people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
+        ))
+        .await;
+
+    drop(tx);
+
+    let mut responses = handle.await.expect("ingest task");
+    sort_by_batch_id(&mut responses);
 
     insta::assert_yaml_snapshot!(responses, {
         "[].timestamp" => "[timestamp]"
@@ -156,7 +286,6 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
         timestamp: "[timestamp]"
     "#);
 
-    ingestor.shutdown().await;
     Ok(())
 }
 
@@ -254,8 +383,6 @@ async fn ingests_single_message_with_partition_value() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
-
     insta::assert_yaml_snapshot!(responses, {
             "[].timestamp" => "[timestamp]"
     }, @r#"
@@ -264,6 +391,13 @@ async fn ingests_single_message_with_partition_value() -> Result<()> {
         start_offset: 0
         end_offset: 0
         timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => "[path]"
+    }, @r#"
+    - path: "[path]"
+      size: 1271
     "#);
 
     ingestor.shutdown().await;
@@ -362,8 +496,6 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
-
     insta::assert_yaml_snapshot!(responses, {
             "[].timestamp" => "[timestamp]"
     }, @r#"
@@ -382,6 +514,13 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
         start_offset: 2
         end_offset: 2
         timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => "[path]"
+    }, @r#"
+    - path: "[path]"
+      size: 2590
     "#);
 
     ingestor.shutdown().await;
@@ -457,8 +596,6 @@ async fn rejects_batch_with_mismatched_schema() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
-
     insta::assert_yaml_snapshot!(responses, {
             "[].timestamp" => "[timestamp]"
     }, @r#"
@@ -476,6 +613,13 @@ async fn rejects_batch_with_mismatched_schema() -> Result<()> {
         start_offset: 2
         end_offset: 2
         timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => "[path]"
+    }, @r#"
+    - path: "[path]"
+      size: 1300
     "#);
 
     ingestor.shutdown().await;
@@ -564,8 +708,6 @@ async fn rejects_batch_when_log_metadata_rejects_it() -> Result<()> {
 
     sort_by_batch_id(&mut responses);
 
-    ingestor.assert_folio_written(&namespace).await;
-
     insta::assert_yaml_snapshot!(responses, {
             "[].timestamp" => "[timestamp]"
     }, @r#"
@@ -583,6 +725,13 @@ async fn rejects_batch_when_log_metadata_rejects_it() -> Result<()> {
         start_offset: 2
         end_offset: 2
         timestamp: "[timestamp]"
+    "#);
+
+    insta::assert_yaml_snapshot!(ingestor.list_files(&namespace).await, {
+        "[].path" => "[path]"
+    }, @r#"
+    - path: "[path]"
+      size: 1329
     "#);
 
     ingestor.shutdown().await;
