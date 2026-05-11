@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use bytesize::ByteSize;
 use object_store::path::Path;
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use time::UtcDateTime;
 use wings_resources::{NamespaceName, PartitionValue, TopicName};
 use wings_schema::Datum;
@@ -69,7 +70,7 @@ pub struct LogOffset {
 }
 
 /// Information about a batch that was committed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommittedBatch {
     /// The batch was rejected.
     Rejected(RejectedBatchInfo),
@@ -77,7 +78,7 @@ pub enum CommittedBatch {
     Accepted(AcceptedBatchInfo),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RejectedBatchInfo {
     /// The request id used to correlate the request with the response.
     pub batch_id: u32,
@@ -87,7 +88,7 @@ pub struct RejectedBatchInfo {
     pub reason: String,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcceptedBatchInfo {
     /// The request id used to correlate the request with the response.
     pub batch_id: u32,
@@ -100,7 +101,7 @@ pub struct AcceptedBatchInfo {
 }
 
 /// Represents a single write operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitBatchRequest {
     /// The request id used to correlate the request with the response.
     pub batch_id: u32,
@@ -111,9 +112,9 @@ pub struct CommitBatchRequest {
     /// The folio file containing the batch.
     pub file_ref: String,
     /// The start offset of the batch's page in the folio file.
-    pub offset_bytes: u64,
+    pub page_offset_bytes: u64,
     /// The batch size, in bytes.
-    pub batch_size_bytes: u64,
+    pub page_size_bytes: u64,
     /// The requested timestamp for the write request.
     pub timestamp: Option<SystemTime>,
     /// The number of rows in the write request.
@@ -411,8 +412,8 @@ impl CommitBatchRequest {
             ),
             partition_value: None,
             file_ref: "test-folio".to_string(),
-            offset_bytes: 0,
-            batch_size_bytes: 0,
+            page_offset_bytes: 0,
+            page_size_bytes: 0,
             num_rows,
             timestamp: None,
         }
@@ -430,8 +431,8 @@ impl CommitBatchRequest {
             ),
             partition_value: None,
             file_ref: "test-folio".to_string(),
-            offset_bytes: 0,
-            batch_size_bytes: 0,
+            page_offset_bytes: 0,
+            page_size_bytes: 0,
             num_rows,
             timestamp: Some(timestamp),
         }

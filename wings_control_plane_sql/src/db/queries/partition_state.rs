@@ -261,8 +261,8 @@ impl From<&CommitBatchRequest> for FolioBatchLocationKey {
     fn from(batch: &CommitBatchRequest) -> Self {
         Self {
             file_ref: batch.file_ref.clone(),
-            offset_bytes: batch.offset_bytes,
-            batch_size_bytes: batch.batch_size_bytes,
+            offset_bytes: batch.page_offset_bytes,
+            batch_size_bytes: batch.page_size_bytes,
         }
     }
 }
@@ -281,8 +281,8 @@ impl PendingFolioLocation {
     fn new(batch: &CommitBatchRequest) -> Self {
         Self {
             file_ref: batch.file_ref.clone(),
-            offset_bytes: batch.offset_bytes,
-            batch_size_bytes: batch.batch_size_bytes,
+            offset_bytes: batch.page_offset_bytes,
+            batch_size_bytes: batch.page_size_bytes,
             num_rows: 0,
             start_offset: None,
             end_offset: None,

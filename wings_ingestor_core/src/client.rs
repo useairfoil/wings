@@ -84,17 +84,14 @@ impl IngestorClient {
             }
         }
 
-        let mut committed = self.commit_responses(namespace, responses).await?;
-        committed.extend(rejected);
-        committed.sort_by_key(CommittedBatch::batch_id);
-
-        Ok(committed)
+        self.commit_responses(namespace, responses, rejected).await
     }
 
     async fn commit_responses(
         &self,
         namespace: NamespaceRef,
         responses: Vec<WriteBatchResponse>,
+        out: Vec<CommittedBatch>,
     ) -> Result<Vec<CommittedBatch>> {
         if responses.is_empty() {
             return Ok(Vec::new());
@@ -107,18 +104,20 @@ impl IngestorClient {
                 topic_name: response.topic_name,
                 partition_value: response.partition_value,
                 file_ref: response.folio.file_ref,
-                offset_bytes: response.folio.offset_bytes,
-                batch_size_bytes: response.folio.size_bytes,
+                page_offset_bytes: response.folio.offset_bytes,
+                page_size_bytes: response.folio.size_bytes,
                 timestamp: response.timestamp,
                 num_rows: response.num_rows,
             })
             .collect::<Vec<_>>();
 
-        let committed = self
+        let mut committed = self
             .log_meta
             .commit(namespace.name.clone(), batches)
             .await
             .context(LogMetadataSnafu)?;
+
+        committed.extend(out);
 
         Ok(committed)
     }

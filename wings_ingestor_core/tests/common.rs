@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use arrow::{
     array::{ArrayRef, Int32Array, StringArray},
+    datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
     record_batch::RecordBatch,
 };
 use bytesize::ByteSize;
@@ -106,7 +107,7 @@ impl TestIngestor {
         &self,
         namespace: Arc<Namespace>,
         requests: Vec<WriteBatchRequest>,
-    ) -> Result<Vec<wings_control_plane_core::log_metadata::CommittedBatch>> {
+    ) -> Result<Vec<CommittedBatch>> {
         tokio::time::timeout(
             Duration::from_secs(5),
             self.client
@@ -250,16 +251,17 @@ fn schema_with_partition() -> Schema {
     .expect("schema with partition")
 }
 
-pub fn assert_accepted_batch(
-    batch: &wings_control_plane_core::log_metadata::CommittedBatch,
-    start_offset: u64,
-    end_offset: u64,
-) {
-    match batch {
-        wings_control_plane_core::log_metadata::CommittedBatch::Accepted(info) => {
-            assert_eq!(info.start_offset, start_offset);
-            assert_eq!(info.end_offset, end_offset);
-        }
-        other => panic!("expected accepted batch, got {other:?}"),
-    }
+pub fn mismatched_records(num_rows: usize) -> RecordBatch {
+    let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+        "other",
+        ArrowDataType::Int32,
+        false,
+    )]));
+    let values = Arc::new(Int32Array::from((1..=num_rows as i32).collect::<Vec<_>>()));
+
+    RecordBatch::try_new(schema, vec![values as ArrayRef]).expect("create mismatched batch")
+}
+
+pub fn sort_by_batch_id(responses: &mut [CommittedBatch]) {
+    responses.sort_by_key(CommittedBatch::batch_id);
 }

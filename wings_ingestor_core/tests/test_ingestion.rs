@@ -1,38 +1,41 @@
 mod common;
 
+use std::time::SystemTime;
+
 use common::{
-    MockLogMetadataService, TestIngestor, assert_accepted_batch, initialize_test_namespace,
-    initialize_test_partitioned_topic, initialize_test_topic, people_records,
+    MockLogMetadataService, TestIngestor, initialize_test_namespace,
+    initialize_test_partitioned_topic, initialize_test_topic, people_records, sort_by_batch_id,
 };
 use wings_control_plane_core::log_metadata::{
-    AcceptedBatchInfo, CommitBatchRequest, CommittedBatch,
+    AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo,
 };
 use wings_ingestor_core::{Result, WriteBatchRequest};
-use wings_resources::{NamespaceName, PartitionValue, TenantName, TopicName};
-
-#[derive(Clone)]
-struct ExpectedBatch {
-    topic_name: TopicName,
-    partition_value: Option<PartitionValue>,
-    num_rows: u32,
-}
+use wings_resources::PartitionValue;
 
 #[tokio::test]
 async fn ingests_single_message_without_partition_value() -> Result<()> {
-    let namespace_name = test_namespace_name();
-    let topic_name = TopicName::new_unchecked("people", namespace_name.clone());
     let mut log_meta = MockLogMetadataService::new();
     log_meta.expect_commit().times(1).returning({
-        let namespace_name = namespace_name.clone();
-        let expected_batches = vec![ExpectedBatch {
-            topic_name: topic_name.clone(),
-            partition_value: None,
-            num_rows: 1,
-        }];
-        let commit_response = committed_batches(&[(0, 0)]);
-        move |namespace, batches| {
-            assert_commit_request(&namespace_name, &expected_batches, &namespace, &batches);
-            Ok(commit_response.clone())
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1256
+              timestamp: "[timestamp]"
+              num_rows: 1
+            "#);
+            Ok(vec![CommittedBatch::Accepted(AcceptedBatchInfo {
+                batch_id: 0,
+                start_offset: 0,
+                end_offset: 0,
+                timestamp: SystemTime::now(),
+            })])
         }
     });
 
@@ -40,7 +43,7 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
     let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
     let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
 
-    let responses = ingestor
+    let mut responses = ingestor
         .ingest(
             namespace.clone(),
             vec![WriteBatchRequest::new(
@@ -50,9 +53,19 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
         )
         .await?;
 
-    assert_eq!(responses.len(), 1);
-    assert_accepted_batch(&responses[0], 0, 0);
+    sort_by_batch_id(&mut responses);
+
     ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+        "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 0
+        timestamp: "[timestamp]"
+    "#);
 
     ingestor.shutdown().await;
     Ok(())
@@ -60,27 +73,45 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
 
 #[tokio::test]
 async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
-    let namespace_name = test_namespace_name();
-    let topic_name = TopicName::new_unchecked("people", namespace_name.clone());
     let mut log_meta = MockLogMetadataService::new();
     log_meta.expect_commit().times(1).returning({
-        let namespace_name = namespace_name.clone();
-        let expected_batches = vec![
-            ExpectedBatch {
-                topic_name: topic_name.clone(),
-                partition_value: None,
-                num_rows: 2,
-            },
-            ExpectedBatch {
-                topic_name: topic_name.clone(),
-                partition_value: None,
-                num_rows: 2,
-            },
-        ];
-        let commit_response = committed_batches(&[(0, 1), (2, 3)]);
-        move |namespace, batches| {
-            assert_commit_request(&namespace_name, &expected_batches, &namespace, &batches);
-            Ok(commit_response.clone())
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1315
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 1
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1315
+              timestamp: "[timestamp]"
+              num_rows: 2
+            "#);
+
+            Ok(vec![
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 0,
+                    start_offset: 0,
+                    end_offset: 1,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 2,
+                    start_offset: 2,
+                    end_offset: 3,
+                    timestamp: SystemTime::now(),
+                }),
+            ])
         }
     });
 
@@ -88,7 +119,7 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
     let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
     let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
 
-    let responses = ingestor
+    let mut responses = ingestor
         .ingest(
             namespace.clone(),
             vec![
@@ -105,10 +136,24 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
         )
         .await?;
 
-    assert_eq!(responses.len(), 2);
-    assert_accepted_batch(&responses[0], 0, 1);
-    assert_accepted_batch(&responses[1], 2, 3);
+    sort_by_batch_id(&mut responses);
+
     ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+        "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 1
+        timestamp: "[timestamp]"
+    - Accepted:
+        batch_id: 1
+        start_offset: 2
+        end_offset: 3
+        timestamp: "[timestamp]"
+    "#);
 
     ingestor.shutdown().await;
     Ok(())
@@ -116,21 +161,30 @@ async fn ingests_multiple_messages_without_partition_values() -> Result<()> {
 
 #[tokio::test]
 async fn ingests_single_message_with_partition_value() -> Result<()> {
-    let namespace_name = test_namespace_name();
-    let topic_name = TopicName::new_unchecked("people_by_region", namespace_name.clone());
-    let partition = PartitionValue::Int64(100);
     let mut log_meta = MockLogMetadataService::new();
     log_meta.expect_commit().times(1).returning({
-        let namespace_name = namespace_name.clone();
-        let expected_batches = vec![ExpectedBatch {
-            topic_name: topic_name.clone(),
-            partition_value: Some(partition.clone()),
-            num_rows: 1,
-        }];
-        let commit_response = committed_batches(&[(0, 0)]);
-        move |namespace, batches| {
-            assert_commit_request(&namespace_name, &expected_batches, &namespace, &batches);
-            Ok(commit_response.clone())
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people_by_region
+              partition_value:
+                Int64: 100
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1271
+              timestamp: "[timestamp]"
+              num_rows: 1
+            "#);
+
+            Ok(vec![CommittedBatch::Accepted(AcceptedBatchInfo {
+                batch_id: 0,
+                start_offset: 0,
+                end_offset: 0,
+                timestamp: SystemTime::now(),
+            })])
         }
     });
 
@@ -139,20 +193,29 @@ async fn ingests_single_message_with_partition_value() -> Result<()> {
     let topic = initialize_test_partitioned_topic(&ingestor.cluster_meta, &namespace.name).await;
     let partition = PartitionValue::Int64(100);
 
-    let responses = ingestor
+    let mut responses = ingestor
         .ingest(
             namespace.clone(),
-            vec![WriteBatchRequest::new(
-                topic.clone(),
-                people_records(&topic, &[(1, "Alice", 32)]),
-            )
-            .with_partition(partition.clone())],
+            vec![
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(1, "Alice", 32)]))
+                    .with_partition(partition.clone()),
+            ],
         )
         .await?;
 
-    assert_eq!(responses.len(), 1);
-    assert_accepted_batch(&responses[0], 0, 0);
+    sort_by_batch_id(&mut responses);
+
     ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+            "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 0
+        timestamp: "[timestamp]"
+    "#);
 
     ingestor.shutdown().await;
     Ok(())
@@ -160,34 +223,62 @@ async fn ingests_single_message_with_partition_value() -> Result<()> {
 
 #[tokio::test]
 async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
-    let namespace_name = test_namespace_name();
-    let topic_name = TopicName::new_unchecked("people_by_region", namespace_name.clone());
-    let partition_100 = PartitionValue::Int64(100);
-    let partition_200 = PartitionValue::Int64(200);
     let mut log_meta = MockLogMetadataService::new();
     log_meta.expect_commit().times(1).returning({
-        let namespace_name = namespace_name.clone();
-        let expected_batches = vec![
-            ExpectedBatch {
-                topic_name: topic_name.clone(),
-                partition_value: Some(partition_100.clone()),
-                num_rows: 2,
-            },
-            ExpectedBatch {
-                topic_name: topic_name.clone(),
-                partition_value: Some(partition_200.clone()),
-                num_rows: 1,
-            },
-            ExpectedBatch {
-                topic_name: topic_name.clone(),
-                partition_value: Some(partition_100.clone()),
-                num_rows: 1,
-            },
-        ];
-        let commit_response = committed_batches(&[(0, 1), (0, 0), (2, 2)]);
-        move |namespace, batches| {
-            assert_commit_request(&namespace_name, &expected_batches, &namespace, &batches);
-            Ok(commit_response.clone())
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people_by_region
+              partition_value:
+                Int64: 100
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1309
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 1
+              topic_name: tenants/test/namespaces/test-ns/topics/people_by_region
+              partition_value:
+                Int64: 200
+              file_ref: "[file-ref]"
+              page_offset_bytes: 1309
+              page_size_bytes: 1281
+              timestamp: "[timestamp]"
+              num_rows: 1
+            - batch_id: 2
+              topic_name: tenants/test/namespaces/test-ns/topics/people_by_region
+              partition_value:
+                Int64: 100
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1309
+              timestamp: "[timestamp]"
+              num_rows: 1
+            "#);
+
+            Ok(vec![
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 0,
+                    start_offset: 0,
+                    end_offset: 1,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 1,
+                    start_offset: 0,
+                    end_offset: 0,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 2,
+                    start_offset: 2,
+                    end_offset: 2,
+                    timestamp: SystemTime::now(),
+                }),
+            ])
         }
     });
 
@@ -197,7 +288,7 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
 
     let partition_100 = PartitionValue::Int64(100);
     let partition_200 = PartitionValue::Int64(200);
-    let responses = ingestor
+    let mut responses = ingestor
         .ingest(
             namespace.clone(),
             vec![
@@ -212,77 +303,238 @@ async fn ingests_multiple_messages_with_partition_values() -> Result<()> {
                 )
                 .with_partition(partition_200.clone())
                 .with_batch_id(1),
-                WriteBatchRequest::new(
-                    topic.clone(),
-                    people_records(&topic, &[(4, "Dylan", 75)]),
-                )
-                .with_partition(partition_100.clone())
-                .with_batch_id(2),
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(4, "Dylan", 75)]))
+                    .with_partition(partition_100.clone())
+                    .with_batch_id(2),
             ],
         )
         .await?;
 
-    assert_eq!(responses.len(), 3);
-    assert_accepted_batch(&responses[0], 0, 1);
-    assert_accepted_batch(&responses[1], 0, 0);
-    assert_accepted_batch(&responses[2], 2, 2);
+    sort_by_batch_id(&mut responses);
+
     ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+            "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 1
+        timestamp: "[timestamp]"
+    - Accepted:
+        batch_id: 1
+        start_offset: 0
+        end_offset: 0
+        timestamp: "[timestamp]"
+    - Accepted:
+        batch_id: 2
+        start_offset: 2
+        end_offset: 2
+        timestamp: "[timestamp]"
+    "#);
 
     ingestor.shutdown().await;
     Ok(())
 }
 
-fn test_namespace_name() -> NamespaceName {
-    let tenant_name = TenantName::new_unchecked("test");
-    NamespaceName::new_unchecked("test-ns", tenant_name)
+#[tokio::test]
+async fn rejects_batch_with_mismatched_schema() -> Result<()> {
+    let mut log_meta = MockLogMetadataService::new();
+    log_meta.expect_commit().times(1).returning({
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1300
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 2
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1300
+              timestamp: "[timestamp]"
+              num_rows: 1
+            "#);
+
+            Ok(vec![
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 0,
+                    start_offset: 0,
+                    end_offset: 1,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 2,
+                    start_offset: 2,
+                    end_offset: 2,
+                    timestamp: SystemTime::now(),
+                }),
+            ])
+        }
+    });
+
+    let ingestor = TestIngestor::start(log_meta).await;
+    let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
+    let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
+
+    let mut responses = ingestor
+        .ingest(
+            namespace.clone(),
+            vec![
+                WriteBatchRequest::new(
+                    topic.clone(),
+                    people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
+                ),
+                WriteBatchRequest::new(topic.clone(), common::mismatched_records(2))
+                    .with_batch_id(1),
+                WriteBatchRequest::new(
+                    topic.clone(),
+                    people_records(&topic, &[(3, "Charlie", 99)]),
+                )
+                .with_batch_id(2),
+            ],
+        )
+        .await?;
+
+    sort_by_batch_id(&mut responses);
+
+    ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+            "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 1
+        timestamp: "[timestamp]"
+    - Rejected:
+        batch_id: 1
+        num_rows: 2
+        reason: "validation error: batch schema does not match writer's schema"
+    - Accepted:
+        batch_id: 2
+        start_offset: 2
+        end_offset: 2
+        timestamp: "[timestamp]"
+    "#);
+
+    ingestor.shutdown().await;
+    Ok(())
 }
 
-fn assert_commit_request(
-    expected_namespace: &NamespaceName,
-    expected_batches: &[ExpectedBatch],
-    namespace: &NamespaceName,
-    batches: &[CommitBatchRequest],
-) {
-    assert_eq!(namespace, expected_namespace);
-    assert_eq!(batches.len(), expected_batches.len());
+#[tokio::test]
+async fn rejects_batch_when_log_metadata_rejects_it() -> Result<()> {
+    let mut log_meta = MockLogMetadataService::new();
+    log_meta.expect_commit().times(1).returning({
+        move |_namespace, batches| {
+            insta::assert_yaml_snapshot!(batches, {
+                "[].file_ref" => "[file-ref]",
+                "[].timestamp" => "[timestamp]"
+            }, @r#"
+            - batch_id: 0
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1329
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 1
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1329
+              timestamp: "[timestamp]"
+              num_rows: 2
+            - batch_id: 2
+              topic_name: tenants/test/namespaces/test-ns/topics/people
+              partition_value: ~
+              file_ref: "[file-ref]"
+              page_offset_bytes: 0
+              page_size_bytes: 1329
+              timestamp: "[timestamp]"
+              num_rows: 1
+            "#);
 
-    for (batch_id, (batch, expected_batch)) in batches.iter().zip(expected_batches).enumerate() {
-        assert_eq!(batch.batch_id, batch_id as u32);
-        assert_eq!(batch.topic_name, expected_batch.topic_name);
-        assert_eq!(batch.partition_value, expected_batch.partition_value);
-        assert_eq!(batch.num_rows, expected_batch.num_rows);
-        assert!(
-            batch
-                .file_ref
-                .starts_with(&format!("{expected_namespace}/folio/"))
-        );
-        assert!(batch.file_ref.ends_with(".folio"));
-        assert!(batch.batch_size_bytes > 0);
-    }
+            Ok(vec![
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 0,
+                    start_offset: 0,
+                    end_offset: 1,
+                    timestamp: SystemTime::now(),
+                }),
+                CommittedBatch::Rejected(RejectedBatchInfo {
+                    batch_id: 1,
+                    num_rows: 2,
+                    reason: "mock rejection".to_string(),
+                }),
+                CommittedBatch::Accepted(AcceptedBatchInfo {
+                    batch_id: 2,
+                    start_offset: 2,
+                    end_offset: 2,
+                    timestamp: SystemTime::now(),
+                }),
+            ])
+        }
+    });
 
-    if batches.len() == 1 {
-        assert_eq!(batches[0].offset_bytes, 0);
-    } else {
-        let first_file_ref = &batches[0].file_ref;
-        assert!(
-            batches
-                .iter()
-                .all(|batch| batch.file_ref == *first_file_ref)
-        );
-    }
-}
+    let ingestor = TestIngestor::start(log_meta).await;
+    let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
+    let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
 
-fn committed_batches(offsets: &[(u64, u64)]) -> Vec<CommittedBatch> {
-    offsets
-        .iter()
-        .enumerate()
-        .map(|(batch_id, (start_offset, end_offset))| {
-            CommittedBatch::Accepted(AcceptedBatchInfo {
-                batch_id: batch_id as u32,
-                start_offset: *start_offset,
-                end_offset: *end_offset,
-                timestamp: std::time::SystemTime::now(),
-            })
-        })
-        .collect()
+    let mut responses = ingestor
+        .ingest(
+            namespace.clone(),
+            vec![
+                WriteBatchRequest::new(
+                    topic.clone(),
+                    people_records(&topic, &[(1, "Alice", 32), (2, "Bob", 27)]),
+                ),
+                WriteBatchRequest::new(
+                    topic.clone(),
+                    people_records(&topic, &[(3, "Charlie", 99), (4, "Dylan", 75)]),
+                )
+                .with_batch_id(1),
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(5, "Eve", 45)]))
+                    .with_batch_id(2),
+            ],
+        )
+        .await?;
+
+    sort_by_batch_id(&mut responses);
+
+    ingestor.assert_folio_written(&namespace).await;
+
+    insta::assert_yaml_snapshot!(responses, {
+            "[].timestamp" => "[timestamp]"
+    }, @r#"
+    - Accepted:
+        batch_id: 0
+        start_offset: 0
+        end_offset: 1
+        timestamp: "[timestamp]"
+    - Rejected:
+        batch_id: 1
+        num_rows: 2
+        reason: mock rejection
+    - Accepted:
+        batch_id: 2
+        start_offset: 2
+        end_offset: 2
+        timestamp: "[timestamp]"
+    "#);
+
+    ingestor.shutdown().await;
+    Ok(())
 }

@@ -34,9 +34,9 @@ message CommitBatchRequest {
   /// The folio file containing the batch.
   string file_ref = 5;
   /// The start offset of the batch's page in the folio file.
-  uint64 offset_bytes = 6;
+  uint64 page_offset_bytes = 6;
   /// The batch size, in bytes.
-  uint64 batch_size_bytes = 7;
+  uint64 page_size_bytes = 7;
   /// The request id used to correlate the request with the response.
   uint32 batch_id = 8;
 }

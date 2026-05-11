@@ -71,8 +71,8 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
                 topic_name,
                 partition_value,
                 file_ref: meta.file_ref,
-                offset_bytes: meta.offset_bytes,
-                batch_size_bytes: meta.batch_size_bytes,
+                page_offset_bytes: meta.page_offset_bytes,
+                page_size_bytes: meta.page_size_bytes,
                 timestamp: None,
                 num_rows: meta.num_rows,
             });
@@ -88,8 +88,8 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
             topic_name,
             partition_value,
             file_ref: meta.file_ref,
-            offset_bytes: meta.offset_bytes,
-            batch_size_bytes: meta.batch_size_bytes,
+            page_offset_bytes: meta.page_offset_bytes,
+            page_size_bytes: meta.page_size_bytes,
             timestamp: Some(timestamp),
             num_rows: meta.num_rows,
         })
@@ -107,8 +107,8 @@ impl From<&CommitBatchRequest> for pb::CommitBatchRequest {
             timestamp,
             num_rows: meta.num_rows,
             file_ref: meta.file_ref.clone(),
-            offset_bytes: meta.offset_bytes,
-            batch_size_bytes: meta.batch_size_bytes,
+            page_offset_bytes: meta.page_offset_bytes,
+            page_size_bytes: meta.page_size_bytes,
         }
     }
 }
