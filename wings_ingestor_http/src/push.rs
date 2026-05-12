@@ -54,6 +54,7 @@ async fn process_push_request(
 
     let mut seen = HashSet::new();
     let mut writes = Vec::with_capacity(request.batches.len());
+    let mut batch_id = 0;
 
     for batch in request.batches {
         let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
@@ -98,12 +99,14 @@ async fn process_push_request(
             .map(|ts| SystemTime::UNIX_EPOCH + Duration::from_millis(ts));
 
         let batch = WriteBatchRequest {
-            batch_id: 0,
+            batch_id,
             topic: topic_ref,
             partition: batch.partition,
             records: record_batch,
             timestamp,
         };
+
+        batch_id += 1;
 
         writes.push(batch);
     }
@@ -114,7 +117,7 @@ async fn process_push_request(
         });
     }
 
-    let batches = state
+    let mut batches = state
         .batch_ingestion
         .ingest(
             namespace_ref,
@@ -123,10 +126,12 @@ async fn process_push_request(
         .await
         .map_err(|err| HttpIngestorError::Internal {
             message: format!("failed to ingest batches: {err}"),
-        })?
-        .into_iter()
-        .map(BatchResponse::from)
-        .collect();
+        })?;
+
+    // The ingestion service does not preserve ordering. Sort the batches back to the same order as they arrived.
+    batches.sort_by_key(|b| b.batch_id());
+
+    let batches = batches.into_iter().map(BatchResponse::from).collect();
 
     Ok(PushResponse { batches })
 }
