@@ -27,8 +27,8 @@ pub enum ClientError {
     StreamClosed,
     #[snafu(display("Timeout"))]
     Timeout,
-    #[snafu(display("Unexpected request ID: expected {expected}, actual {actual}"))]
-    UnexpectedRequestId { expected: u64, actual: u64 },
+    #[snafu(display("Unexpected batch ID: expected {expected}, actual {actual}"))]
+    UnexpectedBatchId { expected: u32, actual: u32 },
 }
 
 pub type Result<T, E = ClientError> = std::result::Result<T, E>;

@@ -79,6 +79,7 @@ pub async fn run_test(
 
                 let response = push_client
                     .push(WriteRequest {
+                        topic_name: topic.name.clone(),
                         data: batch,
                         partition_value,
                         timestamp: None,

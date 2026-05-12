@@ -16,7 +16,7 @@ use wings_control_plane_core::{
 };
 use wings_control_plane_sql::{Database, SqlControlPlane};
 use wings_flight::WingsFlightSqlServer;
-use wings_ingestor_core::{BatchIngestor, BatchIngestorClient, run_background_ingestor};
+use wings_ingestor_core::{Ingestor, IngestorClient};
 use wings_ingestor_http::HttpIngestor;
 use wings_object_store::{
     CloudObjectStoreFactory, LocalFileSystemFactory, ObjectStoreFactory, TemporaryFileSystemFactory,
@@ -201,7 +201,7 @@ impl DevArgs {
             object_store_factory.clone(),
         );
 
-        let ingestor = BatchIngestor::new(object_store_factory.clone(), control_plane.clone());
+        let ingestor = Ingestor::new(object_store_factory.clone(), control_plane.clone());
         let worker_pool = {
             let topic_cache = TopicCache::new(control_plane.clone());
             let namespace_cache = NamespaceCache::new(control_plane.clone());
@@ -227,7 +227,7 @@ impl DevArgs {
         let http_ingestor_fut =
             run_http_server(control_plane, ingestor.client(), http_address, ct.clone());
 
-        let ingestor_fut = run_background_ingestor(ingestor, ct.clone());
+        let ingestor_fut = ingestor.run(ct.clone());
         let worker_pool_fut = run_worker_pool(worker_pool, ct);
 
         tokio::select! {
@@ -389,7 +389,7 @@ async fn new_sql_control_plane(
 async fn run_grpc_server(
     control_plane: Arc<SqlControlPlane>,
     namespace_provider_factory: NamespaceProviderFactory,
-    batch_ingestor: BatchIngestorClient,
+    batch_ingestor: IngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
@@ -432,7 +432,7 @@ async fn run_grpc_server(
 
 async fn run_http_server(
     cluster_meta: Arc<dyn ClusterMetadata>,
-    batch_ingestor: BatchIngestorClient,
+    batch_ingestor: IngestorClient,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {

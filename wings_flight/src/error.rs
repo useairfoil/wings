@@ -6,9 +6,15 @@ use wings_observability::{ErrorExt, StatusCode};
 pub enum FlightServerError {
     #[snafu(display("invalid Flight ticket: {}", message))]
     InvalidTicket { message: String },
+    #[snafu(display("internal error: {}", message))]
+    Internal { message: String },
     #[snafu(transparent)]
     Arrow {
         source: datafusion::common::arrow::error::ArrowError,
+    },
+    #[snafu(transparent)]
+    ClusterMetadata {
+        source: wings_control_plane_core::cluster_metadata::ClusterMetadataError,
     },
     #[snafu(transparent)]
     DataFusion {
@@ -17,6 +23,10 @@ pub enum FlightServerError {
     #[snafu(transparent)]
     Flight {
         source: arrow_flight::error::FlightError,
+    },
+    #[snafu(transparent)]
+    Ingestor {
+        source: wings_ingestor_core::IngestorError,
     },
     #[snafu(transparent)]
     Query {
@@ -30,12 +40,19 @@ impl FlightServerError {
             message: message.into(),
         }
     }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal {
+            message: message.into(),
+        }
+    }
 }
 
 impl ErrorExt for FlightServerError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::InvalidTicket { .. } => StatusCode::InvalidArgument,
+            Self::ClusterMetadata { source } => source.status_code(),
             _ => StatusCode::Internal,
         }
     }

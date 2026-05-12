@@ -1,46 +1,43 @@
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     time::{Duration, SystemTime},
 };
 
 use arrow::array::RecordBatch;
-use arrow_flight::{FlightData, PutResult};
+use arrow_flight::{FlightData, PutResult, flight_service_client::FlightServiceClient};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
+use tonic::{Status, transport::Channel};
 use tracing::debug;
 use wings_control_plane_core::log_metadata::CommittedBatch;
 use wings_flight::IngestionResponseMetadata;
-use wings_resources::{PartitionValue, Topic, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, Topic, TopicName};
 
 use crate::{
     WingsClient,
     encode::IngestionFlightDataEncoder,
-    error::{
-        Result, StreamClosedSnafu, TicketDecodeSnafu, TimeoutSnafu, TonicSnafu,
-        UnexpectedRequestIdSnafu,
-    },
+    error::{Result, StreamClosedSnafu, TicketDecodeSnafu, TimeoutSnafu, TonicSnafu},
     metadata::new_request_for_namespace,
 };
 
 const DEFAULT_CHANNEL_SIZE: usize = 1024;
 
-/// A client to push data to a specific topic.
+/// A client to push data to a specific namespace.
 pub struct PushClient {
+    namespace_name: NamespaceName,
     topic_name: TopicName,
-    tx: mpsc::Sender<FlightData>,
-    next_request_id: AtomicU64,
-    // TODO: if the lock is not held across async, replace the implementation
+    next_batch_id: AtomicU32,
     encoder: Mutex<IngestionFlightDataEncoder>,
     inner: Mutex<InnerClient>,
     timeout_duration: Duration,
 }
 
 pub struct WriteRequest {
+    pub topic_name: TopicName,
     pub partition_value: Option<PartitionValue>,
     pub timestamp: Option<SystemTime>,
     pub data: RecordBatch,
@@ -48,61 +45,35 @@ pub struct WriteRequest {
 
 pub struct WriteResponse<'a> {
     client: &'a PushClient,
-    request_id: u64,
+    batch_id: u32,
 }
 
 struct InnerClient {
+    flight: FlightServiceClient<Channel>,
+    session: Option<PushSession>,
+    completed: HashMap<u32, CommittedBatch>,
+}
+
+struct PushSession {
+    tx: mpsc::Sender<FlightData>,
     response_stream: Pin<Box<dyn Stream<Item = Result<PutResult, Status>> + Send>>,
-    completed: HashMap<u64, CommittedBatch>,
+    committed: bool,
 }
 
 impl PushClient {
     pub(crate) async fn new(client: &WingsClient, topic: Topic) -> Result<Self> {
         debug!(topic = ?topic, "connecting to flight push endpoint");
-        let mut inner = client.flight.clone();
-
-        // TODO: make it configurable.
-        let (tx, rx) = mpsc::channel::<FlightData>(DEFAULT_CHANNEL_SIZE);
-
-        let mut encoder = IngestionFlightDataEncoder::new();
-
-        // The Arrow Flight server expects a message with a command to decide
-        // what action to take and sending a response to the client. Enqueue the
-        // schema now to avoid hanging when calling `do_put`.
-        let schema_message =
-            encoder.encode_schema(&topic.name, topic.arrow_schema_without_partition_field());
-        let _ = tx.send(schema_message).await;
-
-        let input_stream = ReceiverStream::new(rx);
-        let request = new_request_for_namespace(&topic.name.parent, input_stream);
-        let mut response_stream = inner.do_put(request).await?.into_inner().boxed();
-
-        let Some(put_result) = response_stream.try_next().await? else {
-            return StreamClosedSnafu.fail();
-        };
-
-        let request_id =
-            IngestionResponseMetadata::try_decode_schema_message(put_result.app_metadata)
-                .context(TicketDecodeSnafu {})?;
-
-        if request_id != 0 {
-            return UnexpectedRequestIdSnafu {
-                expected: 0u64,
-                actual: request_id,
-            }
-            .fail();
-        }
-
         let inner = InnerClient {
-            response_stream,
+            flight: client.flight.clone(),
+            session: None,
             completed: Default::default(),
         };
 
         Ok(Self {
+            namespace_name: topic.name.parent.clone(),
             topic_name: topic.name.clone(),
-            tx,
-            encoder: Mutex::new(encoder),
-            next_request_id: AtomicU64::new(1),
+            encoder: Mutex::new(IngestionFlightDataEncoder::new()),
+            next_batch_id: AtomicU32::new(0),
             inner: Mutex::new(inner),
             timeout_duration: Duration::from_secs(3),
         })
@@ -113,70 +84,133 @@ impl PushClient {
     }
 
     pub async fn push(&self, request: WriteRequest) -> Result<WriteResponse<'_>> {
-        let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst);
-        let flight_data = self.encoder.lock().await.encode(request_id, request)?;
+        let batch_id = self.next_batch_id.fetch_add(1, Ordering::SeqCst);
+        let flight_data = self.encoder.lock().await.encode(batch_id, request)?;
 
         debug!(
-            request_id,
+            batch_id,
             num_messages = flight_data.len(),
             "sending flight data"
         );
 
-        // TODO: since we're sending multiple messages, we should add a timeout.
-        for message in flight_data {
-            let _ = self.tx.send(message).await;
-        }
+        self.inner
+            .lock()
+            .await
+            .send_batch(&self.namespace_name, flight_data)
+            .await?;
 
         Ok(WriteResponse {
             client: self,
-            request_id,
+            batch_id,
         })
     }
 
-    async fn wait_for_response(&self, request_id: u64) -> Result<CommittedBatch> {
+    async fn wait_for_response(&self, batch_id: u32) -> Result<CommittedBatch> {
+        let commit_message = self.encoder.lock().await.encode_commit();
         let mut inner = self.inner.lock().await;
         inner
-            .wait_for_response(request_id, self.timeout_duration)
+            .wait_for_response(batch_id, commit_message, self.timeout_duration)
             .await
     }
 }
 
 impl WriteResponse<'_> {
     pub async fn wait_for_response(self) -> Result<CommittedBatch> {
-        self.client.wait_for_response(self.request_id).await
+        self.client.wait_for_response(self.batch_id).await
     }
 }
 
 impl InnerClient {
+    async fn send_batch(
+        &mut self,
+        namespace_name: &NamespaceName,
+        flight_data: Vec<FlightData>,
+    ) -> Result<()> {
+        if self.session.is_none() {
+            let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
+            let input_stream = ReceiverStream::new(rx);
+            let request = new_request_for_namespace(namespace_name, input_stream);
+            let response_stream = self.flight.do_put(request).await?.into_inner().boxed();
+
+            self.session = Some(PushSession {
+                tx,
+                response_stream,
+                committed: false,
+            });
+        }
+
+        let session = self.session.as_mut().expect("session was checked above");
+
+        if session.committed {
+            return StreamClosedSnafu.fail();
+        }
+
+        for message in flight_data {
+            session
+                .tx
+                .send(message)
+                .await
+                .map_err(|_| StreamClosedSnafu.build())?;
+        }
+
+        Ok(())
+    }
+
     async fn wait_for_response(
         &mut self,
-        request_id: u64,
+        batch_id: u32,
+        commit_message: FlightData,
         timeout_duration: Duration,
     ) -> Result<CommittedBatch> {
-        if let Some(response) = self.completed.remove(&request_id) {
+        if let Some(response) = self.completed.remove(&batch_id) {
             return Ok(response);
         };
 
-        loop {
-            let response = tokio::time::timeout(timeout_duration, self.response_stream.try_next());
+        self.commit(commit_message).await?;
+        self.read_commit_response(timeout_duration).await?;
 
-            let put_result = match response.await {
-                Err(_) => return TimeoutSnafu {}.fail(),
-                Ok(Ok(None)) => return StreamClosedSnafu {}.fail(),
-                Ok(Ok(Some(put_result))) => put_result,
-                Ok(Err(err)) => return Err(err).context(TonicSnafu {}),
-            };
+        self.completed
+            .remove(&batch_id)
+            .ok_or_else(|| StreamClosedSnafu.build())
+    }
 
-            let response = IngestionResponseMetadata::try_decode(put_result.app_metadata.clone())
-                .context(TicketDecodeSnafu {})?;
+    async fn commit(&mut self, commit_message: FlightData) -> Result<()> {
+        let Some(session) = self.session.as_mut() else {
+            return StreamClosedSnafu.fail();
+        };
 
-            assert_ne!(response.request_id, 0, "received invalid request id");
-
-            if response.request_id == request_id {
-                return Ok(response.result);
-            } else {
-                self.completed.insert(response.request_id, response.result);
-            }
+        if !session.committed {
+            session
+                .tx
+                .send(commit_message)
+                .await
+                .map_err(|_| StreamClosedSnafu.build())?;
+            session.committed = true;
         }
+
+        Ok(())
+    }
+
+    async fn read_commit_response(&mut self, timeout_duration: Duration) -> Result<()> {
+        let Some(mut session) = self.session.take() else {
+            return StreamClosedSnafu.fail();
+        };
+
+        let response = tokio::time::timeout(timeout_duration, session.response_stream.try_next());
+        let put_result = match response.await {
+            Err(_) => return TimeoutSnafu {}.fail(),
+            Ok(Ok(None)) => return StreamClosedSnafu {}.fail(),
+            Ok(Ok(Some(put_result))) => put_result,
+            Ok(Err(err)) => return Err(err).context(TonicSnafu {}),
+        };
+
+        let response = IngestionResponseMetadata::try_decode(put_result.app_metadata.as_ref())
+            .context(TicketDecodeSnafu {})?;
+
+        for batch in response.batches {
+            self.completed.insert(batch.batch_id(), batch);
+        }
+
+        Ok(())
     }
 }

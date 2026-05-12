@@ -7,10 +7,7 @@ use arrow_flight::{
 use prost::{DecodeError, Message, bytes::Bytes};
 use prost_types::{DurationError, TimestampError};
 use snafu::{ResultExt, Snafu};
-use wings_control_plane_core::{
-    log_metadata::CommittedBatch,
-    pb::{WireError, schema::FromOptionalField},
-};
+use wings_control_plane_core::{log_metadata::CommittedBatch, pb::WireError};
 use wings_resources::{PartitionValue, ResourceError, TopicName};
 
 use crate::error::FlightServerError;
@@ -23,15 +20,15 @@ pub struct StatementQueryTicket {
 
 #[derive(Clone, Debug)]
 pub struct IngestionRequestMetadata {
-    pub request_id: u64,
+    pub batch_id: u32,
+    pub topic_name: TopicName,
     pub partition_value: Option<PartitionValue>,
     pub timestamp: Option<SystemTime>,
 }
 
 #[derive(Clone, Debug)]
 pub struct IngestionResponseMetadata {
-    pub request_id: u64,
-    pub result: CommittedBatch,
+    pub batches: Vec<CommittedBatch>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,20 +73,20 @@ pub mod pb {
 
     #[derive(Clone, prost::Message)]
     pub struct IngestionRequestMetadata {
-        #[prost(uint64, tag = "1")]
-        pub request_id: u64,
+        #[prost(uint32, tag = "1")]
+        pub batch_id: u32,
         #[prost(message, tag = "2")]
         pub partition_value: Option<pb::PartitionValue>,
         #[prost(message, tag = "3")]
         pub timestamp: Option<prost_types::Timestamp>,
+        #[prost(string, tag = "4")]
+        pub topic_name: String,
     }
 
     #[derive(Clone, prost::Message)]
     pub struct IngestionResponseMetadata {
-        #[prost(uint64, tag = "1")]
-        pub request_id: u64,
-        #[prost(message, tag = "2")]
-        pub result: Option<pb::CommittedBatch>,
+        #[prost(message, repeated, tag = "2")]
+        pub batches: Vec<pb::CommittedBatch>,
     }
 
     #[derive(Clone, prost::Message)]
@@ -148,35 +145,50 @@ impl StatementQueryTicket {
 
 impl IngestionRequestMetadata {
     pub fn new(
-        request_id: u64,
+        batch_id: u32,
+        topic_name: TopicName,
         partition_value: Option<PartitionValue>,
         timestamp: Option<SystemTime>,
     ) -> Self {
         Self {
-            request_id,
+            batch_id,
+            topic_name,
             partition_value,
             timestamp,
         }
     }
 
-    pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {
-        let proto = pb::IngestionRequestMetadata::decode(ticket).context(ProstSnafu {})?;
+    pub fn try_decode(bytes: &[u8]) -> Result<Self, TicketDecodeError> {
+        let proto = pb::IngestionRequestMetadata::decode(bytes).context(ProstSnafu {})?;
         let partition_value = proto
             .partition_value
             .map(PartitionValue::try_from)
             .transpose()
             .context(PartitionValueSnafu {})?;
+
         let timestamp = proto
             .timestamp
             .map(SystemTime::try_from)
             .transpose()
             .context(TimestampSnafu {})?;
-        Ok(Self::new(proto.request_id, partition_value, timestamp))
+
+        let topic_name = proto
+            .topic_name
+            .parse()
+            .context(ResourceNameSnafu { resource: "topic" })?;
+
+        Ok(Self {
+            batch_id: proto.batch_id,
+            topic_name,
+            partition_value,
+            timestamp,
+        })
     }
 
     pub fn encode(self) -> Bytes {
         let proto = pb::IngestionRequestMetadata {
-            request_id: self.request_id,
+            batch_id: self.batch_id,
+            topic_name: self.topic_name.to_string(),
             partition_value: self.partition_value.as_ref().map(Into::into),
             timestamp: self.timestamp.map(Into::into),
         };
@@ -186,31 +198,27 @@ impl IngestionRequestMetadata {
 }
 
 impl IngestionResponseMetadata {
-    pub fn new(request_id: u64, result: CommittedBatch) -> Self {
-        Self { request_id, result }
+    pub fn new(batches: Vec<CommittedBatch>) -> Self {
+        Self { batches }
     }
 
-    pub fn try_decode_schema_message(ticket: Bytes) -> Result<u64, TicketDecodeError> {
-        let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
-        Ok(proto.request_id)
-    }
-
-    pub fn try_decode(ticket: Bytes) -> Result<Self, TicketDecodeError> {
-        let proto = pb::IngestionResponseMetadata::decode(ticket).context(ProstSnafu {})?;
-        let result = proto
-            .result
-            .required("result")
-            .context(CommittedBatchSnafu {})?
-            .try_into()
-            .context(CommittedBatchSnafu {})?;
-
-        Ok(Self::new(proto.request_id, result))
+    pub fn try_decode(bytes: &[u8]) -> Result<Self, TicketDecodeError> {
+        let proto = pb::IngestionResponseMetadata::decode(bytes).context(ProstSnafu {})?;
+        let batches = proto
+            .batches
+            .into_iter()
+            .map(|batch| batch.try_into().context(CommittedBatchSnafu {}))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { batches })
     }
 
     pub fn encode(self) -> Bytes {
         let proto = pb::IngestionResponseMetadata {
-            request_id: self.request_id,
-            result: Some(self.result.into()),
+            batches: self
+                .batches
+                .into_iter()
+                .map(|batch| batch.into())
+                .collect::<Vec<_>>(),
         };
 
         proto.encode_to_vec().into()
@@ -318,5 +326,57 @@ impl FetchTicket {
         Ok(Ticket {
             ticket: any.encode_to_vec().into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::SystemTime;
+
+    use wings_control_plane_core::log_metadata::{AcceptedBatchInfo, RejectedBatchInfo};
+    use wings_resources::{NamespaceName, TenantName};
+
+    use super::*;
+
+    fn topic_name() -> TopicName {
+        TopicName::new_unchecked(
+            "topic",
+            NamespaceName::new_unchecked("namespace", TenantName::new_unchecked("tenant")),
+        )
+    }
+
+    #[test]
+    fn ingestion_request_metadata_round_trips_topic_name() {
+        let topic_name = topic_name();
+        let metadata = IngestionRequestMetadata::new(42, topic_name.clone(), None, None);
+
+        let decoded = IngestionRequestMetadata::try_decode(metadata.encode().as_ref()).unwrap();
+
+        assert_eq!(decoded.batch_id, 42);
+        assert_eq!(decoded.topic_name, topic_name);
+        assert_eq!(decoded.partition_value, None);
+        assert_eq!(decoded.timestamp, None);
+    }
+
+    #[test]
+    fn ingestion_commit_response_metadata_round_trips_multiple_results() {
+        let batches = vec![
+            CommittedBatch::Accepted(AcceptedBatchInfo {
+                batch_id: 1,
+                start_offset: 10,
+                end_offset: 12,
+                timestamp: SystemTime::UNIX_EPOCH,
+            }),
+            CommittedBatch::Rejected(RejectedBatchInfo {
+                batch_id: 2,
+                num_rows: 3,
+                reason: "rejected".to_string(),
+            }),
+        ];
+        let metadata = IngestionResponseMetadata::new(batches.clone());
+
+        let decoded = IngestionResponseMetadata::try_decode(metadata.encode().as_ref()).unwrap();
+
+        assert_eq!(decoded.batches, batches);
     }
 }

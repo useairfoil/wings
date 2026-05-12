@@ -5,29 +5,26 @@
 //!
 //! **Wire protocol**
 //!
-//! The stream must start with a `Schema` message. This message's metadata must have
-//! `request_id = 0` and contain the topic name. The schema in the message must
-//! be compatible with the topic schema.
+//! Each batch starts with a `Schema` message. This message's metadata contains
+//! the batch id, topic name, partition value, and timestamp. The schema in the
+//! message must be compatible with the topic schema.
 //!
-//! All other messages must have `request_id > 0`. The metadata must contain the partition
-//! value and timestamp, if any.
 //! Notice that the user may push batches that are larger than the maximum message size,
 //! for this reason, the encoder will split the batch into smaller batches.
-//! These batches must have the same `request_id` and metadata, the server uses the
-//! metadata to recompose the original batch.
+//! These batches belong to the latest schema message, and the server uses the
+//! schema metadata to recompose the original batch.
 //!
 //! This code is a modified version of the [original arrow flight encoder](https://github.com/apache/arrow-rs/blob/main/arrow-flight/src/encode.rs).
 //! All copyright to the original authors is reserved.
 
 use arrow::{
     array::RecordBatch,
-    datatypes::{Schema, SchemaRef},
+    datatypes::Schema,
     ipc::writer::{CompressionContext, DictionaryTracker, IpcDataGenerator, IpcWriteOptions},
 };
 use arrow_flight::{FlightData, FlightDescriptor, SchemaAsIpc, flight_descriptor::DescriptorType};
 use snafu::ResultExt;
 use wings_flight::IngestionRequestMetadata;
-use wings_resources::TopicName;
 
 use crate::{
     WriteRequest,
@@ -45,26 +42,37 @@ impl IngestionFlightDataEncoder {
         }
     }
 
-    pub fn encode_schema(&mut self, topic_name: &TopicName, schema: SchemaRef) -> FlightData {
-        self.inner
-            .encode_schema(&schema)
-            .with_descriptor(FlightDescriptor {
-                r#type: DescriptorType::Path as _,
-                path: vec![topic_name.to_string()],
-                ..Default::default()
-            })
+    pub fn encode_commit(&self) -> FlightData {
+        self.inner.encode_schema(&Schema::empty())
     }
 
-    pub fn encode(&mut self, request_id: u64, request: WriteRequest) -> Result<Vec<FlightData>> {
-        let metadata =
-            IngestionRequestMetadata::new(request_id, request.partition_value, request.timestamp);
+    fn encode_schema(&mut self, batch_id: u32, request: &WriteRequest) -> FlightData {
+        let schema = request.data.schema();
+        let metadata = IngestionRequestMetadata::new(
+            batch_id,
+            request.topic_name.clone(),
+            request.partition_value.clone(),
+            request.timestamp,
+        );
+
+        self.inner
+            .encode_schema(schema.as_ref())
+            .with_descriptor(FlightDescriptor {
+                r#type: DescriptorType::Path as _,
+                path: vec![request.topic_name.to_string()],
+                ..Default::default()
+            })
+            .with_app_metadata(metadata.encode())
+    }
+
+    pub fn encode(&mut self, batch_id: u32, request: WriteRequest) -> Result<Vec<FlightData>> {
+        let schema = self.encode_schema(batch_id, &request);
         let (dictionaries, data) = self.inner.encode_batch(&request.data)?;
         assert!(
             dictionaries.is_empty(),
             "dictionary support not implemented yet"
         );
-        let flight_data = data.with_app_metadata(metadata.encode());
-        Ok(vec![flight_data])
+        Ok(vec![schema, data])
     }
 }
 

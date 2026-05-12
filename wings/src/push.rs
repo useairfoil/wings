@@ -115,7 +115,7 @@ impl PushArgs {
                 .context(InvalidResourceNameSnafu { resource: "topic" })?;
 
             let topic = cluster_meta
-                .get_topic(topic_name, TopicView::Basic)
+                .get_topic(topic_name.clone(), TopicView::Basic)
                 .await
                 .context(ClusterMetadataSnafu {
                     operation: "get_topic",
@@ -154,14 +154,15 @@ impl PushArgs {
             let data =
                 self.parse_payload(payload_str, topic.arrow_schema_without_partition_field())?;
 
-            let topic = TopicName::new(topic_id, namespace_name.clone())
-                .context(InvalidResourceNameSnafu { resource: "topic" })?;
-
-            requests.entry(topic).or_default().push(WriteRequest {
-                partition_value,
-                timestamp,
-                data,
-            });
+            requests
+                .entry(topic_name.clone())
+                .or_default()
+                .push(WriteRequest {
+                    topic_name: topic_name.clone(),
+                    partition_value,
+                    timestamp,
+                    data,
+                });
 
             i = payload_index + 1;
         }

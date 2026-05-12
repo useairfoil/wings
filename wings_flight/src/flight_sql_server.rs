@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow_flight::{
     FlightDescriptor, FlightEndpoint, FlightInfo, Ticket,
-    decode::{DecodedPayload, FlightDataDecoder},
+    decode::FlightDataDecoder,
     encode::FlightDataEncoderBuilder,
     error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
@@ -24,9 +24,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
 use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
-use wings_ingestor_core::BatchIngestorClient;
+use wings_ingestor_core::IngestorClient;
 use wings_query::TopicLogicalPlanExt;
-use wings_resources::{NamespaceName, TopicName};
+use wings_resources::NamespaceName;
 use wings_server_core::query::NamespaceProviderFactory;
 
 use crate::{
@@ -43,7 +43,7 @@ const INGESTION_CHANNEL_SIZE: usize = 64;
 pub struct WingsFlightSqlServer {
     topic_cache: TopicCache,
     namespace_cache: NamespaceCache,
-    ingestor: BatchIngestorClient,
+    ingestor: IngestorClient,
     provider_factory: NamespaceProviderFactory,
     metrics: FlightServerMetrics,
 }
@@ -52,7 +52,7 @@ impl WingsFlightSqlServer {
     pub fn new(
         namespace_cache: NamespaceCache,
         topic_cache: TopicCache,
-        ingestor: BatchIngestorClient,
+        ingestor: IngestorClient,
         provider_factory: NamespaceProviderFactory,
     ) -> Self {
         Self {
@@ -506,59 +506,21 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         debug!(namespace = %namespace_ref.name, "Starting ingestion stream");
 
-        let mut request_stream = FlightDataDecoder::new(request.into_inner().map_err(From::from));
-        let Some(first_message) = request_stream.try_next().await? else {
-            return Err(Status::invalid_argument("empty stream"));
-        };
-
-        let Some(flight_descriptor) = first_message.inner.flight_descriptor else {
-            return Err(Status::invalid_argument("missing flight descriptor"));
-        };
-
-        debug!(namespace = %namespace_ref.name, "Received flight descriptor");
-
-        let topic_name: TopicName = flight_descriptor
-            .path
-            .first()
-            .ok_or_else(|| Status::invalid_argument("missing path"))?
-            .parse()
-            .map_err(|err| {
-                Status::invalid_argument(format!("failed to parse topic name: {err}"))
-            })?;
-
-        if topic_name.parent() != &namespace_ref.name {
-            return Err(Status::invalid_argument("topic not in namespace"));
-        }
-
-        let topic_ref = self
-            .topic_cache
-            .get(topic_name.clone())
-            .await
-            .map_err(|err| {
-                if err.is_not_found() {
-                    Status::not_found(format!("topic not found: {topic_name}"))
-                } else {
-                    Status::internal(format!("failed to resolve topic: {topic_name}"))
-                }
-            })?;
-
-        let DecodedPayload::Schema(_schema) = first_message.payload else {
-            return Err(Status::invalid_argument("expected schema"));
-        };
+        let request_stream = FlightDataDecoder::new(request.into_inner().map_err(From::from));
 
         let (tx, rx) = mpsc::channel(INGESTION_CHANNEL_SIZE);
 
-        debug!(topic = %topic_ref.name, "Starting ingestion stream loop");
+        debug!(namespace = %namespace_ref.name, "Starting ingestion stream loop");
 
         tokio::spawn({
             let namespace_ref = namespace_ref.clone();
-            let topic_ref = topic_ref.clone();
+            let topic_cache = self.topic_cache.clone();
             let ingestor = self.ingestor.clone();
 
             async move {
                 match process_ingestion_stream(
                     namespace_ref,
-                    topic_ref,
+                    topic_cache,
                     request_stream,
                     ingestor,
                     tx.clone(),
@@ -566,10 +528,8 @@ impl FlightSqlService for WingsFlightSqlServer {
                 .await
                 {
                     Ok(_) => {}
-                    Err(_err) => {
-                        let _ = tx
-                            .send(Err(Status::internal("error processing stream")))
-                            .await;
+                    Err(err) => {
+                        let _ = tx.send(Err(Status::from(err))).await;
                     }
                 }
             }
