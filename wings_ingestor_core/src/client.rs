@@ -27,20 +27,36 @@ pub struct WriteBatchRequestWithNamespace {
     pub request: WriteBatchRequest,
 }
 
+#[derive(Debug)]
+pub enum IngestionRequest {
+    WriteBatch(WriteBatchRequest),
+    Abort,
+}
+
+impl From<WriteBatchRequest> for IngestionRequest {
+    fn from(request: WriteBatchRequest) -> Self {
+        Self::WriteBatch(request)
+    }
+}
+
 impl IngestorClient {
-    /// Ingests a stream of batches into the specified namespace.
+    /// Ingests a stream of requests into the specified namespace.
     ///
     /// Data is atomically committed after the stream is fully consumed.
     pub async fn ingest(
         &self,
         namespace: NamespaceRef,
-        batches: impl Stream<Item = WriteBatchRequest>,
+        requests: impl Stream<Item = IngestionRequest>,
     ) -> Result<Vec<CommittedBatch>> {
-        tokio::pin!(batches);
+        tokio::pin!(requests);
 
         let mut replies = FuturesOrdered::new();
 
-        while let Some(request) = batches.next().await {
+        while let Some(request) = requests.next().await {
+            let IngestionRequest::WriteBatch(request) = request else {
+                return Ok(Vec::default());
+            };
+
             let batch_id = request.batch_id;
             let num_rows = request.records.num_rows() as u32;
 

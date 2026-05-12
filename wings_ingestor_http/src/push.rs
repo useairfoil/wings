@@ -14,7 +14,7 @@ use datafusion::common::arrow::{
     compute::concat_batches, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
 };
 use futures::stream;
-use wings_ingestor_core::WriteBatchRequest;
+use wings_ingestor_core::{IngestionRequest, WriteBatchRequest};
 use wings_resources::{NamespaceName, TopicName};
 
 use crate::{
@@ -116,7 +116,10 @@ async fn process_push_request(
 
     let batches = state
         .batch_ingestion
-        .ingest(namespace_ref, stream::iter(writes))
+        .ingest(
+            namespace_ref,
+            stream::iter(writes.into_iter().map(IngestionRequest::from)),
+        )
         .await
         .map_err(|err| HttpIngestorError::Internal {
             message: format!("failed to ingest batches: {err}"),

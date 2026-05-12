@@ -13,7 +13,7 @@ mod uploader;
 pub mod test_utils;
 
 pub use self::{
-    client::IngestorClient,
+    client::{IngestionRequest, IngestorClient},
     error::{IngestorError, Result},
     ingestor::Ingestor,
     request::WriteBatchRequest,

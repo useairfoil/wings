@@ -15,7 +15,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use wings_control_plane_core::log_metadata::{
     AcceptedBatchInfo, CommittedBatch, RejectedBatchInfo,
 };
-use wings_ingestor_core::{Result, WriteBatchRequest};
+use wings_ingestor_core::{IngestionRequest, Result, WriteBatchRequest};
 use wings_resources::PartitionValue;
 
 #[tokio::test]
@@ -80,6 +80,33 @@ async fn ingests_single_message_without_partition_value() -> Result<()> {
     - path: "[path]"
       size: 1256
     "#);
+
+    ingestor.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn abort_returns_empty_response_without_committing() -> Result<()> {
+    let mut log_meta = MockLogMetadataService::new();
+    log_meta.expect_commit().times(0);
+
+    let ingestor = TestIngestor::start(log_meta).await;
+    let namespace = initialize_test_namespace(&ingestor.cluster_meta).await;
+    let topic = initialize_test_topic(&ingestor.cluster_meta, &namespace.name).await;
+
+    let responses = ingestor
+        .client
+        .ingest(
+            namespace.clone(),
+            futures::stream::iter([
+                WriteBatchRequest::new(topic.clone(), people_records(&topic, &[(1, "Alice", 32)]))
+                    .into(),
+                IngestionRequest::Abort,
+            ]),
+        )
+        .await?;
+
+    assert!(responses.is_empty());
 
     ingestor.shutdown().await;
     Ok(())

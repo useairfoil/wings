@@ -23,7 +23,7 @@ use wings_control_plane_core::{
     },
 };
 use wings_control_plane_sql::SqlControlPlane;
-use wings_ingestor_core::{Ingestor, IngestorClient, Result, WriteBatchRequest};
+use wings_ingestor_core::{IngestionRequest, Ingestor, IngestorClient, Result, WriteBatchRequest};
 use wings_object_store::{InMemoryFactory, ObjectStoreFactory};
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
@@ -239,8 +239,10 @@ impl TestIngestor {
     ) -> Result<Vec<CommittedBatch>> {
         tokio::time::timeout(
             Duration::from_secs(5),
-            self.client
-                .ingest(namespace, futures::stream::iter(requests)),
+            self.client.ingest(
+                namespace,
+                futures::stream::iter(requests.into_iter().map(IngestionRequest::from)),
+            ),
         )
         .await
         .expect("ingestion timed out")
@@ -251,7 +253,9 @@ impl TestIngestor {
         namespace: Arc<Namespace>,
         requests: impl Stream<Item = WriteBatchRequest>,
     ) -> Result<Vec<CommittedBatch>> {
-        self.client.ingest(namespace, requests).await
+        self.client
+            .ingest(namespace, requests.map(IngestionRequest::from))
+            .await
     }
 
     pub async fn list_files(&self, namespace: &Namespace) -> Vec<ObjectMeta> {
