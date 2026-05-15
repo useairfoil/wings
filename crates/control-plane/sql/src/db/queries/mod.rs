@@ -5,4 +5,4 @@ mod partition_location;
 mod partition_state;
 mod tasks;
 mod tenant;
-mod topic;
+mod table;

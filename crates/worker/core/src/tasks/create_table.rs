@@ -1,12 +1,12 @@
 use snafu::ResultExt;
 use tracing::{info, warn};
-use wings_control_plane_core::log_metadata::{
+use wings_control_plane_core::table_metadata::{
     CompleteTaskRequest, CreateTableResult, CreateTableTask, TaskMetadata, TaskResult,
 };
 
 use crate::{
     Worker,
-    error::{ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
+    error::{ClusterMetadataSnafu, DataLakeSnafu, TableMetadataSnafu, Result},
 };
 
 impl Worker {
@@ -17,25 +17,25 @@ impl Worker {
         _ct: tokio_util::sync::CancellationToken,
     ) -> Result<()> {
         info!(
-            topic_name = %task.topic_name,
+            table_name = %task.table_name,
             task_id = %metadata.task_id,
             "Executing create table task"
         );
 
-        let namespace_name = task.topic_name.parent().clone();
+        let namespace_name = task.table_name.parent().clone();
 
-        let topic_ref = match self.topic_cache.get(task.topic_name.clone()).await {
-            Ok(topic_ref) => topic_ref,
+        let table_ref = match self.table_cache.get(task.table_name.clone()).await {
+            Ok(table_ref) => table_ref,
             Err(err) => {
                 if err.is_not_found() {
                     warn!(
-                        topic = %task.topic_name,
-                        "received create table task for non-existent topic"
+                        table = %task.table_name,
+                        "received create table task for non-existent table"
                     );
                     return Ok(());
                 }
                 return Err(err).context(ClusterMetadataSnafu {
-                    operation: "get_topic",
+                    operation: "get_table",
                 });
             }
         };
@@ -56,7 +56,7 @@ impl Worker {
                 operation: "create",
             })?;
 
-        let complete = match data_lake.create_table(topic_ref).await {
+        let complete = match data_lake.create_table(table_ref).await {
             Ok(table_id) => {
                 let result = TaskResult::CreateTable(CreateTableResult { table_id });
                 CompleteTaskRequest::new_completed(metadata.task_id.clone(), result)
@@ -64,16 +64,16 @@ impl Worker {
             Err(err) => CompleteTaskRequest::new_failed(metadata.task_id.clone(), err.to_string()),
         };
 
-        self.log_meta
+        self.table_metadata
             .complete_task(complete)
             .await
-            .context(LogMetadataSnafu {
+            .context(TableMetadataSnafu {
                 operation: "complete_task",
             })?;
 
         info!(
             task_id = %metadata.task_id,
-            topic_name = %task.topic_name,
+            table_name = %task.table_name,
             "Create table task completed"
         );
 

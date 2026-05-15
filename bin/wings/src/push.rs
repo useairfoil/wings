@@ -11,10 +11,10 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_client::WriteRequest;
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, TopicView, tonic::ClusterMetadataClient},
-    log_metadata::CommittedBatch,
+    cluster_metadata::{ClusterMetadata, TableView, tonic::ClusterMetadataClient},
+    table_metadata::CommittedBatch,
 };
-use wings_resources::{NamespaceName, PartitionValue, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, TableName};
 
 use crate::{
     error::{
@@ -24,15 +24,15 @@ use crate::{
     remote::RemoteArgs,
 };
 
-/// Push messages to Wings topics
+/// Push messages to Wings tables
 #[derive(Parser)]
 pub struct PushArgs {
     /// Namespace name
     namespace: String,
 
-    /// Batches to push in the format: <topic_id> [<partition_value>] <payload>
+    /// Batches to push in the format: <table_id> [<partition_value>] <payload>
     ///
-    /// - topic_id: required, used to construct the topic name by joining with namespace
+    /// - table_id: required, used to construct the table name by joining with namespace
     /// - partition_value: optional, value for the partition key
     /// - payload: required, JSON payload or @file_path for file containing JSON messages
     batches: Vec<String>,
@@ -62,20 +62,20 @@ impl PushArgs {
             .context(InvalidTimestampFormatSnafu {})?
             .map(SystemTime::from);
 
-        let requests_by_topic = self
+        let requests_by_table = self
             .parse_batches_to_request(namespace_name, timestamp, &cluster_meta)
             .await?;
 
-        for (topic_name, requests) in requests_by_topic.into_iter() {
-            println!("Pushing data to topic {}", topic_name);
-            let topic_client = client
-                .push_client(topic_name)
+        for (table_name, requests) in requests_by_table.into_iter() {
+            println!("Pushing data to table {}", table_name);
+            let table_client = client
+                .push_client(table_name)
                 .await
                 .context(ClientSnafu {})?;
             let mut futures = FuturesOrdered::new();
 
             for request in requests {
-                let response_fut = topic_client.push(request).await.context(ClientSnafu {})?;
+                let response_fut = table_client.push(request).await.context(ClientSnafu {})?;
                 futures.push_back(response_fut.wait_for_response());
             }
 
@@ -95,10 +95,10 @@ impl PushArgs {
         namespace_name: NamespaceName,
         timestamp: Option<SystemTime>,
         cluster_meta: &ClusterMetadataClient<Channel>,
-    ) -> Result<HashMap<TopicName, Vec<WriteRequest>>> {
+    ) -> Result<HashMap<TableName, Vec<WriteRequest>>> {
         let mut i = 0;
 
-        let mut requests = HashMap::<TopicName, Vec<WriteRequest>>::new();
+        let mut requests = HashMap::<TableName, Vec<WriteRequest>>::new();
 
         while i < self.batches.len() {
             let remaining = self.batches.len() - i;
@@ -106,26 +106,26 @@ impl PushArgs {
             if remaining < 2 {
                 return Err(CliError::InvalidArgument {
                     name: "batch",
-                    message: "Each batch requires at least topic_id and payload".to_string(),
+                    message: "Each batch requires at least table_id and payload".to_string(),
                 });
             }
 
-            let topic_id = &self.batches[i];
-            let topic_name = TopicName::new(topic_id, namespace_name.clone())
-                .context(InvalidResourceNameSnafu { resource: "topic" })?;
+            let table_id = &self.batches[i];
+            let table_name = TableName::new(table_id, namespace_name.clone())
+                .context(InvalidResourceNameSnafu { resource: "table" })?;
 
-            let topic = cluster_meta
-                .get_topic(topic_name.clone(), TopicView::Basic)
+            let table = cluster_meta
+                .get_table(table_name.clone(), TableView::Basic)
                 .await
                 .context(ClusterMetadataSnafu {
-                    operation: "get_topic",
+                    operation: "get_table",
                 })?;
 
-            let partition_field = topic.partition_field();
+            let partition_field = table.partition_field();
 
             let next_arg = &self.batches[i + 1];
 
-            // Check what's the next argument based on whether the topic has a partition column
+            // Check what's the next argument based on whether the table has a partition column
             let (partition_value, payload_index) = if let Some(partition_column) = partition_field {
                 if remaining >= 3 {
                     // Next arg is partition value, followed by payload
@@ -152,13 +152,13 @@ impl PushArgs {
 
             let payload_str = &self.batches[payload_index];
             let data =
-                self.parse_payload(payload_str, topic.arrow_schema_without_partition_field())?;
+                self.parse_payload(payload_str, table.arrow_schema_without_partition_field())?;
 
             requests
-                .entry(topic_name.clone())
+                .entry(table_name.clone())
                 .or_default()
                 .push(WriteRequest {
-                    topic_name: topic_name.clone(),
+                    table_name: table_name.clone(),
                     partition_value,
                     timestamp,
                     data,

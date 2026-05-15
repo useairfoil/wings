@@ -1,3 +1,3 @@
-mod topic;
+mod table;
 
-pub use self::topic::{TopicLogicalPlanError, TopicLogicalPlanExt};
+pub use self::table::{TableLogicalPlanError, TopicLogicalPlanExt};

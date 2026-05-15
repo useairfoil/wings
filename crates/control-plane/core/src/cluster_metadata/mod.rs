@@ -10,17 +10,17 @@ pub mod tonic;
 use async_trait::async_trait;
 use wings_resources::{
     DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
-    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
-    TopicOptions,
+    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Table, TableName,
+    TableOptions,
 };
 
 pub use self::{
     error::{ClusterMetadataError, Result},
-    helpers::{CollectNamespaceTopicsOptions, collect_namespace_topics},
+    helpers::{CollectNamespaceTablesOptions, collect_namespace_tables},
     metrics::ClusterMetadataMetrics,
 };
 
-/// The cluster metadata trait provides methods for managing tenants, namespaces, and topics.
+/// The cluster metadata trait provides methods for managing tenants, namespaces, and tables.
 #[async_trait]
 pub trait ClusterMetadata: Send + Sync {
     // Tenant operations
@@ -59,25 +59,25 @@ pub trait ClusterMetadata: Send + Sync {
 
     /// Delete a namespace.
     ///
-    /// The request fails if the namespace has any topic.
+    /// The request fails if the namespace has any table.
     async fn delete_namespace(&self, name: NamespaceName) -> Result<()>;
 
-    // Topic operations
+    // Table operations
 
-    /// Create a new topic belonging to a namespace.
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic>;
+    /// Create a new table belonging to a namespace.
+    async fn create_table(&self, name: TableName, options: TableOptions) -> Result<Table>;
 
-    /// Return the specified topic.
-    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic>;
+    /// Return the specified table.
+    async fn get_table(&self, name: TableName, view: TableView) -> Result<Table>;
 
-    /// List all topics belonging to a namespace.
-    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse>;
+    /// List all tables belonging to a namespace.
+    async fn list_tables(&self, request: ListTablesRequest) -> Result<ListTablesResponse>;
 
-    /// Delete a topic.
+    /// Delete a table.
     ///
     /// This operation may take a long time to complete as it involves deleting
     /// data from object storage.
-    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()>;
+    async fn delete_table(&self, name: TableName, force: bool) -> Result<()>;
 
     // Object store operations
 
@@ -121,11 +121,11 @@ pub trait ClusterMetadata: Send + Sync {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub enum TopicView {
-    // Only return the basic topic information.
+pub enum TableView {
+    // Only return the basic table information.
     #[default]
     Basic,
-    // Include the topic status.
+    // Include the table status.
     Full,
 }
 
@@ -189,19 +189,19 @@ pub struct ListNamespacesResponse {
     pub next_page_token: Option<String>,
 }
 
-/// Request to list topics.
+/// Request to list tables.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListTopicsRequest {
+pub struct ListTablesRequest {
     /// The parent namespace.
     pub parent: NamespaceName,
-    /// The number of topics to return.
+    /// The number of tables to return.
     /// Default: 100, Maximum: 1000.
     pub page_size: Option<usize>,
     /// The continuation token.
     pub page_token: Option<String>,
 }
 
-impl ListTopicsRequest {
+impl ListTablesRequest {
     /// Create a new request for the given parent namespace.
     pub fn new(parent: NamespaceName) -> Self {
         Self {
@@ -212,11 +212,11 @@ impl ListTopicsRequest {
     }
 }
 
-/// Response from listing topics.
+/// Response from listing tables.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListTopicsResponse {
-    /// The topics.
-    pub topics: Vec<Topic>,
+pub struct ListTablesResponse {
+    /// The tables.
+    pub tables: Vec<Table>,
     /// The continuation token.
     pub next_page_token: Option<String>,
 }
@@ -327,20 +327,20 @@ impl<T: ClusterMetadata + ?Sized> ClusterMetadata for &T {
         (**self).delete_namespace(name).await
     }
 
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
-        (**self).create_topic(name, options).await
+    async fn create_table(&self, name: TableName, options: TableOptions) -> Result<Table> {
+        (**self).create_table(name, options).await
     }
 
-    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
-        (**self).get_topic(name, view).await
+    async fn get_table(&self, name: TableName, view: TableView) -> Result<Table> {
+        (**self).get_table(name, view).await
     }
 
-    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
-        (**self).list_topics(request).await
+    async fn list_tables(&self, request: ListTablesRequest) -> Result<ListTablesResponse> {
+        (**self).list_tables(request).await
     }
 
-    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
-        (**self).delete_topic(name, force).await
+    async fn delete_table(&self, name: TableName, force: bool) -> Result<()> {
+        (**self).delete_table(name, force).await
     }
 
     async fn create_object_store(

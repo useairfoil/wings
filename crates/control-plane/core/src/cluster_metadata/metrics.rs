@@ -4,7 +4,7 @@ use wings_observability::UpDownCounter;
 pub struct ClusterMetadataMetrics {
     pub tenants_count: UpDownCounter<i64>,
     pub namespaces_count: UpDownCounter<i64>,
-    pub topics_count: UpDownCounter<i64>,
+    pub tables_count: UpDownCounter<i64>,
     pub object_stores_count: UpDownCounter<i64>,
     pub data_lakes_count: UpDownCounter<i64>,
 }
@@ -22,9 +22,9 @@ impl Default for ClusterMetadataMetrics {
                 .i64_up_down_counter("metadata.namespaces.count")
                 .with_description("the number of namespaces")
                 .build(),
-            topics_count: meter
-                .i64_up_down_counter("metadata.topics.count")
-                .with_description("the number of topics")
+            tables_count: meter
+                .i64_up_down_counter("metadata.tables.count")
+                .with_description("the number of tables")
                 .build(),
             object_stores_count: meter
                 .i64_up_down_counter("metadata.object_stores.count")

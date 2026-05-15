@@ -3,14 +3,14 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status, async_trait};
 use wings_resources::{
     DataLakeName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName,
-    TenantName, TopicName, TopicOptions,
+    TenantName, TableName, TableOptions,
 };
 
 use crate::{
     ClusterMetadataError,
     cluster_metadata::{
         ClusterMetadata, ListDataLakesRequest, ListNamespacesRequest, ListObjectStoresRequest,
-        ListTenantsRequest, ListTopicsRequest, Result,
+        ListTenantsRequest, ListTablesRequest, Result,
     },
     error::ResourceErrorExt,
     pb::{
@@ -153,63 +153,63 @@ impl TonicService for ClusterMetadataServer {
         Ok(Response::new(()))
     }
 
-    async fn create_topic(
+    async fn create_table(
         &self,
-        request: Request<pb::CreateTopicRequest>,
-    ) -> Result<Response<pb::Topic>, Status> {
+        request: Request<pb::CreateTableRequest>,
+    ) -> Result<Response<pb::Table>, Status> {
         let request = request.into_inner();
 
         let namespace_name = NamespaceName::parse(&request.parent)
             .map_err(|err| err.to_cluster_metadata_error("namespace"))?;
 
-        let topic_name = TopicName::new(request.topic_id, namespace_name)
-            .map_err(|err| err.to_cluster_metadata_error("topic"))?;
+        let table_name = TableName::new(request.table_id, namespace_name)
+            .map_err(|err| err.to_cluster_metadata_error("table"))?;
 
-        let options = TopicOptions::try_from(request.topic.unwrap_or_default())
+        let options = TableOptions::try_from(request.table.unwrap_or_default())
             .map_err(ClusterMetadataError::from)?;
 
-        let topic = self
+        let table = self
             .inner
-            .create_topic(topic_name, options)
+            .create_table(table_name, options)
             .await?
             .try_into()
             .map_err(ClusterMetadataError::from)?;
 
-        Ok(Response::new(topic))
+        Ok(Response::new(table))
     }
 
-    async fn get_topic(
+    async fn get_table(
         &self,
-        request: Request<pb::GetTopicRequest>,
-    ) -> Result<Response<pb::Topic>, Status> {
+        request: Request<pb::GetTableRequest>,
+    ) -> Result<Response<pb::Table>, Status> {
         let request = request.into_inner();
 
-        let topic_name = TopicName::parse(&request.name)
-            .map_err(|err| err.to_cluster_metadata_error("topic"))?;
+        let table_name = TableName::parse(&request.name)
+            .map_err(|err| err.to_cluster_metadata_error("table"))?;
 
         let view = request.view().into();
 
-        let topic = self
+        let table = self
             .inner
-            .get_topic(topic_name, view)
+            .get_table(table_name, view)
             .await?
             .try_into()
             .map_err(ClusterMetadataError::from)?;
 
-        Ok(Response::new(topic))
+        Ok(Response::new(table))
     }
 
-    async fn list_topics(
+    async fn list_tables(
         &self,
-        request: Request<pb::ListTopicsRequest>,
-    ) -> Result<Response<pb::ListTopicsResponse>, Status> {
+        request: Request<pb::ListTablesRequest>,
+    ) -> Result<Response<pb::ListTablesResponse>, Status> {
         let request = request.into_inner();
 
-        let request = ListTopicsRequest::try_from(request).map_err(ClusterMetadataError::from)?;
+        let request = ListTablesRequest::try_from(request).map_err(ClusterMetadataError::from)?;
 
         let response = self
             .inner
-            .list_topics(request)
+            .list_tables(request)
             .await?
             .try_into()
             .map_err(ClusterMetadataError::from)?;
@@ -217,16 +217,16 @@ impl TonicService for ClusterMetadataServer {
         Ok(Response::new(response))
     }
 
-    async fn delete_topic(
+    async fn delete_table(
         &self,
-        request: Request<pb::DeleteTopicRequest>,
+        request: Request<pb::DeleteTableRequest>,
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
-        let topic_name = TopicName::parse(&request.name)
-            .map_err(|err| err.to_cluster_metadata_error("topic"))?;
+        let table_name = TableName::parse(&request.name)
+            .map_err(|err| err.to_cluster_metadata_error("table"))?;
 
-        self.inner.delete_topic(topic_name, request.force).await?;
+        self.inner.delete_table(table_name, request.force).await?;
 
         Ok(Response::new(()))
     }

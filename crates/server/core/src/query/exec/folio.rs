@@ -27,7 +27,7 @@ use datafusion::{
 };
 use futures::{Stream, StreamExt};
 use tracing::trace;
-use wings_control_plane_core::log_metadata::{CommittedBatch, FolioLocation};
+use wings_control_plane_core::table_metadata::{CommittedBatch, FolioLocation};
 use wings_resources::PartitionValue;
 use wings_schema::Field;
 
@@ -148,9 +148,9 @@ impl ExecutionPlan for FolioExec {
             output_schema: self.output_schema.clone(),
         };
 
-        let stream_with_partition_and_offset =
+        let stream_with_partition_and_seqnum =
             RecordBatchStreamAdapter::new(self.output_schema.clone(), stream);
-        Ok(Box::pin(stream_with_partition_and_offset))
+        Ok(Box::pin(stream_with_partition_and_seqnum))
     }
 }
 
@@ -164,7 +164,7 @@ impl FolioRecordBatchStream {
             columns.push(array);
         }
 
-        let mut offset_arr = UInt64Builder::new();
+        let mut seqnum_arr = UInt64Builder::new();
         let mut timestamp_arr = TimestampMicrosecondBuilder::new();
 
         let mut rows_to_fill = num_rows as u32;
@@ -178,13 +178,13 @@ impl FolioRecordBatchStream {
             match current_batch {
                 CommittedBatch::Rejected(info) => {
                     if info.num_rows > rows_to_fill {
-                        offset_arr.append_nulls(rows_to_fill as _);
+                        seqnum_arr.append_nulls(rows_to_fill as _);
                         timestamp_arr.append_nulls(rows_to_fill as _);
 
                         info.num_rows -= rows_to_fill;
                         rows_to_fill = 0;
                     } else {
-                        offset_arr.append_nulls(info.num_rows as _);
+                        seqnum_arr.append_nulls(info.num_rows as _);
                         timestamp_arr.append_nulls(info.num_rows as _);
 
                         rows_to_fill -= info.num_rows;
@@ -200,15 +200,15 @@ impl FolioRecordBatchStream {
                         .as_micros();
 
                     if num_rows > rows_to_fill {
-                        let end_offset = info.start_offset + rows_to_fill as u64 - 1;
+                        let end_seqnum = info.start_seqnum + rows_to_fill as u64 - 1;
 
-                        offset_arr.extend((info.start_offset..=end_offset).map(Some));
+                        seqnum_arr.extend((info.start_seqnum..=end_seqnum).map(Some));
                         timestamp_arr.append_value_n(ts_micros as _, rows_to_fill as _);
 
-                        info.start_offset = end_offset + 1;
+                        info.start_seqnum = end_seqnum + 1;
                         rows_to_fill = 0;
                     } else {
-                        offset_arr.extend((info.start_offset..=info.end_offset).map(Some));
+                        seqnum_arr.extend((info.start_seqnum..=info.end_seqnum).map(Some));
                         timestamp_arr.append_value_n(ts_micros as _, num_rows as _);
 
                         rows_to_fill -= num_rows;
@@ -220,12 +220,12 @@ impl FolioRecordBatchStream {
 
         trace!(
             data_num_rows = num_rows,
-            offset_num_rows = offset_arr.len(),
+            seqnum_num_rows = seqnum_arr.len(),
             timestamp_num_rows = timestamp_arr.len(),
             "FolioExec::execute add batch"
         );
 
-        columns.push(Arc::new(offset_arr.finish()));
+        columns.push(Arc::new(seqnum_arr.finish()));
         columns.push(Arc::new(timestamp_arr.finish()));
 
         let output = RecordBatch::try_new(self.output_schema.clone(), columns)?;
@@ -254,12 +254,12 @@ impl DisplayAs for FolioExec {
         let file_end = file_start + self.location.size_bytes;
         write!(
             f,
-            "FolioExec: location=[{}[{}..{}]] start_offset=[{:?}], end_offset=[{:?}]",
+            "FolioExec: location=[{}[{}..{}]] start_seqnum=[{:?}], end_seqnum=[{:?}]",
             &self.location.file_ref,
             file_start,
             file_end,
-            self.location.start_offset(),
-            self.location.end_offset()
+            self.location.start_seqnum(),
+            self.location.end_seqnum()
         )
     }
 }

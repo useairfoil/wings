@@ -9,7 +9,7 @@ pub mod types;
 use axum::{Router, routing::post};
 pub use error::{HttpIngestorError, Result};
 pub use types::{Batch, PushRequest, PushResponse};
-use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
+use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TableCache};
 use wings_ingestor_core::IngestorClient;
 
 use crate::push::push_handler;
@@ -21,7 +21,7 @@ pub struct HttpIngestor {
 
 #[derive(Clone)]
 pub struct HttpIngestorState {
-    topic_cache: TopicCache,
+    table_cache: TableCache,
     namespace_cache: NamespaceCache,
     batch_ingestion: IngestorClient,
 }
@@ -29,12 +29,12 @@ pub struct HttpIngestorState {
 impl HttpIngestor {
     /// Create a new HTTP ingestor with the specified listen address and caches.
     pub fn new(
-        topic_cache: TopicCache,
+        table_cache: TableCache,
         namespace_cache: NamespaceCache,
         batch_ingestion: IngestorClient,
     ) -> Self {
         let state = HttpIngestorState {
-            topic_cache,
+            table_cache,
             namespace_cache,
             batch_ingestion,
         };

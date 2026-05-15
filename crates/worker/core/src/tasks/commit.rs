@@ -1,12 +1,12 @@
 use snafu::ResultExt;
 use tracing::{info, warn};
-use wings_control_plane_core::log_metadata::{
+use wings_control_plane_core::table_metadata::{
     CommitResult, CommitTask, CompleteTaskRequest, TaskMetadata, TaskResult,
 };
 
 use crate::{
     Worker,
-    error::{ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
+    error::{ClusterMetadataSnafu, DataLakeSnafu, TableMetadataSnafu, Result},
 };
 
 impl Worker {
@@ -17,25 +17,25 @@ impl Worker {
         _ct: tokio_util::sync::CancellationToken,
     ) -> Result<()> {
         info!(
-            topic_name = %task.topic_name,
+            table_name = %task.table_name,
             task_id = %metadata.task_id,
             "Executing commit task"
         );
 
-        let namespace_name = task.topic_name.parent().clone();
+        let namespace_name = task.table_name.parent().clone();
 
-        let topic_ref = match self.topic_cache.get(task.topic_name.clone()).await {
-            Ok(topic_ref) => topic_ref,
+        let table_ref = match self.table_cache.get(task.table_name.clone()).await {
+            Ok(table_ref) => table_ref,
             Err(err) => {
                 if err.is_not_found() {
                     warn!(
-                        topic = %task.topic_name,
-                        "received commit task for non-existent topic"
+                        table = %task.table_name,
+                        "received commit task for non-existent table"
                     );
                     return Ok(());
                 }
                 return Err(err).context(ClusterMetadataSnafu {
-                    operation: "get_topic",
+                    operation: "get_table",
                 });
             }
         };
@@ -57,7 +57,7 @@ impl Worker {
             })?;
 
         let table_version = data_lake
-            .commit_data(topic_ref, &task.new_files)
+            .commit_data(table_ref, &task.new_files)
             .await
             .context(DataLakeSnafu {
                 operation: "commit_data",
@@ -67,19 +67,19 @@ impl Worker {
             table_version: table_version.clone(),
         });
 
-        self.log_meta
+        self.table_metadata
             .complete_task(CompleteTaskRequest::new_completed(
                 metadata.task_id.clone(),
                 result,
             ))
             .await
-            .context(LogMetadataSnafu {
+            .context(TableMetadataSnafu {
                 operation: "complete_task",
             })?;
 
         info!(
             task_id = %metadata.task_id,
-            topic_name = %task.topic_name,
+            table_name = %task.table_name,
             table_version = %table_version,
             "Commit task completed"
         );

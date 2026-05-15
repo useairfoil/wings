@@ -250,7 +250,6 @@ mod tests {
     // Test resource types
     resource_type!(TestTenant, "tenants");
     resource_type!(TestNamespace, "namespaces", TestTenant);
-    resource_type!(TestTopic, "topics", TestNamespace);
 
     #[test]
     fn test_tenant_name() {
@@ -293,35 +292,6 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_name() {
-        let tenant = TestTenantName::new("test-tenant").unwrap();
-        let namespace = TestNamespaceName::new("test-namespace", tenant).unwrap();
-        let topic = TestTopicName::new_unchecked("test-topic", namespace.clone());
-
-        assert_eq!(topic.id(), "test-topic");
-        assert_eq!(topic.parent(), &namespace);
-        assert_eq!(
-            topic.name(),
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
-        );
-        assert_eq!(
-            topic.to_string(),
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
-        );
-
-        let parsed =
-            TestTopicName::parse("tenants/test-tenant/namespaces/test-namespace/topics/test-topic")
-                .unwrap();
-        assert_eq!(parsed, topic);
-
-        let from_str: TestTopicName =
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
-                .parse()
-                .unwrap();
-        assert_eq!(from_str, topic);
-    }
-
-    #[test]
     fn test_parsing_errors() {
         // Test invalid tenant name
         let result = TestTenantName::parse("invalid");
@@ -334,14 +304,7 @@ mod tests {
         let result = TestNamespaceName::parse("tenants/test");
         assert!(matches!(result, Err(ResourceError::InvalidFormat { .. })));
 
-        let result = TestNamespaceName::parse("tenants/test/topics/test");
-        assert!(matches!(result, Err(ResourceError::InvalidFormat { .. })));
-
-        // Test invalid topic name
-        let result = TestTopicName::parse("tenants/test/namespaces/test");
-        assert!(matches!(result, Err(ResourceError::InvalidFormat { .. })));
-
-        let result = TestTopicName::parse("invalid/path");
+        let result = TestNamespaceName::parse("tenants/test/tables/test");
         assert!(matches!(result, Err(ResourceError::InvalidFormat { .. })));
     }
 
@@ -351,9 +314,6 @@ mod tests {
         assert!(result.is_err());
 
         let result: Result<TestNamespaceName, _> = "tenants/test".parse();
-        assert!(result.is_err());
-
-        let result: Result<TestTopicName, _> = "invalid/path".parse();
         assert!(result.is_err());
     }
 

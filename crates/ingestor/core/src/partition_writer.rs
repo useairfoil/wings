@@ -6,7 +6,7 @@ use parquet::{
     file::{metadata::KeyValue, properties::WriterProperties},
 };
 use snafu::ResultExt;
-use wings_resources::{PartitionValue, TopicName};
+use wings_resources::{PartitionValue, TableName};
 
 use crate::{
     error::{IngestorError, ParquetSnafu, Result, ValidationSnafu},
@@ -19,8 +19,8 @@ const DEFAULT_BUFFER_CAPACITY: usize = 8 * 1024 * 1024;
 
 /// A folio's page with data for a single partition.
 pub struct FolioPage {
-    /// The topic name for the partition.
-    pub topic_name: TopicName,
+    /// The table name for the partition.
+    pub table_name: TableName,
     /// The partition value for the partition.
     pub partition_value: Option<PartitionValue>,
     /// The serialized data.
@@ -50,14 +50,14 @@ pub struct PartitionPageWriter {
 impl PartitionPageWriter {
     /// Creates a new partition page writer with the given schema.
     pub fn new(
-        topic_name: TopicName,
+        table_name: TableName,
         partition_value: Option<PartitionValue>,
         schema: SchemaRef,
     ) -> Result<Self> {
-        // Add topic name and partition key to the metadata to help with debugging and troubleshooting.
+        // Add table name and partition key to the metadata to help with debugging and troubleshooting.
         let partition_value = partition_value.map(|v| v.to_string());
         let kv_metadata = vec![
-            KeyValue::new("WINGS:topic-name".to_string(), topic_name.to_string()),
+            KeyValue::new("WINGS:table-name".to_string(), table_name.to_string()),
             KeyValue::new("WINGS:partition-value".to_string(), partition_value),
         ];
 
@@ -68,13 +68,13 @@ impl PartitionPageWriter {
         let metrics_kv = {
             use wings_observability::KeyValue as KV;
 
-            let topic_id = topic_name.id().to_string();
-            let namespace_id = topic_name.parent().id().to_string();
-            let tenant_id = topic_name.parent().parent().id().to_string();
+            let table_id = table_name.id().to_string();
+            let namespace_id = table_name.parent().id().to_string();
+            let tenant_id = table_name.parent().parent().id().to_string();
             vec![
                 KV::new("tenant", tenant_id),
                 KV::new("namespace", namespace_id),
-                KV::new("topic", topic_id),
+                KV::new("table", table_id),
             ]
         };
 
@@ -156,7 +156,7 @@ impl PartitionPageWriter {
     /// On error, forwards the error to all reply channels in the page and returns `None`.
     pub fn finish(
         self,
-        topic_name: TopicName,
+        table_name: TableName,
         partition_value: Option<PartitionValue>,
         metrics: &IngestorMetrics,
     ) -> Option<FolioPage> {
@@ -168,7 +168,7 @@ impl PartitionPageWriter {
                     .add(bytes_written as _, &self.metrics_kv);
 
                 FolioPage {
-                    topic_name,
+                    table_name,
                     partition_value,
                     data,
                     replies: self.replies,
@@ -217,16 +217,16 @@ mod tests {
     use crate::{
         error::IngestorError,
         metrics::IngestorMetrics,
-        test_utils::{generate_test_batch, generate_write_request, schema, test_topic_name},
+        test_utils::{generate_test_batch, generate_write_request, schema, test_table_name},
     };
 
     #[test]
     fn write_batch_tracks_offsets_and_finish_returns_page() {
         let metrics = IngestorMetrics::default();
-        let topic_name = test_topic_name();
+        let table_name = test_table_name();
         let partition_value = Some(PartitionValue::Int64(42));
         let mut writer =
-            PartitionPageWriter::new(topic_name.clone(), partition_value.clone(), schema())
+            PartitionPageWriter::new(table_name.clone(), partition_value.clone(), schema())
                 .expect("failed to create partition page writer");
 
         let first_timestamp = SystemTime::UNIX_EPOCH;
@@ -248,10 +248,10 @@ mod tests {
         assert!(second_bytes > 0);
 
         let page = writer
-            .finish(topic_name.clone(), partition_value.clone(), &metrics)
+            .finish(table_name.clone(), partition_value.clone(), &metrics)
             .expect("failed to finish partition page");
 
-        assert_eq!(page.topic_name, topic_name);
+        assert_eq!(page.table_name, table_name);
         assert_eq!(page.partition_value, partition_value);
         assert!(!page.data.is_empty());
         assert_eq!(page.replies.len(), 2);
@@ -269,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn write_batch_rejects_schema_mismatch_and_notifies_reply() {
         let metrics = IngestorMetrics::default();
-        let mut writer = PartitionPageWriter::new(test_topic_name(), None, schema())
+        let mut writer = PartitionPageWriter::new(test_table_name(), None, schema())
             .expect("failed to create partition page writer");
         let (reply, rx) = oneshot::channel();
 

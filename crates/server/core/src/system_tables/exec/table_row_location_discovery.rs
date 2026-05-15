@@ -17,32 +17,32 @@ use datafusion::{
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
-    log_metadata::{
-        LogLocation, LogMetadata,
-        stream::{PaginatedLogLocationStream, PaginatedPartitionMetadataStream},
+    cluster_metadata::{ClusterMetadata, stream::PaginatedTableStream},
+    table_metadata::{
+        TableLocation, TableMetadata,
+        stream::{PaginatedTableLocationStream, PaginatedPartitionMetadataStream},
     },
 };
-use wings_resources::{NamespaceName, PartitionValue, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, TableName};
 
 use crate::{options::FetchOptions, system_tables::helpers::TOPIC_NAME_COLUMN};
 
-/// Execution plan for discovering the location of topic offsets.
-pub struct TopicOffsetLocationDiscoveryExec {
+/// Execution plan for discovering the location of table rows.
+pub struct TableRowLocationDiscoveryExec {
     cluster_meta: Arc<dyn ClusterMetadata>,
-    log_meta: Arc<dyn LogMetadata>,
+    table_metadata: Arc<dyn TableMetadata>,
     namespace: NamespaceName,
-    topics: Option<Vec<String>>,
+    tables: Option<Vec<String>>,
     properties: PlanProperties,
     fetch_options: FetchOptions,
 }
 
-impl TopicOffsetLocationDiscoveryExec {
+impl TableRowLocationDiscoveryExec {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         namespace: NamespaceName,
-        topics: Option<Vec<String>>,
+        tables: Option<Vec<String>>,
         fetch_options: FetchOptions,
     ) -> Self {
         let schema = Self::schema();
@@ -50,9 +50,9 @@ impl TopicOffsetLocationDiscoveryExec {
 
         Self {
             cluster_meta,
-            log_meta,
+            table_metadata,
             namespace,
-            topics,
+            tables,
             properties,
             fetch_options,
         }
@@ -65,8 +65,8 @@ impl TopicOffsetLocationDiscoveryExec {
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
             Field::new("partition_value", DataType::Utf8, true),
             // TODO: add start and end timestamp
-            Field::new("start_offset", DataType::UInt64, false),
-            Field::new("end_offset", DataType::UInt64, false),
+            Field::new("start_seqnum", DataType::UInt64, false),
+            Field::new("end_seqnum", DataType::UInt64, false),
             Field::new("num_rows", DataType::UInt32, false),
             Field::new("location_type", DataType::Utf8, false),
             // Folio-specific columns
@@ -91,7 +91,7 @@ impl TopicOffsetLocationDiscoveryExec {
     }
 }
 
-impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
+impl ExecutionPlan for TableRowLocationDiscoveryExec {
     fn name(&self) -> &str {
         Self::static_name()
     }
@@ -128,35 +128,35 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
         let batch_size = context.session_config().batch_size();
         debug!(
             namespace = %self.namespace,
-            "TopicPartitionValueDiscoveryExec execute"
+            "TablePartitionValueDiscoveryExec execute"
         );
 
-        let topics = PaginatedTopicStream::new(
+        let tables = PaginatedTableStream::new(
             self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
-            self.topics.clone(),
+            self.tables.clone(),
         );
 
-        let offset_registry = self.log_meta.clone();
-        let topic_partition_states = topics.flat_map_unordered(None, {
-            let offset_registry = offset_registry.clone();
-            move |topic_result| {
-                let topics = match topic_result {
-                    Ok(topics) => topics,
+        let table_metadata = self.table_metadata.clone();
+        let table_partition_states = tables.flat_map_unordered(None, {
+            let table_metadata_c = table_metadata.clone();
+            move |table_result| {
+                let tables = match table_result {
+                    Ok(tables) => tables,
                     Err(err) => {
                         return futures::stream::once(async { Err(DataFusionError::from(err)) })
                             .boxed();
                     }
                 };
 
-                let stream_iter = topics.into_iter().map({
-                    let offset_registry = offset_registry.clone();
-                    move |topic| {
-                        let topic_name = topic.name;
+                let stream_iter = tables.into_iter().map({
+                    let table_metadata_c2 = table_metadata_c.clone();
+                    move |table| {
+                        let table_name = table.name;
                         PaginatedPartitionMetadataStream::new(
-                            offset_registry.clone(),
-                            topic_name.clone(),
+                            table_metadata_c2.clone(),
+                            table_name.clone(),
                             batch_size,
                         )
                         .map_err(DataFusionError::from)
@@ -168,13 +168,13 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
             }
         });
 
-        let log_location_options = self.fetch_options.get_log_location_options();
+        let log_location_options = self.fetch_options.get_table_location_options();
 
-        let offset_locations = topic_partition_states.flat_map_unordered(None, {
-            let offset_registry = offset_registry.clone();
+        let row_locations = table_partition_states.flat_map_unordered(None, {
+            let table_metadata_c = table_metadata.clone();
             let log_location_options = log_location_options.clone();
             move |state_result| {
-                let (topic_name, states) = match state_result {
+                let (table_name, states) = match state_result {
                     Ok(v) => v,
                     Err(err) => {
                         return futures::stream::once(async { Err(err) }).boxed();
@@ -182,12 +182,12 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
                 };
 
                 let stream_iter = states.into_iter().map({
-                    let offset_registry = offset_registry.clone();
+                    let table_metadata_c2 = table_metadata_c.clone();
                     let log_location_options = log_location_options.clone();
                     move |state| {
-                        PaginatedLogLocationStream::new(
-                            offset_registry.clone(),
-                            topic_name.clone(),
+                        PaginatedTableLocationStream::new(
+                            table_metadata_c2.clone(),
+                            table_name.clone(),
                             state.partition_value,
                             log_location_options.clone(),
                         )
@@ -203,9 +203,9 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
         let schema = self.schema();
         let stream = RecordBatchStreamAdapter::new(
             schema.clone(),
-            offset_locations.chunks(batch_size).map(move |chunk| {
+            row_locations.chunks(batch_size).map(move |chunk| {
                 let chunk = chunk.into_iter().collect::<Result<Vec<_>, _>>();
-                chunk.and_then(|offsets| from_offset_location(schema.clone(), offsets.as_slice()))
+                chunk.and_then(|offsets| from_row_location(schema.clone(), offsets.as_slice()))
             }),
         );
 
@@ -213,9 +213,9 @@ impl ExecutionPlan for TopicOffsetLocationDiscoveryExec {
     }
 }
 
-fn from_offset_location(
+fn from_row_location(
     schema: SchemaRef,
-    offsets: &[(TopicName, Option<PartitionValue>, LogLocation)],
+    offsets: &[(TableName, Option<PartitionValue>, TableLocation)],
 ) -> Result<RecordBatch, DataFusionError> {
     if offsets.is_empty() {
         return Ok(RecordBatch::new_empty(schema));
@@ -223,10 +223,10 @@ fn from_offset_location(
 
     let mut tenant_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut namespace_arr = StringBuilder::with_capacity(offsets.len(), 0);
-    let mut topic_arr = StringBuilder::with_capacity(offsets.len(), 0);
+    let mut table_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut partition_value_arr = StringBuilder::with_capacity(offsets.len(), 0);
-    let mut start_offset_arr = UInt64Builder::with_capacity(offsets.len());
-    let mut end_offset_arr = UInt64Builder::with_capacity(offsets.len());
+    let mut start_seqnum_arr = UInt64Builder::with_capacity(offsets.len());
+    let mut end_seqnum_arr = UInt64Builder::with_capacity(offsets.len());
     let mut num_rows_arr = UInt32Builder::with_capacity(offsets.len());
     let mut location_type_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut folio_file_ref_arr = StringBuilder::with_capacity(offsets.len(), 0);
@@ -235,9 +235,9 @@ fn from_offset_location(
     let mut lake_file_ref_arr = StringBuilder::with_capacity(offsets.len(), 0);
     let mut lake_size_bytes_arr = UInt64Builder::with_capacity(offsets.len());
 
-    for (topic_name, partition_value, offset_location) in offsets {
-        topic_arr.append_value(topic_name.id.clone());
-        let namespace_name = topic_name.parent();
+    for (table_name, partition_value, row_location) in offsets {
+        table_arr.append_value(table_name.id.clone());
+        let namespace_name = table_name.parent();
         namespace_arr.append_value(namespace_name.id.clone());
         let tenant_name = namespace_name.parent();
         tenant_arr.append_value(tenant_name.id.clone());
@@ -247,19 +247,19 @@ fn from_offset_location(
             partition_value_arr.append_null();
         }
 
-        match offset_location.start_offset() {
-            None => start_offset_arr.append_null(),
-            Some(offset) => start_offset_arr.append_value(offset.offset),
+        match row_location.start_seqnum() {
+            None => start_seqnum_arr.append_null(),
+            Some(seqnum) => start_seqnum_arr.append_value(seqnum.seqnum),
         }
-        match offset_location.end_offset() {
-            None => end_offset_arr.append_null(),
-            Some(offset) => end_offset_arr.append_value(offset.offset),
+        match row_location.end_seqnum() {
+            None => end_seqnum_arr.append_null(),
+            Some(seqnum) => end_seqnum_arr.append_value(seqnum.seqnum),
         }
 
-        num_rows_arr.append_value(offset_location.num_rows() as _);
+        num_rows_arr.append_value(row_location.num_rows() as _);
 
-        match offset_location {
-            LogLocation::Folio(folio) => {
+        match row_location {
+            TableLocation::Folio(folio) => {
                 location_type_arr.append_value("folio");
                 folio_file_ref_arr.append_value(&folio.file_ref);
                 folio_offset_bytes_arr.append_value(folio.offset_bytes);
@@ -267,7 +267,7 @@ fn from_offset_location(
                 lake_file_ref_arr.append_null();
                 lake_size_bytes_arr.append_null();
             }
-            LogLocation::DataLake(file) => {
+            TableLocation::DataLake(file) => {
                 location_type_arr.append_value("datalake");
                 folio_file_ref_arr.append_null();
                 folio_offset_bytes_arr.append_null();
@@ -281,10 +281,10 @@ fn from_offset_location(
     let columns: Vec<ArrayRef> = vec![
         Arc::new(tenant_arr.finish()),
         Arc::new(namespace_arr.finish()),
-        Arc::new(topic_arr.finish()),
+        Arc::new(table_arr.finish()),
         Arc::new(partition_value_arr.finish()),
-        Arc::new(start_offset_arr.finish()),
-        Arc::new(end_offset_arr.finish()),
+        Arc::new(start_seqnum_arr.finish()),
+        Arc::new(end_seqnum_arr.finish()),
         Arc::new(num_rows_arr.finish()),
         Arc::new(location_type_arr.finish()),
         Arc::new(folio_file_ref_arr.finish()),
@@ -297,19 +297,19 @@ fn from_offset_location(
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)
 }
 
-impl DisplayAs for TopicOffsetLocationDiscoveryExec {
+impl DisplayAs for TableRowLocationDiscoveryExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "TopicOffsetLocationDiscoveryExec: namespace=[{}]",
+            "TableRowLocationDiscoveryExec: namespace=[{}]",
             self.namespace
         )
     }
 }
 
-impl fmt::Debug for TopicOffsetLocationDiscoveryExec {
+impl fmt::Debug for TableRowLocationDiscoveryExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TopicPartitionValueDiscoveryExec")
+        f.debug_struct("TablePartitionValueDiscoveryExec")
             .field("namespace", &self.namespace)
             .finish()
     }

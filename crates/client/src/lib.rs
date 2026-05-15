@@ -4,9 +4,9 @@ use fetch::FetchClient;
 use snafu::ResultExt;
 use tonic::transport::Channel;
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, TopicView, tonic::ClusterMetadataClient,
+    ClusterMetadata, TableView, tonic::ClusterMetadataClient,
 };
-use wings_resources::TopicName;
+use wings_resources::TableName;
 
 mod encode;
 mod error;
@@ -24,7 +24,7 @@ pub use self::{
 pub struct WingsClient {
     /// Arrow fligt client.
     flight: FlightServiceClient<Channel>,
-    /// Cluster metadata client. Used to fetch the topic's schema.
+    /// Cluster metadata client. Used to fetch the table's schema.
     cluster_meta: ClusterMetadataClient<Channel>,
 }
 
@@ -40,25 +40,25 @@ impl WingsClient {
         }
     }
 
-    /// Returns a client to fetch data from the specified topic.
-    pub async fn fetch_client(&self, topic_name: TopicName) -> Result<FetchClient> {
-        let topic = self
+    /// Returns a client to fetch data from the specified table.
+    pub async fn fetch_client(&self, table_name: TableName) -> Result<FetchClient> {
+        let table = self
             .cluster_meta
-            .get_topic(topic_name.clone(), TopicView::Basic)
+            .get_table(table_name.clone(), TableView::Basic)
             .await
             .context(ClusterMetadataSnafu {})?;
 
-        Ok(FetchClient::new(self, topic))
+        Ok(FetchClient::new(self, table))
     }
 
-    /// Returns a client to push data to the specified topic.
-    pub async fn push_client(&self, topic_name: TopicName) -> Result<PushClient> {
-        let topic = self
+    /// Returns a client to push data to the specified table.
+    pub async fn push_client(&self, table_name: TableName) -> Result<PushClient> {
+        let table = self
             .cluster_meta
-            .get_topic(topic_name.clone(), TopicView::Basic)
+            .get_table(table_name.clone(), TableView::Basic)
             .await
             .context(ClusterMetadataSnafu {})?;
 
-        PushClient::new(self, topic).await
+        PushClient::new(self, table).await
     }
 }

@@ -6,15 +6,15 @@ Airfoil Wings (from now, Wings) is a data ingestion service and framework to ing
 Once the data is in the data lakehouse, it can be streamed _out_ of it too.
 It's designed to be lightweight, efficient, and easy to use.
 
-**Open standards**: Wings uses Parquet files for long-term storage. Topics are compacted and partitioned so that any system that can read Parquet and Iceberg can consume the data.
+**Open standards**: Wings uses Parquet files for long-term storage. Tables are compacted and partitioned so that any system that can read Parquet and Iceberg can consume the data.
 
 **Multi tenant**: Wings supports multi-tenancy, allowing multiple teams to share the same instance of Wings.
 
-**Built-in schema registry**: Data ingestion forces data to conform to the topic's schema. No misshaped data can enter the system.
+**Built-in schema registry**: Data ingestion forces data to conform to the table's schema. No misshaped data can enter the system.
 
-**Partitioning**: Topics are partitioned by key, with one partition for each unique value. Messages within the same partition are ordered, while no ordering is guaranteed between partitions.
+**Partitioning**: Tables are partitioned by key, with one partition for each unique value. Rows within the same partition are ordered, while no ordering is guaranteed between partitions.
 
-**Decoupled data from metadata**: Wings separates data from metadata. The metadata store is the only stateful component of Wings. It stores metadata information about the cluster (tenants, namespaces, topics, etc.) and the log (offsets).
+**Decoupled data from metadata**: Wings separates data from metadata. The metadata store is the only stateful component of Wings. It stores metadata information about the cluster (tenants, namespaces, tables, etc.) and the rows (sequence number, timestamp).
 
 **Decouple storage from compute**: Data is stored on object storage. The data layer (ingestor and query server) are stateless components that can be scaled horizontally.
 
@@ -34,11 +34,11 @@ When possible, Wings uses open standards to ensure compatibility with other syst
 
 At a high-level, Wings consists of the following components:
 
-**Ingestor**: Receives messages from producers and writes them to object storage. To limit S3 PUT requests, the ingestor batches messages and writes them in bulk. Roughly speaking, this is done every 250ms or 8MiB (configurable, use this to get a ballpark idea).
+**Ingestor**: Receives rows from producers and writes them to object storage. To limit S3 PUT requests, the ingestor batches rows and writes them in bulk. Roughly speaking, this is done every 250ms or 8MiB (configurable, use this to get a ballpark idea).
 
 **Query**: Receives queries from consumers and serves them data. Queries are powered by DataFusion.
 
-**Metadata Store**: The metadata store is a stateful component that stores information about tenants, namespaces, topics, and partitions. This component is also used to assign offsets (sequence numbers) to messages.
+**Metadata Store**: The metadata store is a stateful component that stores information about tenants, namespaces, tables, and partitions. This component is also used to assign sequence numbers (seqnums) to rows.
 
 **Compaction**: This component is responsible for compacting data in Parquet files. It starts by fetching "live" data from the object store and generate the first generation of compacted Parquet files. Files are later compacted further into larger and larger files, until they reach a certain target file size (around 250MiB).
 
@@ -46,17 +46,17 @@ At a high-level, Wings consists of the following components:
 
 As we mentioned before, long-term storage is handled by Parquet files uploaded on object storage, with one Parquet file per partition.
 
-Storing "live" data in Parquet would be too inefficient (all data in a single Parquet file must have the same schema). Wings stores live data from multiple topics and partitions in the same binary file to reduce S3 operations.
+Storing "live" data in Parquet would be too inefficient (all data in a single Parquet file must have the same schema). Wings stores live data from multiple tables and partitions in the same binary file to reduce S3 operations.
 
-Partition columns are not physically stored in the Parquet files, but they are encoded in the file path. As such, topics can only be partitioned by a single column.
+Partition columns are not physically stored in the Parquet files, but they are encoded in the file path. As such, tables can only be partitioned by a single column.
 
 ## Vocabulary
 
-**Batch**: a batch is a group of rows (same topic and partition) pushed at the same time.
+**Batch**: a batch is a group of rows (same table and partition) pushed at the same time.
 
-**Folio**: a folio is a collection of rows by namespace. Data in a folio is grouped and sorted by topic and partition and contains data from multiple batches.
+**Folio**: a folio is a collection of rows by namespace. Data in a folio is grouped and sorted by table and partition and contains data from multiple batches.
 
-**Segment**: a segment file is a Parquet file containing compacted data from a single topic and partition.
+**Segment**: a segment file is a Parquet file containing compacted data from a single table and partition.
 
 **Segment's generation**: a segment's generation is the number of times it has been compacted.
 

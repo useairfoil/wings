@@ -77,7 +77,7 @@ pub enum DataType {
     ///
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
-    /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    /// * An absolute time zone seqnum of the form +XX:XX or -XX:XX, such as +07:30
     ///
     /// Timestamps with a non-empty timezone
     /// ------------------------------------
@@ -145,10 +145,10 @@ pub enum DataType {
     ///
     /// # Timezone representation
     /// ----------------------------
-    /// It is possible to use either the timezone string representation, such as "UTC", or the absolute time zone offset "+00:00".
-    /// For timezones with fixed offsets, such as "UTC" or "JST", the offset representation is recommended, as it is more explicit and less ambiguous.
+    /// It is possible to use either the timezone string representation, such as "UTC", or the absolute time zone seqnum "+00:00".
+    /// For timezones with fixed offsets, such as "UTC" or "JST", the seqnum representation is recommended, as it is more explicit and less ambiguous.
     ///
-    /// Most arrow-rs functionalities use the absolute offset representation,
+    /// Most arrow-rs functionalities use the absolute seqnum representation,
     /// such as [`PrimitiveArray::with_timezone_utc`] that applies a
     /// UTC timezone to timestamp arrays.
     ///

@@ -15,8 +15,8 @@ use object_store::{ObjectStore, prefix::PrefixStore};
 use serde_json::Value;
 use snafu::ResultExt;
 use tracing::{debug, info, warn};
-use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata};
-use wings_resources::{ObjectStoreName, PartitionPosition, PartitionValue, TopicName, TopicRef};
+use wings_control_plane_core::table_metadata::{FileInfo, FileMetadata};
+use wings_resources::{ObjectStoreName, PartitionPosition, PartitionValue, TableName, TableRef};
 use wings_schema::Field;
 
 use super::{error::Result, parquet::ParquetBatchWriter};
@@ -38,23 +38,23 @@ impl DeltaDataLake {
         }
     }
 
-    pub fn delta_log_location(&self, topic_name: &TopicName) -> String {
-        topic_name.name().to_string()
+    pub fn delta_log_location(&self, table_name: &TableName) -> String {
+        table_name.name().to_string()
     }
 
-    pub fn new_log_store(&self, topic_name: &TopicName) -> Result<Arc<dyn LogStore>> {
+    pub fn new_log_store(&self, table_name: &TableName) -> Result<Arc<dyn LogStore>> {
         let location = self.object_store_name.wings_object_store_url()?;
 
-        // We prefix the object store with the topic's full path
-        let topic_store: Arc<_> = PrefixStore::new(
+        // We prefix the object store with the table's full path
+        let table_store: Arc<_> = PrefixStore::new(
             self.object_store.clone(),
-            self.delta_log_location(topic_name).as_str(),
+            self.delta_log_location(table_name).as_str(),
         )
         .into();
 
         let log_store = default_s3_logstore(
-            topic_store.clone(),
-            topic_store,
+            table_store.clone(),
+            table_store,
             location.as_ref(),
             &StorageConfig::default(),
         );
@@ -65,59 +65,59 @@ impl DeltaDataLake {
 
 #[async_trait::async_trait]
 impl DataLake for DeltaDataLake {
-    async fn create_table(&self, topic: TopicRef) -> Result<String> {
-        let log_store = self.new_log_store(&topic.name)?;
-        let columns = topic
+    async fn create_table(&self, table: TableRef) -> Result<String> {
+        let log_store = self.new_log_store(&table.name)?;
+        let columns = table
             .schema_with_metadata(PartitionPosition::Original)
             .context(InvalidSchemaSnafu {})?
             .fields_iter()
             .map(convert_field)
             .collect::<Result<Vec<_>>>()?;
 
-        let partition_columns = if let Some(column) = topic.partition_field() {
+        let partition_columns = if let Some(column) = table.partition_field() {
             vec![column.name()]
         } else {
             vec![]
         };
 
-        let table = DeltaTable::new(log_store.clone(), Default::default())
+        let delta_table = DeltaTable::new(log_store.clone(), Default::default())
             .create()
             .with_save_mode(SaveMode::ErrorIfExists)
             .with_columns(columns)
             .with_partition_columns(partition_columns)
             .await?;
 
-        info!(?table, "Delta table created");
+        info!(?delta_table, "Delta table created");
 
-        Ok(topic.name.to_string())
+        Ok(table.name.to_string())
     }
 
     async fn batch_writer(
         &self,
-        topic: TopicRef,
+        table: TableRef,
         partition_value: Option<PartitionValue>,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>> {
         ParquetBatchWriter::new_boxed(
             self.object_store.clone(),
-            topic,
+            table,
             partition_value,
-            start_offset,
-            end_offset,
+            start_seqnum,
+            end_seqnum,
             target_file_size,
         )
     }
 
-    async fn commit_data(&self, topic: TopicRef, new_files: &[FileInfo]) -> Result<String> {
+    async fn commit_data(&self, table: TableRef, new_files: &[FileInfo]) -> Result<String> {
         let mut actions: Vec<Action> = Vec::with_capacity(new_files.len());
 
         // Make sure to add the `/` at the end to strip it from the file reference,
         // making it a relative path.
-        let root_location = format!("{}/", self.delta_log_location(&topic.name));
+        let root_location = format!("{}/", self.delta_log_location(&table.name));
 
-        let partition_field = topic.partition_field();
+        let partition_field = table.partition_field();
 
         for file in new_files {
             let partition_value = DeltaLogSerializablePartitionValue(&file.partition_value);
@@ -132,7 +132,7 @@ impl DataLake for DeltaDataLake {
 
             let stats = serde_json::to_string(&convert_statistics_to_delta(&file.metadata))?;
 
-            // Remove string prefix and create a new file ref relative to the topic's root dir.
+            // Remove string prefix and create a new file ref relative to the table's root dir.
             if let Some(file_ref) = file.file_ref.strip_prefix(&root_location) {
                 let modification_time = file
                     .modification_time
@@ -146,23 +146,23 @@ impl DataLake for DeltaDataLake {
                     size: file.metadata.file_size.as_u64() as _,
                     modification_time,
                     data_change: true,
-                    base_row_id: Some(file.start_offset.offset as _),
+                    base_row_id: Some(file.start_seqnum.seqnum as _),
                     stats: Some(stats),
                     ..Default::default()
                 };
                 actions.push(Action::Add(add));
             } else {
                 warn!(
-                    "File {} does not belong to topic {}",
-                    file.file_ref, topic.name
+                    "File {} does not belong to table {}",
+                    file.file_ref, table.name
                 );
             }
         }
 
-        debug!(topic = %topic.name, "Loading Delta table to commit");
-        let log_store = self.new_log_store(&topic.name)?;
-        let mut table = DeltaTable::new(log_store.clone(), Default::default());
-        table.load().await?;
+        debug!(table = %table.name, "Loading Delta table to commit");
+        let log_store = self.new_log_store(&table.name)?;
+        let mut delta_table = DeltaTable::new(log_store.clone(), Default::default());
+        delta_table.load().await?;
 
         let operation = DeltaOperation::Write {
             mode: SaveMode::Append,
@@ -174,13 +174,13 @@ impl DataLake for DeltaDataLake {
         let commit = CommitBuilder::from(commit_properties)
             .with_actions(actions)
             .build(
-                table.state.as_ref().map(|f| f as &dyn TableReference),
+                delta_table.state.as_ref().map(|f| f as &dyn TableReference),
                 log_store,
                 operation,
             )
             .await?;
 
-        info!(topic = %topic.name, version = commit.version, "Delta table committed");
+        info!(table = %table.name, version = commit.version, "Delta table committed");
         Ok(commit.version().to_string())
     }
 }

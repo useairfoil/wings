@@ -30,7 +30,7 @@ pub enum FlightServerError {
     },
     #[snafu(transparent)]
     Query {
-        source: wings_query::TopicLogicalPlanError,
+        source: wings_query::TableLogicalPlanError,
     },
 }
 

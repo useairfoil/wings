@@ -16,11 +16,11 @@ use object_store::path::Path;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use time::UtcDateTime;
-use wings_resources::{NamespaceName, PartitionValue, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, TableName};
 use wings_schema::Datum;
 
 pub use self::{
-    error::{LogMetadataError, Result},
+    error::{TableMetadataError, Result},
     validation::validate_batches_to_commit,
 };
 
@@ -36,18 +36,18 @@ pub struct FileMetadata {
 }
 
 #[async_trait]
-pub trait LogMetadata: Send + Sync {
-    /// Commit several batches across topics and partitions.
+pub trait TableMetadata: Send + Sync {
+    /// Commit several batches across tables and partitions.
     async fn commit(
         &self,
         namespace: NamespaceName,
         batches: Vec<CommitBatchRequest>,
     ) -> Result<Vec<CommittedBatch>>;
 
-    /// Retrieves the locations of the logs for the specified topic and partition.
-    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>>;
+    /// Retrieves the locations of the logs for the specified table and partition.
+    async fn get_table_location(&self, request: GetTableLocationRequest) -> Result<Vec<TableLocation>>;
 
-    /// List the partitions of a topic.
+    /// List the partitions of a table.
     async fn list_partitions(
         &self,
         request: ListPartitionsRequest,
@@ -60,11 +60,11 @@ pub trait LogMetadata: Send + Sync {
     async fn complete_task(&self, request: CompleteTaskRequest) -> Result<CompleteTaskResponse>;
 }
 
-/// The offset of a log together with its timestamp.
+/// The seqnum of a log together with its timestamp.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct LogOffset {
-    /// The offset of the log.
-    pub offset: u64,
+pub struct SeqNum {
+    /// The seqnum of the log.
+    pub seqnum: u64,
     /// The timestamp of the log.
     pub timestamp: SystemTime,
 }
@@ -74,7 +74,7 @@ pub struct LogOffset {
 pub enum CommittedBatch {
     /// The batch was rejected.
     Rejected(RejectedBatchInfo),
-    /// The batch was accepted and belongs to the topic.
+    /// The batch was accepted and belongs to the table.
     Accepted(AcceptedBatchInfo),
 }
 
@@ -92,10 +92,10 @@ pub struct RejectedBatchInfo {
 pub struct AcceptedBatchInfo {
     /// The request id used to correlate the request with the response.
     pub batch_id: u32,
-    /// The offset of the first row in the batch.
-    pub start_offset: u64,
-    /// The offset of the last row in the batch.
-    pub end_offset: u64,
+    /// The seqnum of the first row in the batch.
+    pub start_seqnum: u64,
+    /// The seqnum of the last row in the batch.
+    pub end_seqnum: u64,
     /// The timestamp of the batch.
     pub timestamp: SystemTime,
 }
@@ -105,13 +105,13 @@ pub struct AcceptedBatchInfo {
 pub struct CommitBatchRequest {
     /// The request id used to correlate the request with the response.
     pub batch_id: u32,
-    /// The topic id of the batch to commit.
-    pub topic_name: TopicName,
+    /// The table id of the batch to commit.
+    pub table_name: TableName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
     /// The folio file containing the batch.
     pub file_ref: String,
-    /// The start offset of the batch's page in the folio file.
+    /// The start seqnum of the batch's page in the folio file.
     pub page_offset_bytes: u64,
     /// The batch size, in bytes.
     pub page_size_bytes: u64,
@@ -123,19 +123,19 @@ pub struct CommitBatchRequest {
 
 /// Request to retrieve the location of a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetLogLocationRequest {
-    /// The topic name of the log.
-    pub topic_name: TopicName,
+pub struct GetTableLocationRequest {
+    /// The table name of the log.
+    pub table_name: TableName,
     /// The partition value, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The offset requested.
-    pub offset: u64,
+    /// The seqnum requested.
+    pub seqnum: u64,
     /// The options for the request.
-    pub options: GetLogLocationOptions,
+    pub options: GetTableLocationOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GetLogLocationOptions {
+pub struct GetTableLocationOptions {
     /// The deadline for the request.
     pub deadline: Duration,
     /// The minimum number of rows to retrieve.
@@ -146,7 +146,7 @@ pub struct GetLogLocationOptions {
 
 /// Location of a specific log.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LogLocation {
+pub enum TableLocation {
     /// The Parquet file is inside a folio.
     Folio(FolioLocation),
     /// The Parquet file is in the data lake.
@@ -175,16 +175,16 @@ pub struct DataLakeLocation {
     pub size_bytes: u64,
     /// The number of rows in the parquet file.
     pub num_rows: usize,
-    /// The offset of the first row in the file.
-    pub start_offset: LogOffset,
-    /// The offset of the last row in the file.
-    pub end_offset: LogOffset,
+    /// The seqnum of the first row in the file.
+    pub start_seqnum: SeqNum,
+    /// The seqnum of the last row in the file.
+    pub end_seqnum: SeqNum,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListPartitionsRequest {
-    /// The topic name of the log.
-    pub topic_name: TopicName,
+    /// The table name of the log.
+    pub table_name: TableName,
     /// The page size for the request.
     pub page_size: Option<usize>,
     /// The continuation token for the request.
@@ -193,7 +193,7 @@ pub struct ListPartitionsRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListPartitionsResponse {
-    /// The partitions of the topic.
+    /// The partitions of the table.
     pub partitions: Vec<PartitionMetadata>,
     /// The continuation token for the next page.
     pub next_page_token: Option<String>,
@@ -203,8 +203,8 @@ pub struct ListPartitionsResponse {
 pub struct PartitionMetadata {
     /// The partition value.
     pub partition_value: Option<PartitionValue>,
-    /// The end offset of the log.
-    pub end_offset: LogOffset,
+    /// The end seqnum of the log.
+    pub end_seqnum: SeqNum,
 }
 
 /// The status of a task.
@@ -245,21 +245,21 @@ pub enum CompactionOperation {
 /// A task to create a table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateTableTask {
-    /// The topic name for the table to create.
-    pub topic_name: TopicName,
+    /// The table name for the table to create.
+    pub table_name: TableName,
 }
 
 /// A compaction task.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionTask {
-    /// The topic name to compact.
-    pub topic_name: TopicName,
+    /// The table name to compact.
+    pub table_name: TableName,
     /// The partition value to compact, if any.
     pub partition_value: Option<PartitionValue>,
-    /// The start offset of the compaction range.
-    pub start_offset: u64,
-    /// The end offset of the compaction range.
-    pub end_offset: u64,
+    /// The start seqnum of the compaction range.
+    pub start_seqnum: u64,
+    /// The end seqnum of the compaction range.
+    pub end_seqnum: u64,
     /// The operation type for this compaction.
     pub operation: CompactionOperation,
     /// The target file size for the parquet writer.
@@ -269,8 +269,8 @@ pub struct CompactionTask {
 /// A task to create a table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommitTask {
-    /// The topic name for the table to create.
-    pub topic_name: TopicName,
+    /// The table name for the table to create.
+    pub table_name: TableName,
     /// Files to be committed.
     pub new_files: Vec<FileInfo>,
 }
@@ -289,10 +289,10 @@ pub struct FileInfo {
     pub file_ref: String,
     /// The partition value for the file
     pub partition_value: Option<PartitionValue>,
-    /// First offset (inclusive) in this file
-    pub start_offset: LogOffset,
-    /// Last offset (inclusive) in this file
-    pub end_offset: LogOffset,
+    /// First seqnum (inclusive) in this file
+    pub start_seqnum: SeqNum,
+    /// Last seqnum (inclusive) in this file
+    pub end_seqnum: SeqNum,
     /// Parquet file metadata
     pub metadata: FileMetadata,
     /// Timestamp when the file was created
@@ -374,26 +374,26 @@ pub struct CompleteTaskResponse {
     pub success: bool,
 }
 
-impl LogOffset {
-    /// Creates a new `LogOffset` with the given offset.
-    pub fn new(offset: u64) -> Self {
+impl SeqNum {
+    /// Creates a new `SeqNum` with the given seqnum.
+    pub fn new(seqnum: u64) -> Self {
         Self {
-            offset,
+            seqnum,
             ..Default::default()
         }
     }
 
-    /// Creates a new `LogOffset` with the timestamp.
-    pub fn with_timestamp(&self, timestamp: SystemTime) -> LogOffset {
-        LogOffset {
-            offset: self.offset,
+    /// Creates a new `SeqNum` with the timestamp.
+    pub fn with_timestamp(&self, timestamp: SystemTime) -> SeqNum {
+        SeqNum {
+            seqnum: self.seqnum,
             timestamp,
         }
     }
 
-    pub fn previous(&self) -> LogOffset {
-        LogOffset {
-            offset: self.offset.saturating_sub(1),
+    pub fn previous(&self) -> SeqNum {
+        SeqNum {
+            seqnum: self.seqnum.saturating_sub(1),
             timestamp: self.timestamp,
         }
     }
@@ -403,8 +403,8 @@ impl CommitBatchRequest {
     pub fn new(num_rows: u32) -> Self {
         Self {
             batch_id: 0,
-            topic_name: TopicName::new_unchecked(
-                "test-topic",
+            table_name: TableName::new_unchecked(
+                "test-table",
                 NamespaceName::new_unchecked(
                     "test-namespace",
                     wings_resources::TenantName::new_unchecked("test-tenant"),
@@ -422,8 +422,8 @@ impl CommitBatchRequest {
     pub fn new_with_timestamp(num_rows: u32, timestamp: SystemTime) -> Self {
         Self {
             batch_id: 0,
-            topic_name: TopicName::new_unchecked(
-                "test-topic",
+            table_name: TableName::new_unchecked(
+                "test-table",
                 NamespaceName::new_unchecked(
                     "test-namespace",
                     wings_resources::TenantName::new_unchecked("test-tenant"),
@@ -439,54 +439,54 @@ impl CommitBatchRequest {
     }
 }
 
-impl Default for LogOffset {
+impl Default for SeqNum {
     fn default() -> Self {
-        LogOffset {
-            offset: 0,
+        SeqNum {
+            seqnum: 0,
             timestamp: SystemTime::UNIX_EPOCH,
         }
     }
 }
 
-impl LogLocation {
-    pub fn start_offset(&self) -> Option<LogOffset> {
+impl TableLocation {
+    pub fn start_seqnum(&self) -> Option<SeqNum> {
         match self {
-            LogLocation::Folio(folio) => folio.start_offset(),
-            LogLocation::DataLake(lake) => lake.start_offset.into(),
+            TableLocation::Folio(folio) => folio.start_seqnum(),
+            TableLocation::DataLake(lake) => lake.start_seqnum.into(),
         }
     }
 
-    pub fn end_offset(&self) -> Option<LogOffset> {
+    pub fn end_seqnum(&self) -> Option<SeqNum> {
         match self {
-            LogLocation::Folio(folio) => folio.end_offset(),
-            LogLocation::DataLake(lake) => lake.end_offset.into(),
+            TableLocation::Folio(folio) => folio.end_seqnum(),
+            TableLocation::DataLake(lake) => lake.end_seqnum.into(),
         }
     }
 
     pub fn num_rows(&self) -> usize {
         match self {
-            LogLocation::Folio(folio) => folio.num_rows,
-            LogLocation::DataLake(lake) => lake.num_rows,
+            TableLocation::Folio(folio) => folio.num_rows,
+            TableLocation::DataLake(lake) => lake.num_rows,
         }
     }
 }
 
 impl FolioLocation {
-    pub fn end_offset(&self) -> Option<LogOffset> {
+    pub fn end_seqnum(&self) -> Option<SeqNum> {
         self.batches.iter().rev().find_map(|batch| match batch {
             CommittedBatch::Rejected(_) => None,
-            CommittedBatch::Accepted(info) => Some(LogOffset {
-                offset: info.end_offset,
+            CommittedBatch::Accepted(info) => Some(SeqNum {
+                seqnum: info.end_seqnum,
                 timestamp: info.timestamp,
             }),
         })
     }
 
-    pub fn start_offset(&self) -> Option<LogOffset> {
+    pub fn start_seqnum(&self) -> Option<SeqNum> {
         self.batches.iter().find_map(|batch| match batch {
             CommittedBatch::Rejected(_) => None,
-            CommittedBatch::Accepted(info) => Some(LogOffset {
-                offset: info.start_offset,
+            CommittedBatch::Accepted(info) => Some(SeqNum {
+                seqnum: info.start_seqnum,
                 timestamp: info.timestamp,
             }),
         })
@@ -508,15 +508,15 @@ impl CommittedBatch {
 
 impl AcceptedBatchInfo {
     pub fn num_rows(&self) -> u32 {
-        (self.end_offset - self.start_offset + 1) as u32
+        (self.end_seqnum - self.start_seqnum + 1) as u32
     }
 }
 
-impl fmt::Debug for LogOffset {
+impl fmt::Debug for SeqNum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let timestamp: UtcDateTime = self.timestamp.into();
-        f.debug_struct("LogOffset")
-            .field("offset", &self.offset)
+        f.debug_struct("SeqNum")
+            .field("seqnum", &self.seqnum)
             .field("timestamp", &timestamp)
             .finish()
     }
@@ -527,8 +527,8 @@ impl fmt::Debug for AcceptedBatchInfo {
         let timestamp: UtcDateTime = self.timestamp.into();
         f.debug_struct("AcceptedBatchInfo")
             .field("batch_id", &self.batch_id)
-            .field("start_offset", &self.start_offset)
-            .field("end_offset", &self.end_offset)
+            .field("start_seqnum", &self.start_seqnum)
+            .field("end_seqnum", &self.end_seqnum)
             .field("timestamp", &timestamp)
             .finish()
     }
@@ -654,7 +654,7 @@ pub trait DatabaseTask {
 }
 
 impl DatabaseTask for CommitTask {
-    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CommitTask";
+    const TYPE_URL: &str = "types.googleapis.com/wings.table_metadata.CommitTask";
     type Serialized = crate::pb::CommitTask;
 
     fn into_serialized(self) -> Self::Serialized {
@@ -663,7 +663,7 @@ impl DatabaseTask for CommitTask {
 }
 
 impl DatabaseTask for CompactionTask {
-    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CompactionTask";
+    const TYPE_URL: &str = "types.googleapis.com/wings.table_metadata.CompactionTask";
     type Serialized = crate::pb::CompactionTask;
 
     fn into_serialized(self) -> Self::Serialized {
@@ -672,7 +672,7 @@ impl DatabaseTask for CompactionTask {
 }
 
 impl DatabaseTask for CreateTableTask {
-    const TYPE_URL: &str = "types.googleapis.com/wings.log_metadata.CreateTableTask";
+    const TYPE_URL: &str = "types.googleapis.com/wings.table_metadata.CreateTableTask";
     type Serialized = crate::pb::CreateTableTask;
 
     fn into_serialized(self) -> Self::Serialized {

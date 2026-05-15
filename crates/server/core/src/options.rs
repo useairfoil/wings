@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use datafusion::{common::extensions_options, config::ConfigExtension, prelude::SessionConfig};
-use wings_control_plane_core::log_metadata::GetLogLocationOptions;
+use wings_control_plane_core::table_metadata::GetTableLocationOptions;
 
 extensions_options! {
     pub struct FetchOptions {
@@ -19,9 +19,9 @@ impl ConfigExtension for FetchOptions {
 }
 
 impl FetchOptions {
-    pub fn get_log_location_options(&self) -> GetLogLocationOptions {
+    pub fn get_table_location_options(&self) -> GetTableLocationOptions {
         let deadline = Duration::from_millis(self.timeout_ms);
-        GetLogLocationOptions {
+        GetTableLocationOptions {
             deadline,
             min_rows: self.min_rows,
             max_rows: self.max_rows,

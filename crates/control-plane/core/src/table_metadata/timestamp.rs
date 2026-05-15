@@ -1,7 +1,7 @@
 //! Helper functions to validate timestamps in requests.
 use std::{cmp::Ordering, time::SystemTime};
 
-use super::{CommitBatchRequest, LogOffset};
+use super::{CommitBatchRequest, SeqNum};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ValidateRequestResult {
@@ -9,10 +9,10 @@ pub enum ValidateRequestResult {
         reason: &'static str,
     },
     Accept {
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         timestamp: Option<SystemTime>,
-        next_offset: LogOffset,
+        next_seqnum: SeqNum,
     },
 }
 
@@ -37,7 +37,7 @@ pub fn compare_timestamps(a: &Option<SystemTime>, b: &Option<SystemTime>) -> Ord
 }
 
 pub fn validate_timestamp_in_request(
-    ts: &LogOffset,
+    ts: &SeqNum,
     request: &CommitBatchRequest,
 ) -> ValidateRequestResult {
     if request.num_rows == 0 {
@@ -48,16 +48,16 @@ pub fn validate_timestamp_in_request(
 
     let num_rows = request.num_rows as u64;
     let Some(timestamp) = request.timestamp else {
-        let next_offset = LogOffset {
-            offset: ts.offset + num_rows,
+        let next_seqnum = SeqNum {
+            seqnum: ts.seqnum + num_rows,
             timestamp: ts.timestamp,
         };
 
         return ValidateRequestResult::Accept {
-            start_offset: ts.offset,
-            end_offset: ts.offset + num_rows - 1,
+            start_seqnum: ts.seqnum,
+            end_seqnum: ts.seqnum + num_rows - 1,
             timestamp: None,
-            next_offset,
+            next_seqnum,
         };
     };
 
@@ -67,16 +67,16 @@ pub fn validate_timestamp_in_request(
         };
     };
 
-    let next_offset = LogOffset {
-        offset: ts.offset + num_rows,
+    let next_seqnum = SeqNum {
+        seqnum: ts.seqnum + num_rows,
         timestamp,
     };
 
     ValidateRequestResult::Accept {
-        start_offset: ts.offset,
-        end_offset: ts.offset + num_rows - 1,
+        start_seqnum: ts.seqnum,
+        end_seqnum: ts.seqnum + num_rows - 1,
         timestamp: timestamp.into(),
-        next_offset,
+        next_seqnum,
     }
 }
 
@@ -123,22 +123,22 @@ mod tests {
     }
 
     #[test]
-    fn test_log_offset_previous() {
-        let offset = LogOffset {
-            offset: 0,
+    fn test_row_seqnum_previous() {
+        let seqnum = SeqNum {
+            seqnum: 0,
             timestamp: SystemTime::UNIX_EPOCH,
         };
 
-        let previous_offset = offset.previous();
+        let previous_seqnum = seqnum.previous();
 
-        assert_eq!(previous_offset.offset, 0);
-        assert_eq!(previous_offset.timestamp, SystemTime::UNIX_EPOCH);
+        assert_eq!(previous_seqnum.seqnum, 0);
+        assert_eq!(previous_seqnum.timestamp, SystemTime::UNIX_EPOCH);
     }
 
     #[test]
-    fn test_log_offset_validate() {
-        let offset = LogOffset {
-            offset: 123,
+    fn test_row_seqnum_validate() {
+        let seqnum = SeqNum {
+            seqnum: 123,
             timestamp: SystemTime::UNIX_EPOCH + Duration::from_secs(120),
         };
 
@@ -148,16 +148,16 @@ mod tests {
             SystemTime::UNIX_EPOCH + Duration::from_secs(240),
         );
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Reject {
                 reason: "EMPTY_BATCH",
             }
         );
 
-        // Timestamp before the current offset.
+        // Timestamp before the current seqnum.
         let req = CommitBatchRequest::new_with_timestamp(10, SystemTime::UNIX_EPOCH);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Reject {
                 reason: "INVALID_TIMESTAMP",
             }
@@ -167,13 +167,13 @@ mod tests {
         let ts = SystemTime::UNIX_EPOCH + Duration::from_secs(120);
         let req = CommitBatchRequest::new_with_timestamp(10, ts);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Accept {
-                start_offset: 123,
-                end_offset: 132,
+                start_seqnum: 123,
+                end_seqnum: 132,
                 timestamp: Some(ts),
-                next_offset: LogOffset {
-                    offset: 133,
+                next_seqnum: SeqNum {
+                    seqnum: 133,
                     timestamp: ts
                 }
             }
@@ -183,29 +183,29 @@ mod tests {
         let ts = SystemTime::UNIX_EPOCH + Duration::from_secs(121);
         let req = CommitBatchRequest::new_with_timestamp(10, ts);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Accept {
-                start_offset: 123,
-                end_offset: 132,
+                start_seqnum: 123,
+                end_seqnum: 132,
                 timestamp: Some(ts),
-                next_offset: LogOffset {
-                    offset: 133,
+                next_seqnum: SeqNum {
+                    seqnum: 133,
                     timestamp: ts
                 }
             }
         );
 
-        // Timestamp is larger than the current offset
+        // Timestamp is larger than the current seqnum
         let ts = SystemTime::UNIX_EPOCH + Duration::from_secs(122);
         let req = CommitBatchRequest::new_with_timestamp(10, ts);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Accept {
-                start_offset: 123,
-                end_offset: 132,
+                start_seqnum: 123,
+                end_seqnum: 132,
                 timestamp: Some(ts),
-                next_offset: LogOffset {
-                    offset: 133,
+                next_seqnum: SeqNum {
+                    seqnum: 133,
                     timestamp: ts
                 }
             }
@@ -214,13 +214,13 @@ mod tests {
         // None leaves the timestamp as is.
         let req = CommitBatchRequest::new(10);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Accept {
-                start_offset: 123,
-                end_offset: 132,
+                start_seqnum: 123,
+                end_seqnum: 132,
                 timestamp: None,
-                next_offset: LogOffset {
-                    offset: 133,
+                next_seqnum: SeqNum {
+                    seqnum: 133,
                     timestamp: SystemTime::UNIX_EPOCH + Duration::from_secs(120)
                 }
             }
@@ -229,13 +229,13 @@ mod tests {
         // Just in case test this too.
         let req = CommitBatchRequest::new(1);
         assert_eq!(
-            validate_timestamp_in_request(&offset, &req),
+            validate_timestamp_in_request(&seqnum, &req),
             ValidateRequestResult::Accept {
-                start_offset: 123,
-                end_offset: 123,
+                start_seqnum: 123,
+                end_seqnum: 123,
                 timestamp: None,
-                next_offset: LogOffset {
-                    offset: 124,
+                next_seqnum: SeqNum {
+                    seqnum: 124,
                     timestamp: SystemTime::UNIX_EPOCH + Duration::from_secs(120)
                 }
             }

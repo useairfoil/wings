@@ -16,23 +16,23 @@ use datafusion::{
 };
 use futures::StreamExt;
 use tracing::debug;
-use wings_control_plane_core::cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream};
-use wings_resources::{NamespaceName, Topic};
+use wings_control_plane_core::cluster_metadata::{ClusterMetadata, stream::PaginatedTableStream};
+use wings_resources::{NamespaceName, Table};
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
-pub struct TopicDiscoveryExec {
+pub struct TableDiscoveryExec {
     cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
-    topics: Option<Vec<String>>,
+    tables: Option<Vec<String>>,
     properties: PlanProperties,
 }
 
-impl TopicDiscoveryExec {
+impl TableDiscoveryExec {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
         namespace: NamespaceName,
-        topics: Option<Vec<String>>,
+        tables: Option<Vec<String>>,
     ) -> Self {
         let schema = Self::schema();
         let properties = Self::compute_properties(&schema);
@@ -40,7 +40,7 @@ impl TopicDiscoveryExec {
         Self {
             cluster_meta,
             namespace,
-            topics,
+            tables,
             properties,
         }
     }
@@ -69,7 +69,7 @@ impl TopicDiscoveryExec {
     }
 }
 
-impl ExecutionPlan for TopicDiscoveryExec {
+impl ExecutionPlan for TableDiscoveryExec {
     fn name(&self) -> &str {
         Self::static_name()
     }
@@ -104,23 +104,23 @@ impl ExecutionPlan for TopicDiscoveryExec {
     ) -> Result<SendableRecordBatchStream> {
         assert_eq!(partition, 0);
         let batch_size = context.session_config().batch_size();
-        debug!(namespace = %self.namespace, "TopicDiscoveryExec::execute");
+        debug!(namespace = %self.namespace, "TableDiscoveryExec::execute");
 
         let schema = self.schema();
 
-        let topics = PaginatedTopicStream::new(
+        let tables = PaginatedTableStream::new(
             self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
-            self.topics.clone(),
+            self.tables.clone(),
         );
 
         let stream = RecordBatchStreamAdapter::new(
             self.schema(),
-            topics.map(move |result| {
+            tables.map(move |result| {
                 result
                     .map_err(DataFusionError::from)
-                    .and_then(|topics| from_topics(schema.clone(), &topics))
+                    .and_then(|tables| from_tables(schema.clone(), &tables))
             }),
         );
 
@@ -128,55 +128,55 @@ impl ExecutionPlan for TopicDiscoveryExec {
     }
 }
 
-impl DisplayAs for TopicDiscoveryExec {
+impl DisplayAs for TableDiscoveryExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "TopicDiscovery: namespace=[{}]", self.namespace)
     }
 }
 
-impl fmt::Debug for TopicDiscoveryExec {
+impl fmt::Debug for TableDiscoveryExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TopicDiscoveryExec")
+        f.debug_struct("TableDiscoveryExec")
             .field("namespace", &self.namespace)
             .finish()
     }
 }
 
-fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch> {
-    let mut tenant_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut namespace_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut topic_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut partition_key_arr = UInt32Builder::with_capacity(topics.len());
-    let mut description_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut compaction_freshness_ms_arr = UInt64Builder::with_capacity(topics.len());
-    let mut compaction_ttl_ms_arr = UInt64Builder::with_capacity(topics.len());
+fn from_tables(schema: SchemaRef, tables: &[Table]) -> Result<RecordBatch> {
+    let mut tenant_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut table_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut partition_key_arr = UInt32Builder::with_capacity(tables.len());
+    let mut description_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut compaction_freshness_ms_arr = UInt64Builder::with_capacity(tables.len());
+    let mut compaction_ttl_ms_arr = UInt64Builder::with_capacity(tables.len());
 
-    for topic in topics {
-        let topic_name = topic.name.clone();
+    for table in tables {
+        let table_name = table.name.clone();
 
-        topic_arr.append_value(topic_name.id.clone());
+        table_arr.append_value(table_name.id.clone());
 
-        let namespace_name = topic_name.parent();
+        let namespace_name = table_name.parent();
         namespace_arr.append_value(namespace_name.id.clone());
 
         let tenant_name = namespace_name.parent();
         tenant_arr.append_value(tenant_name.id.clone());
 
-        if let Some(partition_key) = topic.partition_key {
+        if let Some(partition_key) = table.partition_key {
             partition_key_arr.append_value(partition_key as _);
         } else {
             partition_key_arr.append_null();
         }
 
-        if let Some(description) = &topic.description {
+        if let Some(description) = &table.description {
             description_arr.append_value(description);
         } else {
             description_arr.append_null();
         }
 
-        compaction_freshness_ms_arr.append_value(topic.compaction.freshness.as_millis() as u64);
+        compaction_freshness_ms_arr.append_value(table.compaction.freshness.as_millis() as u64);
 
-        if let Some(compaction_ttl) = &topic.compaction.ttl {
+        if let Some(compaction_ttl) = &table.compaction.ttl {
             compaction_ttl_ms_arr.append_value(compaction_ttl.as_millis() as u64);
         } else {
             compaction_ttl_ms_arr.append_null();
@@ -186,7 +186,7 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch> {
     let columns: Vec<ArrayRef> = vec![
         Arc::new(tenant_arr.finish()),
         Arc::new(namespace_arr.finish()),
-        Arc::new(topic_arr.finish()),
+        Arc::new(table_arr.finish()),
         Arc::new(partition_key_arr.finish()),
         Arc::new(description_arr.finish()),
         Arc::new(compaction_freshness_ms_arr.finish()),

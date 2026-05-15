@@ -1,7 +1,7 @@
 use sea_orm::{ColumnTrait, Condition, DbErr, EntityTrait, QueryFilter, QueryOrder};
 use snafu::Snafu;
-use wings_control_plane_core::log_metadata::{
-    GetLogLocationRequest, LogLocation, LogMetadataError,
+use wings_control_plane_core::table_metadata::{
+    GetTableLocationRequest, TableLocation, TableMetadataError,
 };
 
 use crate::{
@@ -18,43 +18,43 @@ pub enum Error {
 }
 
 impl Database {
-    pub async fn get_log_location(
+    pub async fn get_table_location(
         &self,
-        request: GetLogLocationRequest,
-    ) -> Result<Vec<LogLocation>, Error> {
-        let GetLogLocationRequest {
-            topic_name,
+        request: GetTableLocationRequest,
+    ) -> Result<Vec<TableLocation>, Error> {
+        let GetTableLocationRequest {
+            table_name,
             partition_value,
-            offset,
+            seqnum,
             options,
         } = request;
 
-        let target_offset = offset + options.min_rows as u64;
+        let target_seqnum = seqnum + options.min_rows as u64;
 
         self.with_transaction(|tx| {
             Box::pin(async move {
-                let partition_key = PartitionKey::new(&topic_name, partition_value);
+                let partition_key = PartitionKey::new(&table_name, partition_value);
 
                 let entities = entities::partition_location::Entity::find()
                     .filter(
                         Condition::all()
-                            .add(entities::partition_location::topic_partition_condition(
+                            .add(entities::partition_location::table_partition_condition(
                                 partition_key,
                             ))
-                            .add(entities::partition_location::Column::EndOffset.gte(offset))
+                            .add(entities::partition_location::Column::EndSeqnum.gte(seqnum))
                             .add(
-                                entities::partition_location::Column::StartOffset
-                                    .lte(target_offset),
+                                entities::partition_location::Column::StartSeqnum
+                                    .lte(target_seqnum),
                             ),
                     )
-                    .order_by_asc(entities::partition_location::Column::EndOffset)
+                    .order_by_asc(entities::partition_location::Column::EndSeqnum)
                     .all(tx)
                     .await?;
 
                 let locations = entities
                     .into_iter()
                     .map(|entity| entity.try_into())
-                    .collect::<Result<Vec<LogLocation>, _>>()?;
+                    .collect::<Result<Vec<TableLocation>, _>>()?;
 
                 Ok(locations)
             })
@@ -63,11 +63,11 @@ impl Database {
     }
 }
 
-impl From<Error> for LogMetadataError {
+impl From<Error> for TableMetadataError {
     fn from(err: Error) -> Self {
         match err {
             Error::Entity { source } => source.into(),
-            Error::Db { source } => LogMetadataError::Internal {
+            Error::Db { source } => TableMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
         }

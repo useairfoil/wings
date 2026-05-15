@@ -2,12 +2,12 @@ use async_trait::async_trait;
 use wings_control_plane_core::cluster_metadata::{
     ClusterMetadata, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
     ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest,
-    ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result, TopicView,
+    ListTenantsResponse, ListTablesRequest, ListTablesResponse, Result, TableView,
 };
 use wings_resources::{
     DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
-    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
-    TopicOptions,
+    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Table, TableName,
+    TableOptions,
 };
 
 use crate::SqlControlPlane;
@@ -56,23 +56,23 @@ impl ClusterMetadata for SqlControlPlane {
         self.db.delete_namespace(name).await.map_err(Into::into)
     }
 
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
+    async fn create_table(&self, name: TableName, options: TableOptions) -> Result<Table> {
         self.db
-            .create_topic(name, options)
+            .create_table(name, options)
             .await
             .map_err(Into::into)
     }
 
-    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
-        self.db.get_topic(name, view).await.map_err(Into::into)
+    async fn get_table(&self, name: TableName, view: TableView) -> Result<Table> {
+        self.db.get_table(name, view).await.map_err(Into::into)
     }
 
-    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
-        self.db.list_topics(request).await.map_err(Into::into)
+    async fn list_tables(&self, request: ListTablesRequest) -> Result<ListTablesResponse> {
+        self.db.list_tables(request).await.map_err(Into::into)
     }
 
-    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
-        self.db.delete_topic(name, force).await.map_err(Into::into)
+    async fn delete_table(&self, name: TableName, force: bool) -> Result<()> {
+        self.db.delete_table(name, force).await.map_err(Into::into)
     }
 
     async fn create_object_store(

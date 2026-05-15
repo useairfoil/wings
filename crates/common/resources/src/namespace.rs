@@ -8,7 +8,7 @@ resource_type!(Namespace, "namespaces", Tenant);
 
 /// A namespace belonging to a tenant.
 ///
-/// A namespace is used to group related topics together.
+/// A namespace is used to group related tables together.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Namespace {
     /// The namespace name.

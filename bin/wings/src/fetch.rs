@@ -2,7 +2,7 @@ use arrow::util::pretty::pretty_format_batches;
 use clap::Parser;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_resources::{PartitionValue, TopicName};
+use wings_resources::{PartitionValue, TableName};
 
 use crate::{
     error::{
@@ -12,14 +12,14 @@ use crate::{
     remote::RemoteArgs,
 };
 
-/// Push messages to Wings topics
+/// Push messages to Wings tables
 #[derive(Parser)]
 pub struct FetchArgs {
-    /// Topic name
-    topic: String,
+    /// Table name
+    table: String,
     /// The first message to fetch
     #[arg(long, default_value = "0")]
-    offset: u64,
+    seqnum: u64,
     /// The partition value
     #[arg(long)]
     partition: Option<String>,
@@ -40,30 +40,30 @@ impl FetchArgs {
     pub async fn run(self, ct: CancellationToken) -> Result<()> {
         let client = self.remote.wings_client().await?;
 
-        let topic_name = TopicName::parse(&self.topic)
-            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+        let table_name = TableName::parse(&self.table)
+            .context(InvalidResourceNameSnafu { resource: "table" })?;
 
-        let mut topic_client = client
-            .fetch_client(topic_name)
+        let mut table_client = client
+            .fetch_client(table_name)
             .await
             .context(ClientSnafu {})?
-            .with_offset(self.offset);
+            .with_seqnum(self.seqnum);
 
         if let Some(partition) = self.partition.as_ref() {
             let partition = PartitionValue::parse_with_datatype_option(
-                topic_client.partition_data_type().as_ref(),
+                table_client.partition_data_type().as_ref(),
                 Some(partition),
             )
             .context(PartitionValueParseSnafu {})?;
-            topic_client = topic_client.with_partition(partition);
+            table_client = table_client.with_partition(partition);
         }
 
         if let Some(max_batch_size) = self.max_batch_size {
-            topic_client = topic_client.with_max_batch_size(max_batch_size);
+            table_client = table_client.with_max_batch_size(max_batch_size);
         }
 
         if let Some(min_batch_size) = self.min_batch_size {
-            topic_client = topic_client.with_min_batch_size(min_batch_size);
+            table_client = table_client.with_min_batch_size(min_batch_size);
         }
 
         if let Some(timeout) = self.timeout {
@@ -74,11 +74,11 @@ impl FetchArgs {
                 }
                 .build()
             })?;
-            topic_client = topic_client.with_timeout(timeout);
+            table_client = table_client.with_timeout(timeout);
         }
 
         loop {
-            let batches = match ct.run_until_cancelled(topic_client.fetch_next()).await {
+            let batches = match ct.run_until_cancelled(table_client.fetch_next()).await {
                 Some(fut) => fut.context(ClientSnafu {})?,
                 None => return Ok(()),
             };

@@ -3,10 +3,10 @@ pub mod helpers;
 mod metrics;
 mod namespace_info;
 mod provider;
-mod topic;
-mod topic_offset_location;
-mod topic_partition_value;
-mod topic_schema;
+mod table;
+mod table_row_location;
+mod table_partition_value;
+mod table_schema;
 
 use std::{any::Any, collections::HashMap, sync::Arc};
 
@@ -15,21 +15,21 @@ use datafusion::{
     catalog::{SchemaProvider, TableProvider},
     error::DataFusionError,
 };
-use wings_control_plane_core::{cluster_metadata::ClusterMetadata, log_metadata::LogMetadata};
+use wings_control_plane_core::{cluster_metadata::ClusterMetadata, table_metadata::TableMetadata};
 use wings_observability::MetricsExporter;
 use wings_resources::NamespaceName;
 
 use self::{
     metrics::MetricsSystemTable, namespace_info::NamespaceInfoTable, provider::SystemTableProvider,
-    topic::TopicSystemTable, topic_offset_location::TopicOffsetLocationSystemTable,
-    topic_partition_value::TopicPartitionValueSystemTable, topic_schema::TopicSchemaTable,
+    table::TableSystemTable, table_row_location::TableRowLocationSystemTable,
+    table_partition_value::TablePartitionValueSystemTable, table_schema::TableSchemaTable,
 };
 
 pub const NAMESPACE_INFO_TABLE_NAME: &str = "namespace_info";
-pub const TOPIC_TABLE_NAME: &str = "topic";
-pub const TOPIC_SCHEMA_TABLE_NAME: &str = "topic_schema";
-pub const TOPIC_PARTITION_VALUE_TABLE_NAME: &str = "topic_partition_value";
-pub const TOPIC_OFFSET_LOCATION_TABLE_NAME: &str = "topic_offset_location";
+pub const TOPIC_TABLE_NAME: &str = "table";
+pub const TOPIC_SCHEMA_TABLE_NAME: &str = "table_schema";
+pub const TOPIC_PARTITION_VALUE_TABLE_NAME: &str = "table_partition_value";
+pub const TABLE_ROW_LOCATION_TABLE_NAME: &str = "table_row_location";
 pub const METRICS_TABLE_NAME: &str = "metrics";
 
 pub struct SystemSchemaProvider {
@@ -59,7 +59,7 @@ impl SchemaProvider for SystemSchemaProvider {
 impl SystemSchemaProvider {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         metrics_exporter: MetricsExporter,
         namespace: NamespaceName,
     ) -> Self {
@@ -71,31 +71,31 @@ impl SystemSchemaProvider {
         )));
         tables.insert(NAMESPACE_INFO_TABLE_NAME, namespace_info);
 
-        let topic = Arc::new(TopicSystemTable::new(
+        let table = Arc::new(TableSystemTable::new(
             cluster_meta.clone(),
             namespace.clone(),
         ));
-        tables.insert(TOPIC_TABLE_NAME, topic);
+        tables.insert(TOPIC_TABLE_NAME, table);
 
-        let topic_schema = Arc::new(SystemTableProvider::new(TopicSchemaTable::new(
+        let table_schema = Arc::new(SystemTableProvider::new(TableSchemaTable::new(
             cluster_meta.clone(),
             namespace.clone(),
         )));
-        tables.insert(TOPIC_SCHEMA_TABLE_NAME, topic_schema);
+        tables.insert(TOPIC_SCHEMA_TABLE_NAME, table_schema);
 
-        let topic_partition_value = Arc::new(TopicPartitionValueSystemTable::new(
+        let table_partition_value = Arc::new(TablePartitionValueSystemTable::new(
             cluster_meta.clone(),
-            log_meta.clone(),
+            table_metadata.clone(),
             namespace.clone(),
         ));
-        tables.insert(TOPIC_PARTITION_VALUE_TABLE_NAME, topic_partition_value);
+        tables.insert(TOPIC_PARTITION_VALUE_TABLE_NAME, table_partition_value);
 
-        let topic_offset_location = Arc::new(TopicOffsetLocationSystemTable::new(
+        let table_row_location = Arc::new(TableRowLocationSystemTable::new(
             cluster_meta.clone(),
-            log_meta.clone(),
+            table_metadata.clone(),
             namespace.clone(),
         ));
-        tables.insert(TOPIC_OFFSET_LOCATION_TABLE_NAME, topic_offset_location);
+        tables.insert(TABLE_ROW_LOCATION_TABLE_NAME, table_row_location);
 
         let metrics = Arc::new(MetricsSystemTable::new(metrics_exporter));
         tables.insert(METRICS_TABLE_NAME, metrics);

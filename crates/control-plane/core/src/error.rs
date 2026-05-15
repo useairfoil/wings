@@ -1,10 +1,10 @@
 use wings_resources::ResourceError;
 
-use crate::{ClusterMetadataError, log_metadata::LogMetadataError};
+use crate::{ClusterMetadataError, table_metadata::TableMetadataError};
 
 pub trait ResourceErrorExt {
     fn to_cluster_metadata_error(&self, resource: &'static str) -> ClusterMetadataError;
-    fn to_log_metadata_error(&self, resource: &'static str) -> LogMetadataError;
+    fn to_table_metadata_error(&self, resource: &'static str) -> TableMetadataError;
 }
 
 impl ResourceErrorExt for ResourceError {
@@ -15,8 +15,8 @@ impl ResourceErrorExt for ResourceError {
         }
     }
 
-    fn to_log_metadata_error(&self, resource: &'static str) -> LogMetadataError {
-        LogMetadataError::InvalidResourceName {
+    fn to_table_metadata_error(&self, resource: &'static str) -> TableMetadataError {
+        TableMetadataError::InvalidResourceName {
             resource: resource.to_string(),
             message: self.to_string(),
         }

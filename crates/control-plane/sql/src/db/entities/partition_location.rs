@@ -1,5 +1,5 @@
 use sea_orm::{Condition, entity::prelude::*};
-use wings_control_plane_core::log_metadata::{FolioLocation, LogLocation};
+use wings_control_plane_core::table_metadata::{FolioLocation, TableLocation};
 
 use super::error::Error;
 use crate::db::PartitionKey;
@@ -12,10 +12,10 @@ pub struct Model {
     pub id: u32,
     pub tenant_id: String,
     pub namespace_id: String,
-    pub topic_id: String,
+    pub table_id: String,
     pub partition_value: Vec<u8>,
-    pub start_offset: u32,
-    pub end_offset: u32,
+    pub start_seqnum: u32,
+    pub end_seqnum: u32,
     pub file_ref: String,
     pub num_rows: u32,
     pub location_type: LocationType,
@@ -36,27 +36,27 @@ pub enum LocationType {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_one = "super::topic::Entity")]
-    Topic,
+    #[sea_orm(has_one = "super::table::Entity")]
+    Table,
 }
 
 impl ActiveModelBehavior for ActiveModel {}
 
-impl Related<super::topic::Entity> for Entity {
+impl Related<super::table::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Topic.def()
+        Relation::Table.def()
     }
 }
 
-pub fn topic_partition_condition(key: PartitionKey) -> Condition {
+pub fn table_partition_condition(key: PartitionKey) -> Condition {
     Condition::all()
         .add(Column::TenantId.eq(key.tenant_id))
         .add(Column::NamespaceId.eq(key.namespace_id))
-        .add(Column::TopicId.eq(key.topic_id))
+        .add(Column::TableId.eq(key.table_id))
         .add(Column::PartitionValue.eq(key.partition_value))
 }
 
-impl TryFrom<Model> for LogLocation {
+impl TryFrom<Model> for TableLocation {
     type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
@@ -92,7 +92,7 @@ impl TryFrom<Model> for LogLocation {
                     num_rows: model.num_rows as _,
                     batches,
                 };
-                Ok(LogLocation::Folio(inner))
+                Ok(TableLocation::Folio(inner))
             }
             LocationType::DataLake => {
                 todo!();

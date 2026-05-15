@@ -1,11 +1,12 @@
 use common::{
-    create_ingestor_and_provider, initialize_test_namespace, initialize_test_topic,
+    create_ingestor_and_provider, initialize_test_namespace, initialize_test_table,
     schema_without_partition,
 };
 use datafusion::{
     assert_batches_sorted_eq,
     common::{arrow::array::RecordBatch, create_array},
 };
+use futures::stream;
 use wings_ingestor_core::{Result, WriteBatchRequest};
 
 mod common;
@@ -14,7 +15,7 @@ mod common;
 async fn test_simple_query_with_no_data() -> Result<()> {
     let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let _topic = initialize_test_topic(&admin, &namespace.name).await;
+    let _table = initialize_test_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     let provider = provider_factory
@@ -28,7 +29,7 @@ async fn test_simple_query_with_no_data() -> Result<()> {
         .expect("new_session_context");
 
     let out = ctx
-        .sql("SELECT * FROM my_topic WHERE __offset__ BETWEEN 0 AND 100")
+        .sql("SELECT * FROM my_table WHERE __seqnum__ BETWEEN 0 AND 100")
         .await
         .expect("sql");
 
@@ -45,7 +46,7 @@ async fn test_simple_query_with_no_data() -> Result<()> {
 async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
     let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let topic = initialize_test_topic(&admin, &namespace.name).await;
+    let table = initialize_test_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     {
@@ -67,14 +68,19 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .expect("create record batch");
 
         ingestion
-            .write(WriteBatchRequest {
-                batch_id: 0,
-                namespace: namespace.clone(),
-                topic: topic.clone(),
-                partition: None,
-                records,
-                timestamp: None,
-            })
+            .ingest(
+                namespace.clone(),
+                stream::iter(vec![
+                    WriteBatchRequest {
+                        batch_id: 0,
+                        table: table.clone(),
+                        partition: None,
+                        records,
+                        timestamp: None,
+                    }
+                    .into(),
+                ]),
+            )
             .await
             .expect("first_write");
     };
@@ -91,14 +97,19 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .expect("create record batch");
 
         ingestion
-            .write(WriteBatchRequest {
-                batch_id: 0,
-                namespace: namespace.clone(),
-                topic: topic.clone(),
-                partition: None,
-                records,
-                timestamp: None,
-            })
+            .ingest(
+                namespace.clone(),
+                stream::iter(vec![
+                    WriteBatchRequest {
+                        batch_id: 0,
+                        table: table.clone(),
+                        partition: None,
+                        records,
+                        timestamp: None,
+                    }
+                    .into(),
+                ]),
+            )
             .await
             .expect("second_write");
     };
@@ -114,7 +125,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
         .expect("new_session_context");
 
     let df = ctx
-        .sql("SELECT * FROM my_topic WHERE __offset__ BETWEEN 0 AND 100")
+        .sql("SELECT * FROM my_table WHERE __seqnum__ BETWEEN 0 AND 100")
         .await
         .expect("sql")
         .drop_columns(&["__timestamp__"])
@@ -124,7 +135,7 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 
     let expected = vec![
         "+----+---------+-----+------------+",
-        "| id | name    | age | __offset__ |",
+        "| id | name    | age | __seqnum__ |",
         "+----+---------+-----+------------+",
         "| 1  | Alice   | 32  | 0          |",
         "| 2  | Bob     | 27  | 1          |",
@@ -142,10 +153,10 @@ async fn test_simple_query_with_data_from_multiple_batches() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_simple_query_with_missing_offset_bounds() -> Result<()> {
+async fn test_simple_query_with_missing_seqnum_bounds() -> Result<()> {
     let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let _topic = initialize_test_topic(&admin, &namespace.name).await;
+    let _table = initialize_test_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     let provider = provider_factory
@@ -158,11 +169,11 @@ async fn test_simple_query_with_missing_offset_bounds() -> Result<()> {
         .await
         .expect("new_session_context");
 
-    let out = ctx.sql("SELECT * FROM my_topic").await.expect("sql");
+    let out = ctx.sql("SELECT * FROM my_table").await.expect("sql");
 
     let err = out.collect().await.unwrap_err();
     assert_eq!(
-        "No __offset__ filter provided. You must provide a lower and upper bound for __offset__.",
+        "No __seqnum__ filter provided. You must provide a lower and upper bound for __seqnum__.",
         err.message()
     );
 

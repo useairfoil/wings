@@ -5,20 +5,20 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::ClusterMetadata;
 use wings_control_plane_sql::SqlControlPlane;
-use wings_ingestor_core::{BatchIngestor, BatchIngestorClient};
+use wings_ingestor_core::{Ingestor, IngestorClient};
 use wings_object_store::TemporaryFileSystemFactory;
 use wings_observability::MetricsExporter;
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
-    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Topic, TopicName,
-    TopicOptions,
+    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Table, TableName,
+    TableOptions,
 };
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 use wings_server_core::query::NamespaceProviderFactory;
 
 pub async fn create_ingestor_and_provider() -> (
     JoinHandle<()>,
-    BatchIngestorClient,
+    IngestorClient,
     NamespaceProviderFactory,
     Arc<dyn ClusterMetadata>,
     CancellationToken,
@@ -34,7 +34,7 @@ pub async fn create_ingestor_and_provider() -> (
         metrics_exporter,
         object_store_factory.clone(),
     );
-    let ingestor = BatchIngestor::new(object_store_factory, control_plane.clone());
+    let ingestor = Ingestor::new(object_store_factory, control_plane.clone());
 
     let client = ingestor.client();
     let ct = CancellationToken::new();
@@ -93,35 +93,35 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
     namespace.into()
 }
 
-pub async fn initialize_test_partitioned_topic(
+pub async fn initialize_test_partitioned_table(
     cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
-) -> Arc<Topic> {
-    let topic_name = TopicName::new_unchecked("my_partitioned_topic", namespace.clone());
+) -> Arc<Table> {
+    let table_name = TableName::new_unchecked("my_partitioned_table", namespace.clone());
     let schema = schema_with_partition();
-    let topic = cluster_meta
-        .create_topic(
-            topic_name,
-            TopicOptions::new_with_partition_key(schema, Some(0)),
+    let table = cluster_meta
+        .create_table(
+            table_name,
+            TableOptions::new_with_partition_key(schema, Some(0)),
         )
         .await
-        .expect("create_topic");
+        .expect("create_table");
 
-    topic.into()
+    table.into()
 }
 
-pub async fn initialize_test_topic(
+pub async fn initialize_test_table(
     cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
-) -> Arc<Topic> {
-    let topic_name = TopicName::new_unchecked("my_topic", namespace.clone());
+) -> Arc<Table> {
+    let table_name = TableName::new_unchecked("my_table", namespace.clone());
     let schema = schema_without_partition();
-    let topic = cluster_meta
-        .create_topic(topic_name, TopicOptions::new(schema))
+    let table = cluster_meta
+        .create_table(table_name, TableOptions::new(schema))
         .await
-        .expect("create_topic");
+        .expect("create_table");
 
-    topic.into()
+    table.into()
 }
 
 pub fn default_flush_interval() -> Duration {

@@ -6,21 +6,21 @@ use http_body::Body;
 use wings_resources::NamespaceName;
 
 use crate::{
-    log_metadata::{
+    table_metadata::{
         CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
-        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-        LogMetadata, RequestTaskRequest, RequestTaskResponse, Result,
+        GetTableLocationRequest, ListPartitionsRequest, ListPartitionsResponse, TableLocation,
+        TableMetadata, RequestTaskRequest, RequestTaskResponse, Result,
     },
-    pb::{self, log_metadata_service_client::LogMetadataServiceClient as TonicClient},
+    pb::{self, table_metadata_service_client::TableMetadataServiceClient as TonicClient},
 };
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-pub struct LogMetadataClient<T> {
+pub struct TableMetadataClient<T> {
     client: TonicClient<T>,
 }
 
-impl<T> LogMetadataClient<T>
+impl<T> TableMetadataClient<T>
 where
     T: tonic::client::GrpcService<tonic::body::Body> + Clone,
     T::Error: Into<StdError>,
@@ -39,7 +39,7 @@ where
 }
 
 #[async_trait]
-impl<T> LogMetadata for LogMetadataClient<T>
+impl<T> TableMetadata for TableMetadataClient<T>
 where
     T: tonic::client::GrpcService<tonic::body::Body> + Send + Sync + Clone,
     <T as tonic::client::GrpcService<tonic::body::Body>>::Future: Send,
@@ -67,12 +67,12 @@ where
             .map_err(Into::into)
     }
 
-    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
-        let request: pb::GetLogLocationRequest = request.try_into()?;
+    async fn get_table_location(&self, request: GetTableLocationRequest) -> Result<Vec<TableLocation>> {
+        let request: pb::GetTableLocationRequest = request.try_into()?;
 
         self.client
             .clone()
-            .get_log_location(request)
+            .get_table_location(request)
             .await?
             .into_inner()
             .try_into()

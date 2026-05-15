@@ -3,13 +3,13 @@ use std::sync::Arc;
 use futures::{Stream, StreamExt, stream::FuturesOrdered};
 use snafu::ResultExt;
 use tokio::sync::{mpsc, oneshot};
-use wings_control_plane_core::log_metadata::{
-    CommitBatchRequest, CommittedBatch, LogMetadata, RejectedBatchInfo,
+use wings_control_plane_core::table_metadata::{
+    CommitBatchRequest, CommittedBatch, TableMetadata, RejectedBatchInfo,
 };
 use wings_resources::NamespaceRef;
 
 use crate::{
-    error::{IngestorError, LogMetadataSnafu, Result},
+    error::{IngestorError, TableMetadataSnafu, Result},
     reply::WithReply,
     request::WriteBatchRequest,
     response::WriteBatchResponse,
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Clone)]
 pub struct IngestorClient {
     pub(crate) tx: mpsc::Sender<WithReply<WriteBatchRequestWithNamespace>>,
-    pub(crate) log_meta: Arc<dyn LogMetadata>,
+    pub(crate) table_metadata: Arc<dyn TableMetadata>,
 }
 
 #[derive(Debug)]
@@ -62,7 +62,7 @@ impl IngestorClient {
 
             let (tx, rx) = oneshot::channel();
             // TODO: return validation error
-            assert_eq!(&namespace.name, request.topic.name.parent());
+            assert_eq!(&namespace.name, request.table.name.parent());
 
             let request_with_namespace = WithReply {
                 reply: tx,
@@ -117,7 +117,7 @@ impl IngestorClient {
             .into_iter()
             .map(|response| CommitBatchRequest {
                 batch_id: response.batch_id,
-                topic_name: response.topic_name,
+                table_name: response.table_name,
                 partition_value: response.partition_value,
                 file_ref: response.folio.file_ref,
                 page_offset_bytes: response.folio.offset_bytes,
@@ -128,10 +128,10 @@ impl IngestorClient {
             .collect::<Vec<_>>();
 
         let mut committed = self
-            .log_meta
+            .table_metadata
             .commit(namespace.name.clone(), batches)
             .await
-            .context(LogMetadataSnafu)?;
+            .context(TableMetadataSnafu)?;
 
         committed.extend(out);
 

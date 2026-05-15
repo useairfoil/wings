@@ -107,7 +107,7 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("topics")
+                    .table("tables")
                     .if_not_exists()
                     .col(ColumnDef::new("tenant_id").text())
                     .col(ColumnDef::new("namespace_id").text())
@@ -129,7 +129,7 @@ impl MigrationTrait for Migration {
                         ForeignKey::create()
                             .name("namespace_fk")
                             .to("namespaces", ("tenant_id", "id"))
-                            .from("topics", ("tenant_id", "namespace_id"))
+                            .from("tables", ("tenant_id", "namespace_id"))
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )

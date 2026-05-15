@@ -4,7 +4,7 @@ mod namespace;
 mod object_store;
 mod partition;
 mod tenant;
-mod topic;
+mod table;
 
 pub use self::{
     data_lake::{
@@ -19,8 +19,8 @@ pub use self::{
     },
     partition::{PartitionValue, PartitionValueError, PartitionValueParseError},
     tenant::{Tenant, TenantName, TenantRef},
-    topic::{
-        CompactionConfiguration, OFFSET_COLUMN_NAME, PartitionPosition, TIMESTAMP_COLUMN_NAME,
-        Topic, TopicCondition, TopicName, TopicOptions, TopicRef, TopicStatus, validate_compaction,
+    table::{
+        CompactionConfiguration, SEQNUM_COLUMN_NAME, PartitionPosition, TIMESTAMP_COLUMN_NAME,
+        Table, TableCondition, TableName, TableOptions, TableRef, TableStatus, validate_compaction,
     },
 };

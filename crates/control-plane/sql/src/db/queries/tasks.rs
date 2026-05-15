@@ -5,8 +5,8 @@ use sea_orm::{
 };
 use snafu::Snafu;
 use time::OffsetDateTime;
-use wings_control_plane_core::log_metadata::{
-    LogMetadataError, RequestTaskRequest, RequestTaskResponse,
+use wings_control_plane_core::table_metadata::{
+    TableMetadataError, RequestTaskRequest, RequestTaskResponse,
 };
 
 use crate::{Database, db::entities};
@@ -68,11 +68,11 @@ impl Database {
     }
 }
 
-impl From<Error> for LogMetadataError {
+impl From<Error> for TableMetadataError {
     fn from(err: Error) -> Self {
         match err {
             Error::Entity { source } => source.into(),
-            Error::Db { source } => LogMetadataError::Internal {
+            Error::Db { source } => TableMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
         }

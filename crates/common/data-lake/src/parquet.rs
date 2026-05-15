@@ -10,9 +10,9 @@ use parquet::file::{metadata::KeyValue, properties::WriterProperties};
 use snafu::ResultExt;
 use tracing::debug;
 use ulid::Ulid;
-use wings_control_plane_core::log_metadata::{FileInfo, FileMetadata, LogOffset};
+use wings_control_plane_core::table_metadata::{FileInfo, FileMetadata, SeqNum};
 use wings_object_store::paths::{format_parquet_data_path, format_partitioned_parquet_data_path};
-use wings_resources::{PartitionPosition, PartitionValue, TopicName, TopicRef};
+use wings_resources::{PartitionPosition, PartitionValue, TableName, TableRef};
 use wings_schema::Field;
 
 use super::error::Result;
@@ -33,9 +33,9 @@ pub struct ParquetBatchWriter {
     partition_field: Option<Field>,
     written: Vec<FileInfo>,
     target_file_size_bytes: u64,
-    topic_name: TopicName,
-    end_offset: u64,
-    current_file_start_offset: u64,
+    table_name: TableName,
+    end_seqnum: u64,
+    current_file_start_seqnum: u64,
 }
 
 impl ParquetDataLake {
@@ -46,29 +46,29 @@ impl ParquetDataLake {
 
 #[async_trait::async_trait]
 impl DataLake for ParquetDataLake {
-    async fn create_table(&self, topic: TopicRef) -> Result<String> {
-        Ok(topic.name.to_string())
+    async fn create_table(&self, table: TableRef) -> Result<String> {
+        Ok(table.name.to_string())
     }
 
     async fn batch_writer(
         &self,
-        topic: TopicRef,
+        table: TableRef,
         partition_value: Option<PartitionValue>,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>> {
         ParquetBatchWriter::new_boxed(
             self.object_store.clone(),
-            topic,
+            table,
             partition_value,
-            start_offset,
-            end_offset,
+            start_seqnum,
+            end_seqnum,
             target_file_size,
         )
     }
 
-    async fn commit_data(&self, _topic: TopicRef, _new_files: &[FileInfo]) -> Result<String> {
+    async fn commit_data(&self, _table: TableRef, _new_files: &[FileInfo]) -> Result<String> {
         Ok("0".to_string())
     }
 }
@@ -76,19 +76,19 @@ impl DataLake for ParquetDataLake {
 impl ParquetBatchWriter {
     pub fn new_boxed(
         object_store: Arc<dyn ObjectStore>,
-        topic: TopicRef,
+        table: TableRef,
         partition_value: Option<PartitionValue>,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>> {
         let writer_properties = {
             let partition_value = partition_value.as_ref().map(|v| v.to_string());
             let kv_metadata = vec![
-                KeyValue::new("WINGS:topic-name".to_string(), topic.name.to_string()),
+                KeyValue::new("WINGS:table-name".to_string(), table.name.to_string()),
                 KeyValue::new("WINGS:partition-value".to_string(), partition_value),
-                KeyValue::new("WINGS:start-offset".to_string(), start_offset.to_string()),
-                KeyValue::new("WINGS:end-offset".to_string(), end_offset.to_string()),
+                KeyValue::new("WINGS:start-seqnum".to_string(), start_seqnum.to_string()),
+                KeyValue::new("WINGS:end-seqnum".to_string(), end_seqnum.to_string()),
             ];
 
             WriterProperties::builder()
@@ -97,7 +97,7 @@ impl ParquetBatchWriter {
                 .build()
         };
 
-        let output_schema = topic
+        let output_schema = table
             .schema_with_metadata(PartitionPosition::Skip)
             .context(InvalidSchemaSnafu {})?;
         let inner = ParquetWriter::new(output_schema.into(), writer_properties);
@@ -105,13 +105,13 @@ impl ParquetBatchWriter {
         let writer = ParquetBatchWriter {
             inner: Mutex::new(inner),
             partition_value,
-            partition_field: topic.partition_field().cloned(),
+            partition_field: table.partition_field().cloned(),
             object_store,
             written: Default::default(),
             target_file_size_bytes: target_file_size.as_u64(),
-            topic_name: topic.name.clone(),
-            current_file_start_offset: start_offset,
-            end_offset,
+            table_name: table.name.clone(),
+            current_file_start_seqnum: start_seqnum,
+            end_seqnum,
         };
 
         Ok(Box::new(writer))
@@ -123,18 +123,18 @@ impl ParquetBatchWriter {
         let file_id = Ulid::new().to_string();
         let file_ref = if let Some(ref field) = self.partition_field {
             format_partitioned_parquet_data_path(
-                &self.topic_name,
+                &self.table_name,
                 field.name(),
                 &self.partition_value,
                 &file_id,
             )
         } else {
-            format_parquet_data_path(&self.topic_name, &file_id)
+            format_parquet_data_path(&self.table_name, &file_id)
         };
 
         debug!(
             %file_ref,
-            file_start_offset = self.current_file_start_offset,
+            file_start_seqnum = self.current_file_start_seqnum,
             "Uploading parquet file to storage"
         );
 
@@ -154,19 +154,19 @@ impl ParquetBatchWriter {
         let num_rows = metadata.num_rows as u64;
         assert!(num_rows > 0, "Parquet file with zero rows was uploaded");
 
-        let end_offset = self.current_file_start_offset + num_rows - 1;
+        let end_seqnum = self.current_file_start_seqnum + num_rows - 1;
 
-        // TODO: include correct timestamp in offsets
+        // TODO: include correct timestamp in seqnums
         self.written.push(FileInfo {
             file_ref,
             partition_value: self.partition_value.clone(),
-            start_offset: LogOffset::new(self.current_file_start_offset),
-            end_offset: LogOffset::new(end_offset),
+            start_seqnum: SeqNum::new(self.current_file_start_seqnum),
+            end_seqnum: SeqNum::new(end_seqnum),
             metadata,
             modification_time: SystemTime::now(),
         });
 
-        self.current_file_start_offset = end_offset + 1;
+        self.current_file_start_seqnum = end_seqnum + 1;
 
         Ok(())
     }
@@ -215,8 +215,8 @@ impl BatchWriter for ParquetBatchWriter {
         }
 
         assert!(
-            self.current_file_start_offset == self.end_offset + 1,
-            "Parquet offset accounting is off"
+            self.current_file_start_seqnum == self.end_seqnum + 1,
+            "Parquet seqnum accounting is off"
         );
 
         let written = std::mem::take(&mut self.written);

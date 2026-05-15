@@ -1,16 +1,16 @@
 syntax = "proto3";
 
-package wings.v1.log_metadata;
+package wings.v1.table_metadata;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "schema/arrow_type.proto";
 
-service LogMetadataService {
+service TableMetadataService {
   rpc Commit(CommitRequest) returns (CommitResponse);
 
-  rpc GetLogLocation(GetLogLocationRequest) returns (GetLogLocationResponse);
+  rpc GetTableLocation(GetTableLocationRequest) returns (GetTableLocationResponse);
 
   rpc ListPartitions(ListPartitionsRequest) returns (ListPartitionsResponse);
 
@@ -25,7 +25,7 @@ message CommitRequest {
 }
 
 message CommitBatchRequest {
-  string topic = 1;
+  string table = 1;
   optional PartitionValue partition = 2;
   /// The requested timestamp (if any) of the batch.
   optional google.protobuf.Timestamp timestamp = 3;
@@ -33,7 +33,7 @@ message CommitBatchRequest {
   uint32 num_rows = 4;
   /// The folio file containing the batch.
   string file_ref = 5;
-  /// The start offset of the batch's page in the folio file.
+  /// The start seqnum of the batch's page in the folio file.
   uint64 page_offset_bytes = 6;
   /// The batch size, in bytes.
   uint64 page_size_bytes = 7;
@@ -45,14 +45,14 @@ message CommitResponse {
   repeated CommittedBatch batches = 1;
 }
 
-message GetLogLocationRequest {
-  string topic = 1;
+message GetTableLocationRequest {
+  string table = 1;
   optional PartitionValue partition = 2;
-  GetLogLocationOptions options = 3;
-  uint64 offset = 4;
+  GetTableLocationOptions options = 3;
+  uint64 seqnum = 4;
 }
 
-message GetLogLocationOptions {
+message GetTableLocationOptions {
   google.protobuf.Duration deadline = 1;
   uint32 min_rows = 2;
   uint32 max_rows = 3;
@@ -65,11 +65,11 @@ message TimestampRange {
   google.protobuf.Timestamp end_timestamp = 2;
 }
 
-message GetLogLocationResponse {
-  repeated LogLocation locations = 1;
+message GetTableLocationResponse {
+  repeated TableLocation locations = 1;
 }
 
-message LogLocation {
+message TableLocation {
   oneof location {
     FolioLocation folio_location = 1;
     DataLakeLocation data_lake_location = 2;
@@ -88,12 +88,12 @@ message DataLakeLocation {
   string file_ref = 1;
   uint64 size_bytes = 2;
   uint32 num_rows = 3;
-  LogOffset start_offset = 4;
-  LogOffset end_offset = 5;
+  SeqNum start_seqnum = 4;
+  SeqNum end_seqnum = 5;
 }
 
 message ListPartitionsRequest {
-  string topic = 1;
+  string table = 1;
   optional int32 page_size = 2;
   optional string page_token = 3;
 }
@@ -105,17 +105,17 @@ message ListPartitionsResponse {
 
 message PartitionMetadata {
   optional PartitionValue value = 1;
-  LogOffset end_offset = 2;
+  SeqNum end_seqnum = 2;
 }
 
 message CommittedBatch {
   message Accepted {
     /// The request id used to correlate the request with the response.
     uint32 batch_id = 4;
-    /// The offset assigned to the first row in the batch.
-    uint64 start_offset = 1;
-    /// The offset assigned to the last row in the batch.
-    uint64 end_offset = 2;
+    /// The seqnum assigned to the first row in the batch.
+    uint64 start_seqnum = 1;
+    /// The seqnum assigned to the last row in the batch.
+    uint64 end_seqnum = 2;
     /// The timestamp assigned to the batch.
     google.protobuf.Timestamp timestamp = 3;
   }
@@ -135,8 +135,8 @@ message CommittedBatch {
   }
 }
 
-message LogOffset {
-  uint64 offset = 1;
+message SeqNum {
+  uint64 seqnum = 1;
   google.protobuf.Timestamp timestamp = 2;
 }
 
@@ -175,7 +175,7 @@ enum CompactionOperation {
 }
 
 message CreateTableTask {
-  string topic = 1;
+  string table = 1;
 }
 
 message FileMetadata {
@@ -191,23 +191,23 @@ message FileMetadata {
 message FileInfo {
   string file_ref = 1;
   optional PartitionValue partition_value = 2;
-  LogOffset start_offset = 3;
-  LogOffset end_offset = 4;
+  SeqNum start_seqnum = 3;
+  SeqNum end_seqnum = 4;
   FileMetadata metadata = 5;
   google.protobuf.Timestamp modification_time = 6;
 }
 
 message CompactionTask {
-  string topic = 1;
+  string table = 1;
   optional PartitionValue partition = 2;
-  uint64 start_offset = 3;
-  uint64 end_offset = 4;
+  uint64 start_seqnum = 3;
+  uint64 end_seqnum = 4;
   CompactionOperation operation = 5;
   uint64 target_file_size = 6;
 }
 
 message CommitTask {
-  string topic = 1;
+  string table = 1;
   repeated FileInfo new_files = 2;
 }
 

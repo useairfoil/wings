@@ -73,11 +73,11 @@ impl FolioUploader {
             for reply in page.replies.into_iter() {
                 let response = WriteBatchResponse {
                     batch_id: reply.data.batch_id,
-                    topic_name: page.topic_name.clone(),
+                    table_name: page.table_name.clone(),
                     partition_value: page.partition_value.clone(),
                     folio: folio_page_meta.clone(),
                     num_rows: reply.data.num_rows as _,
-                    offset: reply.data.offset_rows as _,
+                    seqnum: reply.data.offset_rows as _,
                     timestamp: reply.data.timestamp,
                 };
                 replies.push((reply.reply, response));

@@ -1,11 +1,12 @@
 use common::{
-    create_ingestor_and_provider, initialize_test_namespace, initialize_test_partitioned_topic,
+    create_ingestor_and_provider, initialize_test_namespace, initialize_test_partitioned_table,
     schema_without_partition,
 };
 use datafusion::{
     assert_batches_sorted_eq,
     common::{arrow::array::RecordBatch, create_array},
 };
+use futures::stream;
 use wings_ingestor_core::{Result, WriteBatchRequest};
 use wings_resources::PartitionValue;
 
@@ -15,7 +16,7 @@ mod common;
 async fn test_partitioned_query_with_no_data() -> Result<()> {
     let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
+    let _table = initialize_test_partitioned_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     let provider = provider_factory
@@ -29,7 +30,7 @@ async fn test_partitioned_query_with_no_data() -> Result<()> {
         .expect("new_session_context");
 
     let out = ctx
-        .sql("SELECT * FROM my_partitioned_topic WHERE __offset__ BETWEEN 0 AND 100 AND region_id = 1")
+        .sql("SELECT * FROM my_partitioned_table WHERE __seqnum__ BETWEEN 0 AND 100 AND region_id = 1")
         .await
         .expect("sql");
 
@@ -46,7 +47,7 @@ async fn test_partitioned_query_with_no_data() -> Result<()> {
 async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> {
     let (ing_fut, ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
+    let table = initialize_test_partitioned_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     {
@@ -68,14 +69,19 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(WriteBatchRequest {
-                batch_id: 0,
-                namespace: namespace.clone(),
-                topic: topic.clone(),
-                partition: Some(PartitionValue::Int64(100)),
-                records,
-                timestamp: None,
-            })
+            .ingest(
+                namespace.clone(),
+                stream::iter(vec![
+                    WriteBatchRequest {
+                        batch_id: 0,
+                        table: table.clone(),
+                        partition: Some(PartitionValue::Int64(100)),
+                        records,
+                        timestamp: None,
+                    }
+                    .into(),
+                ]),
+            )
             .await
             .expect("first_write");
     };
@@ -92,14 +98,19 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(WriteBatchRequest {
-                batch_id: 0,
-                namespace: namespace.clone(),
-                topic: topic.clone(),
-                partition: Some(PartitionValue::Int64(200)),
-                records,
-                timestamp: None,
-            })
+            .ingest(
+                namespace.clone(),
+                stream::iter(vec![
+                    WriteBatchRequest {
+                        batch_id: 0,
+                        table: table.clone(),
+                        partition: Some(PartitionValue::Int64(200)),
+                        records,
+                        timestamp: None,
+                    }
+                    .into(),
+                ]),
+            )
             .await
             .expect("second_write");
     };
@@ -123,14 +134,19 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("create record batch");
 
         ingestion
-            .write(WriteBatchRequest {
-                batch_id: 0,
-                namespace: namespace.clone(),
-                topic: topic.clone(),
-                partition: Some(PartitionValue::Int64(100)),
-                records,
-                timestamp: None,
-            })
+            .ingest(
+                namespace.clone(),
+                stream::iter(vec![
+                    WriteBatchRequest {
+                        batch_id: 0,
+                        table: table.clone(),
+                        partition: Some(PartitionValue::Int64(100)),
+                        records,
+                        timestamp: None,
+                    }
+                    .into(),
+                ]),
+            )
             .await
             .expect("third_write");
     };
@@ -146,7 +162,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
         .expect("new_session_context");
 
     let df = ctx
-        .sql("SELECT * FROM my_partitioned_topic WHERE __offset__ BETWEEN 0 AND 100 AND region_id = 100")
+        .sql("SELECT * FROM my_partitioned_table WHERE __seqnum__ BETWEEN 0 AND 100 AND region_id = 100")
         .await
         .expect("sql")
         .drop_columns(&["__timestamp__"])
@@ -155,7 +171,7 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
     let out = df.collect().await.expect("collect");
     let expected = vec![
         "+-----+---------+-----+-----------+------------+",
-        "| id  | name    | age | region_id | __offset__ |",
+        "| id  | name    | age | region_id | __seqnum__ |",
         "+-----+---------+-----+-----------+------------+",
         "| 101 | Alice   | 32  | 100       | 0          |",
         "| 102 | Bob     | 27  | 100       | 1          |",
@@ -174,10 +190,10 @@ async fn test_partitioned_query_with_data_from_multiple_batches() -> Result<()> 
 }
 
 #[tokio::test]
-async fn test_partitioned_query_with_missing_offset_bounds() -> Result<()> {
+async fn test_partitioned_query_with_missing_seqnum_bounds() -> Result<()> {
     let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
+    let _table = initialize_test_partitioned_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     let provider = provider_factory
@@ -191,13 +207,13 @@ async fn test_partitioned_query_with_missing_offset_bounds() -> Result<()> {
         .expect("new_session_context");
 
     let out = ctx
-        .sql("SELECT * FROM my_partitioned_topic WHERE region_id = 100")
+        .sql("SELECT * FROM my_partitioned_table WHERE region_id = 100")
         .await
         .expect("sql");
 
     let err = out.collect().await.unwrap_err();
     assert_eq!(
-        "No __offset__ filter provided. You must provide a lower and upper bound for __offset__.",
+        "No __seqnum__ filter provided. You must provide a lower and upper bound for __seqnum__.",
         err.message()
     );
 
@@ -211,7 +227,7 @@ async fn test_partitioned_query_with_missing_offset_bounds() -> Result<()> {
 async fn test_partitioned_query_with_missing_partition_value() -> Result<()> {
     let (ing_fut, _ingestion, provider_factory, admin, ct) = create_ingestor_and_provider().await;
     let namespace = initialize_test_namespace(&admin).await;
-    let _topic = initialize_test_partitioned_topic(&admin, &namespace.name).await;
+    let _table = initialize_test_partitioned_table(&admin, &namespace.name).await;
     let ct_guard = ct.drop_guard();
 
     let provider = provider_factory
@@ -225,7 +241,7 @@ async fn test_partitioned_query_with_missing_partition_value() -> Result<()> {
         .expect("new_session_context");
 
     let out = ctx
-        .sql("SELECT * FROM my_partitioned_topic WHERE __offset__ BETWEEN 0 AND 100")
+        .sql("SELECT * FROM my_partitioned_table WHERE __seqnum__ BETWEEN 0 AND 100")
         .await
         .expect("sql");
 

@@ -14,24 +14,24 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(ColumnDef::new("tenant_id").text())
                     .col(ColumnDef::new("namespace_id").text())
-                    .col(ColumnDef::new("topic_id").text())
+                    .col(ColumnDef::new("table_id").text())
                     .col(ColumnDef::new("partition_value").binary())
-                    .col(ColumnDef::new("next_offset").integer().not_null())
+                    .col(ColumnDef::new("next_seqnum").integer().not_null())
                     .col(ColumnDef::new("last_timestamp_ms").integer().not_null())
                     .primary_key(
                         Index::create()
                             .col("tenant_id")
                             .col("namespace_id")
-                            .col("topic_id")
+                            .col("table_id")
                             .col("partition_value"),
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .name("topic_fk")
-                            .to("topics", ("tenant_id", "namespace_id", "id"))
+                            .name("table_fk")
+                            .to("tables", ("tenant_id", "namespace_id", "id"))
                             .from(
                                 "partition_states",
-                                ("tenant_id", "namespace_id", "topic_id"),
+                                ("tenant_id", "namespace_id", "table_id"),
                             )
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
@@ -53,10 +53,10 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new("tenant_id").text())
                     .col(ColumnDef::new("namespace_id").text())
-                    .col(ColumnDef::new("topic_id").text())
+                    .col(ColumnDef::new("table_id").text())
                     .col(ColumnDef::new("partition_value").text())
-                    .col(ColumnDef::new("start_offset").integer().not_null())
-                    .col(ColumnDef::new("end_offset").integer().not_null())
+                    .col(ColumnDef::new("start_seqnum").integer().not_null())
+                    .col(ColumnDef::new("end_seqnum").integer().not_null())
                     .col(ColumnDef::new("file_ref").text().not_null())
                     .col(ColumnDef::new("num_rows").integer().not_null())
                     // either F (folio) or P (parquet)
@@ -69,11 +69,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new("parquet_metadata_pb").binary())
                     .foreign_key(
                         ForeignKey::create()
-                            .name("topic_fk")
-                            .to("topics", ("tenant_id", "namespace_id", "id"))
+                            .name("table_fk")
+                            .to("tables", ("tenant_id", "namespace_id", "id"))
                             .from(
                                 "partition_locations",
-                                ("tenant_id", "namespace_id", "topic_id"),
+                                ("tenant_id", "namespace_id", "table_id"),
                             )
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),

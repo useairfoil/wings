@@ -1,14 +1,14 @@
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, ClusterMetadataError, ListTopicsRequest, TopicView,
+    ClusterMetadata, ClusterMetadataError, ListTablesRequest, TableView,
 };
 use wings_control_plane_sql::SqlControlPlane;
-use wings_resources::{NamespaceName, TopicName, TopicOptions};
+use wings_resources::{NamespaceName, TableName, TableOptions};
 use wings_schema::{DataType, Field, SchemaBuilder};
 
 mod common;
 
 #[tokio::test]
-async fn test_topic_roundtrip() {
+async fn test_table_roundtrip() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -16,17 +16,17 @@ async fn test_topic_roundtrip() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![
         Field::new("id", 1, DataType::Int64, false),
         Field::new("message", 2, DataType::Utf8, false),
     ])
     .build()
     .unwrap();
-    let options = TopicOptions::new(schema.clone());
+    let options = TableOptions::new(schema.clone());
 
     let back = cp
-        .create_topic(name.clone(), options.clone())
+        .create_table(name.clone(), options.clone())
         .await
         .unwrap();
 
@@ -37,7 +37,7 @@ async fn test_topic_roundtrip() {
 }
 
 #[tokio::test]
-async fn test_topic_with_partition_key() {
+async fn test_table_with_partition_key() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -45,17 +45,17 @@ async fn test_topic_with_partition_key() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![
         Field::new("id", 1, DataType::Int64, false),
         Field::new("message", 2, DataType::Utf8, false),
     ])
     .build()
     .unwrap();
-    let options = TopicOptions::new_with_partition_key(schema.clone(), Some(1));
+    let options = TableOptions::new_with_partition_key(schema.clone(), Some(1));
 
     let back = cp
-        .create_topic(name.clone(), options.clone())
+        .create_table(name.clone(), options.clone())
         .await
         .unwrap();
 
@@ -64,25 +64,25 @@ async fn test_topic_with_partition_key() {
 }
 
 #[tokio::test]
-async fn test_get_topic() {
+async fn test_get_table() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
     common::seed_data_lake(&cp).await;
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
-    common::seed_topic(&cp).await;
+    common::seed_table(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
 
-    let back = cp.get_topic(name.clone(), TopicView::Basic).await.unwrap();
+    let back = cp.get_table(name.clone(), TableView::Basic).await.unwrap();
 
     assert_eq!(back.name, name);
     assert_eq!(back.schema.fields.len(), 1);
 }
 
 #[tokio::test]
-async fn test_get_topic_fails_if_not_found() {
+async fn test_get_table_fails_if_not_found() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -90,35 +90,35 @@ async fn test_get_topic_fails_if_not_found() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/nonexistent").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/nonexistent").unwrap();
 
-    let result = cp.get_topic(name, TopicView::Basic).await;
+    let result = cp.get_table(name, TableView::Basic).await;
 
     assert!(matches!(result, Err(ClusterMetadataError::NotFound { .. })));
 }
 
 #[tokio::test]
-async fn test_list_topics() {
+async fn test_list_tables() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
     common::seed_data_lake(&cp).await;
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
-    common::seed_topic(&cp).await;
+    common::seed_table(&cp).await;
 
     let namespace_name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
-    let request = ListTopicsRequest::new(namespace_name);
+    let request = ListTablesRequest::new(namespace_name);
 
-    let response = cp.list_topics(request).await.unwrap();
+    let response = cp.list_tables(request).await.unwrap();
 
-    assert_eq!(response.topics.len(), 1);
-    assert_eq!(response.topics[0].name.id, "my-topic");
+    assert_eq!(response.tables.len(), 1);
+    assert_eq!(response.tables[0].name.id, "my-table");
     assert!(response.next_page_token.is_none());
 }
 
 #[tokio::test]
-async fn test_list_topics_empty() {
+async fn test_list_tables_empty() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -127,34 +127,34 @@ async fn test_list_topics_empty() {
     common::seed_namespace(&cp).await;
 
     let namespace_name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
-    let request = ListTopicsRequest::new(namespace_name);
+    let request = ListTablesRequest::new(namespace_name);
 
-    let response = cp.list_topics(request).await.unwrap();
+    let response = cp.list_tables(request).await.unwrap();
 
-    assert!(response.topics.is_empty());
+    assert!(response.tables.is_empty());
     assert!(response.next_page_token.is_none());
 }
 
 #[tokio::test]
-async fn test_delete_topic() {
+async fn test_delete_table() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
     common::seed_data_lake(&cp).await;
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
-    common::seed_topic(&cp).await;
+    common::seed_table(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
 
-    cp.delete_topic(name.clone(), false).await.unwrap();
+    cp.delete_table(name.clone(), false).await.unwrap();
 
-    let result = cp.get_topic(name, TopicView::Basic).await;
+    let result = cp.get_table(name, TableView::Basic).await;
     assert!(matches!(result, Err(ClusterMetadataError::NotFound { .. })));
 }
 
 #[tokio::test]
-async fn test_delete_topic_fails_if_not_found() {
+async fn test_delete_table_fails_if_not_found() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -162,47 +162,47 @@ async fn test_delete_topic_fails_if_not_found() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/nonexistent").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/nonexistent").unwrap();
 
-    let result = cp.delete_topic(name, false).await;
+    let result = cp.delete_table(name, false).await;
 
     assert!(matches!(result, Err(ClusterMetadataError::NotFound { .. })));
 }
 
 #[tokio::test]
-async fn test_create_topic_fails_if_parent_namespace_doesnt_exist() {
+async fn test_create_table_fails_if_parent_namespace_doesnt_exist() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/nonexistent/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/nonexistent/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
-    let options = TopicOptions::new(schema);
+    let options = TableOptions::new(schema);
 
-    let result = cp.create_topic(name, options).await;
+    let result = cp.create_table(name, options).await;
 
     assert!(matches!(result, Err(ClusterMetadataError::NotFound { .. })));
 }
 
 #[tokio::test]
-async fn test_create_topic_fails_if_already_exists() {
+async fn test_create_table_fails_if_already_exists() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
     common::seed_data_lake(&cp).await;
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
-    common::seed_topic(&cp).await;
+    common::seed_table(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
-    let options = TopicOptions::new(schema);
+    let options = TableOptions::new(schema);
 
-    let result = cp.create_topic(name, options).await;
+    let result = cp.create_table(name, options).await;
 
     assert!(matches!(
         result,
@@ -211,7 +211,7 @@ async fn test_create_topic_fails_if_already_exists() {
 }
 
 #[tokio::test]
-async fn test_create_topic_fails_if_partition_key_not_in_schema() {
+async fn test_create_table_fails_if_partition_key_not_in_schema() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -219,14 +219,14 @@ async fn test_create_topic_fails_if_partition_key_not_in_schema() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
     // Try to use partition key 999 which doesn't exist
-    let options = TopicOptions::new_with_partition_key(schema, Some(999));
+    let options = TableOptions::new_with_partition_key(schema, Some(999));
 
-    let result = cp.create_topic(name, options).await;
+    let result = cp.create_table(name, options).await;
 
     assert!(matches!(
         result,
@@ -235,7 +235,7 @@ async fn test_create_topic_fails_if_partition_key_not_in_schema() {
 }
 
 #[tokio::test]
-async fn test_create_topic_with_description() {
+async fn test_create_table_with_description() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -243,22 +243,22 @@ async fn test_create_topic_with_description() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
-    let options = TopicOptions::new(schema).with_description("My test topic");
+    let options = TableOptions::new(schema).with_description("My test table");
 
     let back = cp
-        .create_topic(name.clone(), options.clone())
+        .create_table(name.clone(), options.clone())
         .await
         .unwrap();
 
-    assert_eq!(back.description, Some("My test topic".to_string()));
+    assert_eq!(back.description, Some("My test table".to_string()));
 }
 
 #[tokio::test]
-async fn test_create_topic_fails_with_invalid_compaction() {
+async fn test_create_table_fails_with_invalid_compaction() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
@@ -266,7 +266,7 @@ async fn test_create_topic_fails_with_invalid_compaction() {
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
@@ -277,9 +277,9 @@ async fn test_create_topic_fails_with_invalid_compaction() {
         ttl: None,
         target_file_size: bytesize::ByteSize::mb(512),
     };
-    let options = TopicOptions::new(schema).with_compaction(invalid_compaction);
+    let options = TableOptions::new(schema).with_compaction(invalid_compaction);
 
-    let result = cp.create_topic(name, options).await;
+    let result = cp.create_table(name, options).await;
 
     assert!(matches!(
         result,

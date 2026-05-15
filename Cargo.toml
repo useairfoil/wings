@@ -8,7 +8,6 @@ license = "Apache-2.0"
 resolver = "2"
 default-members = ["bin/wings"]
 members = [
-    "bin/wings",
     "crates/client",
     "crates/control-plane/core",
     "crates/control-plane/sql",
@@ -22,8 +21,9 @@ members = [
     "crates/common/resources",
     "crates/common/schema",
     "crates/server/core",
-    "bin/wings-stress",
     "crates/worker/core",
+    "bin/wings",
+    "bin/wings-stress",
 ]
 
 [profile.maxperf]

@@ -5,7 +5,7 @@
 
 mod cluster_metadata;
 pub mod db;
-mod log_metadata;
+mod table_metadata;
 
 pub use sea_orm::ConnectOptions;
 use sea_orm_migration::MigratorTrait;

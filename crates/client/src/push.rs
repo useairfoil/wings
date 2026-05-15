@@ -13,9 +13,9 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Status, transport::Channel};
 use tracing::debug;
-use wings_control_plane_core::log_metadata::CommittedBatch;
+use wings_control_plane_core::table_metadata::CommittedBatch;
 use wings_flight::IngestionResponseMetadata;
-use wings_resources::{NamespaceName, PartitionValue, Topic, TopicName};
+use wings_resources::{NamespaceName, PartitionValue, Table, TableName};
 
 use crate::{
     WingsClient,
@@ -29,7 +29,7 @@ const DEFAULT_CHANNEL_SIZE: usize = 1024;
 /// A client to push data to a specific namespace.
 pub struct PushClient {
     namespace_name: NamespaceName,
-    topic_name: TopicName,
+    table_name: TableName,
     next_batch_id: AtomicU32,
     encoder: Mutex<IngestionFlightDataEncoder>,
     inner: Mutex<InnerClient>,
@@ -37,7 +37,7 @@ pub struct PushClient {
 }
 
 pub struct WriteRequest {
-    pub topic_name: TopicName,
+    pub table_name: TableName,
     pub partition_value: Option<PartitionValue>,
     pub timestamp: Option<SystemTime>,
     pub data: RecordBatch,
@@ -61,8 +61,8 @@ struct PushSession {
 }
 
 impl PushClient {
-    pub(crate) async fn new(client: &WingsClient, topic: Topic) -> Result<Self> {
-        debug!(topic = ?topic, "connecting to flight push endpoint");
+    pub(crate) async fn new(client: &WingsClient, table: Table) -> Result<Self> {
+        debug!(table = ?table, "connecting to flight push endpoint");
         let inner = InnerClient {
             flight: client.flight.clone(),
             session: None,
@@ -70,8 +70,8 @@ impl PushClient {
         };
 
         Ok(Self {
-            namespace_name: topic.name.parent.clone(),
-            topic_name: topic.name.clone(),
+            namespace_name: table.name.parent.clone(),
+            table_name: table.name.clone(),
             encoder: Mutex::new(IngestionFlightDataEncoder::new()),
             next_batch_id: AtomicU32::new(0),
             inner: Mutex::new(inner),
@@ -79,8 +79,8 @@ impl PushClient {
         })
     }
 
-    pub fn topic_name(&self) -> &TopicName {
-        &self.topic_name
+    pub fn table_name(&self) -> &TableName {
+        &self.table_name
     }
 
     pub async fn push(&self, request: WriteRequest) -> Result<WriteResponse<'_>> {

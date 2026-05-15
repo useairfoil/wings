@@ -9,15 +9,15 @@ use wings_resources::{
     AwsConfiguration, AzureConfiguration, CompactionConfiguration, DataLake, DataLakeConfiguration,
     DataLakeName, DeltaConfiguration, GoogleConfiguration, IcebergConfiguration, Namespace,
     NamespaceName, NamespaceOptions, ObjectStore, ObjectStoreConfiguration, ObjectStoreName,
-    ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Topic, TopicCondition,
-    TopicName, TopicOptions, TopicStatus,
+    ParquetConfiguration, S3CompatibleConfiguration, Tenant, TenantName, Table, TableCondition,
+    TableName, TableOptions, TableStatus,
 };
 
 use crate::{
     cluster_metadata::{
         ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest, ListNamespacesResponse,
         ListObjectStoresRequest, ListObjectStoresResponse, ListTenantsRequest, ListTenantsResponse,
-        ListTopicsRequest, ListTopicsResponse, TopicView,
+        ListTablesRequest, ListTablesResponse, TableView,
     },
     pb::{
         self,
@@ -264,71 +264,71 @@ impl TryFrom<pb::ListNamespacesResponse> for ListNamespacesResponse {
  *    ░░░░░       ░░░░░░░    ░░░░░        ░░░░░   ░░░░░░░░░
  */
 
-impl TryFrom<Topic> for pb::Topic {
+impl TryFrom<Table> for pb::Table {
     type Error = WireError;
 
-    fn try_from(topic: Topic) -> Result<Self> {
-        let schema = topic.schema().into();
-        let compaction = topic.compaction.into();
-        let status = topic.status.map(pb::TopicStatus::from);
+    fn try_from(table: Table) -> Result<Self> {
+        let schema = table.schema().into();
+        let compaction = table.compaction.into();
+        let status = table.status.map(pb::TableStatus::from);
 
         Ok(Self {
-            name: topic.name.name(),
+            name: table.name.name(),
             schema: Some(schema),
-            description: topic.description,
-            partition_key: topic.partition_key,
+            description: table.description,
+            partition_key: table.partition_key,
             compaction: Some(compaction),
             status,
         })
     }
 }
 
-impl TryFrom<pb::Topic> for Topic {
+impl TryFrom<pb::Table> for Table {
     type Error = WireError;
 
-    fn try_from(topic: pb::Topic) -> Result<Self> {
-        let name = TopicName::parse(&topic.name).context(ResourceSnafu { resource: "topic" })?;
-        let schema = topic.schema.as_ref().required("schema")?.try_into()?;
+    fn try_from(table: pb::Table) -> Result<Self> {
+        let name = TableName::parse(&table.name).context(ResourceSnafu { resource: "table" })?;
+        let schema = table.schema.as_ref().required("schema")?.try_into()?;
 
-        let compaction = topic.compaction.required("compaction")?.into();
+        let compaction = table.compaction.required("compaction")?.into();
 
-        let status = topic.status.map(Into::into);
+        let status = table.status.map(Into::into);
 
         Ok(Self {
             name,
             schema,
-            description: topic.description,
-            partition_key: topic.partition_key,
+            description: table.description,
+            partition_key: table.partition_key,
             compaction,
             status,
         })
     }
 }
 
-impl TryFrom<pb::Topic> for TopicOptions {
+impl TryFrom<pb::Table> for TableOptions {
     type Error = WireError;
 
-    fn try_from(topic: pb::Topic) -> Result<Self> {
-        let schema = topic.schema.as_ref().required("schema")?.try_into()?;
-        let compaction = topic.compaction.required("compaction")?.into();
+    fn try_from(table: pb::Table) -> Result<Self> {
+        let schema = table.schema.as_ref().required("schema")?.try_into()?;
+        let compaction = table.compaction.required("compaction")?.into();
 
         Ok(Self {
             schema,
-            partition_key: topic.partition_key,
-            description: topic.description,
+            partition_key: table.partition_key,
+            description: table.description,
             compaction,
         })
     }
 }
 
-impl TryFrom<TopicOptions> for pb::Topic {
+impl TryFrom<TableOptions> for pb::Table {
     type Error = WireError;
 
-    fn try_from(options: TopicOptions) -> Result<Self> {
+    fn try_from(options: TableOptions) -> Result<Self> {
         let compaction = options.compaction.into();
         let schema = (&options.schema).into();
 
-        Ok(pb::Topic {
+        Ok(pb::Table {
             name: String::new(),
             schema: Some(schema),
             partition_key: options.partition_key,
@@ -339,21 +339,21 @@ impl TryFrom<TopicOptions> for pb::Topic {
     }
 }
 
-impl From<TopicView> for pb::TopicView {
-    fn from(view: TopicView) -> Self {
+impl From<TableView> for pb::TableView {
+    fn from(view: TableView) -> Self {
         match view {
-            TopicView::Basic => pb::TopicView::Basic,
-            TopicView::Full => pb::TopicView::Full,
+            TableView::Basic => pb::TableView::Basic,
+            TableView::Full => pb::TableView::Full,
         }
     }
 }
 
-impl From<pb::TopicView> for TopicView {
-    fn from(view: pb::TopicView) -> Self {
+impl From<pb::TableView> for TableView {
+    fn from(view: pb::TableView) -> Self {
         match view {
-            pb::TopicView::Unspecified => Default::default(),
-            pb::TopicView::Basic => TopicView::Basic,
-            pb::TopicView::Full => TopicView::Full,
+            pb::TableView::Unspecified => Default::default(),
+            pb::TableView::Basic => TableView::Basic,
+            pb::TableView::Full => TableView::Full,
         }
     }
 }
@@ -378,8 +378,8 @@ impl From<pb::CompactionConfiguration> for CompactionConfiguration {
     }
 }
 
-impl From<TopicStatus> for pb::TopicStatus {
-    fn from(status: TopicStatus) -> Self {
+impl From<TableStatus> for pb::TableStatus {
+    fn from(status: TableStatus) -> Self {
         let conditions = status.conditions.into_iter().map(Into::into).collect();
 
         Self {
@@ -389,8 +389,8 @@ impl From<TopicStatus> for pb::TopicStatus {
     }
 }
 
-impl From<pb::TopicStatus> for TopicStatus {
-    fn from(status: pb::TopicStatus) -> Self {
+impl From<pb::TableStatus> for TableStatus {
+    fn from(status: pb::TableStatus) -> Self {
         let conditions = status.conditions.into_iter().map(Into::into).collect();
 
         Self {
@@ -400,8 +400,8 @@ impl From<pb::TopicStatus> for TopicStatus {
     }
 }
 
-impl From<TopicCondition> for pb::TopicCondition {
-    fn from(condition: TopicCondition) -> Self {
+impl From<TableCondition> for pb::TableCondition {
+    fn from(condition: TableCondition) -> Self {
         let duration = condition
             .last_transition_time
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -421,8 +421,8 @@ impl From<TopicCondition> for pb::TopicCondition {
     }
 }
 
-impl From<pb::TopicCondition> for TopicCondition {
-    fn from(condition: pb::TopicCondition) -> Self {
+impl From<pb::TableCondition> for TableCondition {
+    fn from(condition: pb::TableCondition) -> Self {
         let last_transition_time = condition
             .last_transition_time
             .map(|ts| {
@@ -442,8 +442,8 @@ impl From<pb::TopicCondition> for TopicCondition {
     }
 }
 
-impl From<ListTopicsRequest> for pb::ListTopicsRequest {
-    fn from(request: ListTopicsRequest) -> Self {
+impl From<ListTablesRequest> for pb::ListTablesRequest {
+    fn from(request: ListTablesRequest) -> Self {
         Self {
             parent: request.parent.name(),
             page_size: request.page_size.map(|size| size as i32),
@@ -452,10 +452,10 @@ impl From<ListTopicsRequest> for pb::ListTopicsRequest {
     }
 }
 
-impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
+impl TryFrom<pb::ListTablesRequest> for ListTablesRequest {
     type Error = WireError;
 
-    fn try_from(request: pb::ListTopicsRequest) -> Result<Self> {
+    fn try_from(request: pb::ListTablesRequest) -> Result<Self> {
         let parent = NamespaceName::parse(&request.parent).context(ResourceSnafu {
             resource: "namespace",
         })?;
@@ -468,35 +468,35 @@ impl TryFrom<pb::ListTopicsRequest> for ListTopicsRequest {
     }
 }
 
-impl TryFrom<ListTopicsResponse> for pb::ListTopicsResponse {
+impl TryFrom<ListTablesResponse> for pb::ListTablesResponse {
     type Error = WireError;
 
-    fn try_from(response: ListTopicsResponse) -> Result<Self> {
-        let topics = response
-            .topics
+    fn try_from(response: ListTablesResponse) -> Result<Self> {
+        let tables = response
+            .tables
             .into_iter()
-            .map(pb::Topic::try_from)
+            .map(pb::Table::try_from)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
-            topics,
+            tables,
             next_page_token: response.next_page_token.unwrap_or_default(),
         })
     }
 }
 
-impl TryFrom<pb::ListTopicsResponse> for ListTopicsResponse {
+impl TryFrom<pb::ListTablesResponse> for ListTablesResponse {
     type Error = WireError;
 
-    fn try_from(response: pb::ListTopicsResponse) -> Result<Self> {
-        let topics = response
-            .topics
+    fn try_from(response: pb::ListTablesResponse) -> Result<Self> {
+        let tables = response
+            .tables
             .into_iter()
-            .map(Topic::try_from)
+            .map(Table::try_from)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
-            topics,
+            tables,
             next_page_token: if response.next_page_token.is_empty() {
                 None
             } else {
@@ -1047,26 +1047,26 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_conversion() {
+    fn test_table_conversion() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
         let schema = SchemaBuilder::new(vec![Field::new("test", 0, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
-        let domain_topic = Topic::new(topic_name.clone(), options);
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
+        let domain_table = Table::new(table_name.clone(), options);
 
         // Domain to protobuf
-        let pb_topic = pb::Topic::try_from(domain_topic.clone()).unwrap();
+        let pb_table = pb::Table::try_from(domain_table.clone()).unwrap();
 
         // Protobuf to domain
-        let converted_topic = Topic::try_from(pb_topic).unwrap();
-        assert_eq!(converted_topic.name, domain_topic.name);
-        assert_eq!(converted_topic.partition_key, domain_topic.partition_key);
+        let converted_table = Table::try_from(pb_table).unwrap();
+        assert_eq!(converted_table.name, domain_table.name);
+        assert_eq!(converted_table.partition_key, domain_table.partition_key);
         assert_eq!(
-            converted_topic.schema().fields.len(),
-            domain_topic.schema().fields.len()
+            converted_table.schema().fields.len(),
+            domain_table.schema().fields.len()
         );
     }
 

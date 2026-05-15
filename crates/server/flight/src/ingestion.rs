@@ -10,8 +10,8 @@
 //! Schema messages signal the start of a new batch and contain the metadata necessary for ingestion.
 //!
 //!  - the batch id (required)
-//!  - the topic name (required)
-//!  - the partition value (required if the topic is partitioned)
+//!  - the table name (required)
+//!  - the partition value (required if the table is partitioned)
 //!  - a timestamp for the batch (optional)
 //!
 //! This metadata is contained in the `FlightData.app_metadata` field.
@@ -37,7 +37,7 @@
 //!   |------------- Batch ------------->|     # The client sends batches of data
 //!   |------------- Batch ------------->|     # The batches belong to the same batch id
 //!   |                                  |
-//!   |-id=1-------- Schema ------------>|     # This batch can have different topic/partition than the previous one
+//!   |-id=1-------- Schema ------------>|     # This batch can have different table/partition than the previous one
 //!   |------------- Batch ------------->|
 //!   |------------- Batch ------------->|
 //!   |                                  |
@@ -59,15 +59,15 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::debug;
-use wings_control_plane_core::cluster_metadata::cache::TopicCache;
+use wings_control_plane_core::cluster_metadata::cache::TableCache;
 use wings_ingestor_core::{IngestionRequest, IngestorClient, WriteBatchRequest};
-use wings_resources::{Namespace, PartitionValue, Topic};
+use wings_resources::{Namespace, PartitionValue, Table};
 
 use crate::{IngestionRequestMetadata, IngestionResponseMetadata, error::FlightServerError};
 
 struct PendingBatch {
     batch_id: u32,
-    topic: Arc<Topic>,
+    table: Arc<Table>,
     partition: Option<PartitionValue>,
     timestamp: Option<SystemTime>,
     schema: SchemaRef,
@@ -76,7 +76,7 @@ struct PendingBatch {
 
 pub async fn process_ingestion_stream(
     namespace: Arc<Namespace>,
-    topic_cache: TopicCache,
+    table_cache: TableCache,
     mut request_stream: FlightDataDecoder,
     ingestor: IngestorClient,
     tx: mpsc::Sender<Result<PutResult, Status>>,
@@ -91,7 +91,7 @@ pub async fn process_ingestion_stream(
         }
     });
 
-    let input_result = stream_ingestion_requests(topic_cache, &mut request_stream, &write_tx).await;
+    let input_result = stream_ingestion_requests(table_cache, &mut request_stream, &write_tx).await;
 
     if let Err(err) = input_result {
         let _ = write_tx.send(IngestionRequest::Abort).await;
@@ -118,7 +118,7 @@ pub async fn process_ingestion_stream(
 }
 
 async fn stream_ingestion_requests(
-    topic_cache: TopicCache,
+    table_cache: TableCache,
     request_stream: &mut FlightDataDecoder,
     write_tx: &mpsc::Sender<IngestionRequest>,
 ) -> Result<(), FlightServerError> {
@@ -134,7 +134,7 @@ async fn stream_ingestion_requests(
             }
             DecodedPayload::Schema(schema) => {
                 flush_pending_batch(&mut pending, write_tx).await?;
-                pending = Some(PendingBatch::new(topic_cache.clone(), app_metadata, schema).await?);
+                pending = Some(PendingBatch::new(table_cache.clone(), app_metadata, schema).await?);
             }
             DecodedPayload::RecordBatch(batch) => {
                 let Some(pending) = pending.as_mut() else {
@@ -162,10 +162,10 @@ async fn flush_pending_batch(
     let request = pending.into_write_batch_request()?;
 
     debug!(
-        topic = %request.topic.name,
+        table = %request.table.name,
         batch_id = request.batch_id,
         size = request.records.num_rows(),
-        "Writing batch to topic",
+        "Writing batch to table",
     );
 
     write_tx
@@ -176,7 +176,7 @@ async fn flush_pending_batch(
 
 impl PendingBatch {
     async fn new(
-        topic_cache: TopicCache,
+        table_cache: TableCache,
         app_metadata: Bytes,
         schema: SchemaRef,
     ) -> Result<Self, FlightServerError> {
@@ -185,14 +185,14 @@ impl PendingBatch {
                 FlightServerError::invalid_ticket("failed to decode ingestion metadata".to_string())
             })?;
 
-        let topic_name = metadata.topic_name;
+        let table_name = metadata.table_name;
         let batch_id = metadata.batch_id;
 
-        let topic = topic_cache.get(topic_name).await?;
+        let table = table_cache.get(table_name).await?;
 
         Ok(Self {
             batch_id,
-            topic,
+            table,
             partition: metadata.partition_value,
             timestamp: metadata.timestamp,
             schema,
@@ -218,7 +218,7 @@ impl PendingBatch {
 
         Ok(WriteBatchRequest {
             batch_id: self.batch_id,
-            topic: self.topic,
+            table: self.table,
             partition: self.partition,
             timestamp: self.timestamp,
             records,

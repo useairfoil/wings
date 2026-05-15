@@ -20,10 +20,10 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use futures::StreamExt;
-use wings_control_plane_core::log_metadata::DataLakeLocation;
+use wings_control_plane_core::table_metadata::DataLakeLocation;
 use wings_resources::PartitionValue;
 
-/// Read the topic's content from a Parquet file in the datalake.
+/// Read the table's content from a Parquet file in the datalake.
 pub struct DataLakeExec {
     location: DataLakeLocation,
     partition_value: Option<PartitionValue>,
@@ -143,8 +143,8 @@ impl DisplayAs for DataLakeExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "DataLakeExec: location=[{}] start_offset=[{:?}], end_offset=[{:?}]",
-            &self.location.file_ref, self.location.start_offset, self.location.end_offset
+            "DataLakeExec: location=[{}] start_seqnum=[{:?}], end_seqnum=[{:?}]",
+            &self.location.file_ref, self.location.start_seqnum, self.location.end_seqnum
         )
     }
 }

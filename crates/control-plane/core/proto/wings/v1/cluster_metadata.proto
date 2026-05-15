@@ -27,17 +27,17 @@ service ClusterMetadataService {
   rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {}
   // Delete a namespace.
   //
-  // The request fails if the namespace has any topic.
+  // The request fails if the namespace has any table.
   rpc DeleteNamespace(DeleteNamespaceRequest) returns (google.protobuf.Empty) {}
 
-  // Create a new topic belonging to a namespace.
-  rpc CreateTopic(CreateTopicRequest) returns (Topic) {}
-  // Return the specified topic.
-  rpc GetTopic(GetTopicRequest) returns (Topic) {}
-  // List all topics belonging to a namespace.
-  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {}
-  // Delete a topic.
-  rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty) {}
+  // Create a new table belonging to a namespace.
+  rpc CreateTable(CreateTableRequest) returns (Table) {}
+  // Return the specified table.
+  rpc GetTable(GetTableRequest) returns (Table) {}
+  // List all tables belonging to a namespace.
+  rpc ListTables(ListTablesRequest) returns (ListTablesResponse) {}
+  // Delete a table.
+  rpc DeleteTable(DeleteTableRequest) returns (google.protobuf.Empty) {}
 
   // Create a new object store belonging to a tenant.
   rpc CreateObjectStore(CreateObjectStoreRequest) returns (ObjectStore) {}
@@ -176,36 +176,36 @@ message Namespace {
   string data_lake = 5;
 }
 
-message CreateTopicRequest {
-  // The namespace that owns the topic.
+message CreateTableRequest {
+  // The namespace that owns the table.
   //
   // Format: tenants/{tenant}/namespaces/{namespace}
   string parent = 1;
 
-  // The topic id.
-  string topic_id = 2;
+  // The table id.
+  string table_id = 2;
 
-  // The topic metadata.
-  Topic topic = 3;
+  // The table metadata.
+  Table table = 3;
 }
 
-message GetTopicRequest {
-  // The topic name.
+message GetTableRequest {
+  // The table name.
   //
-  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
   string name = 1;
 
   // Which fields to include in the response.
-  optional TopicView view = 2;
+  optional TableView view = 2;
 }
 
-message ListTopicsRequest {
+message ListTablesRequest {
   // The parent namespace.
   //
   // Format: tenants/{tenant}/namespaces/{namespace}
   string parent = 1;
 
-  // The number of topics to return.
+  // The number of tables to return.
   //
   // Default: 100
   // Maximum: 1000.
@@ -215,63 +215,63 @@ message ListTopicsRequest {
   optional string page_token = 3;
 }
 
-message ListTopicsResponse {
-  // The topics.
-  repeated Topic topics = 1;
+message ListTablesResponse {
+  // The tables.
+  repeated Table tables = 1;
 
   // The continuation token.
   string next_page_token = 2;
 }
 
-message DeleteTopicRequest {
-  // The topic name.
+message DeleteTableRequest {
+  // The table name.
   //
-  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
   string name = 1;
 
-  // If set to true, also delete data associated with the topic.
+  // If set to true, also delete data associated with the table.
   bool force = 2;
 }
 
 // Which fields to include in the response.
-enum TopicView {
+enum TableView {
   // Unspecified, use the default.
-  TOPIC_VIEW_UNSPECIFIED = 0;
-  // Only return the basic topic information.
-  TOPIC_VIEW_BASIC = 1;
-  // Include the topic status.
-  TOPIC_VIEW_FULL = 2;
+  TABLE_VIEW_UNSPECIFIED = 0;
+  // Only return the basic table information.
+  TABLE_VIEW_BASIC = 1;
+  // Include the table status.
+  TABLE_VIEW_FULL = 2;
 }
 
-message Topic {
-  // The topic name.
+message Table {
+  // The table name.
   //
-  // Format: tenants/{tenant}/namespaces/{namespace}/topics/{topic}
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
   string name = 1;
 
-  // The schema of the topic messages.
+  // The schema of the table rows.
   wings.schema.Schema schema = 2;
 
-  // The topic description.
+  // The table description.
   optional string description = 3;
 
-  // The index of the field that is used to partition the topic.
+  // The index of the field that is used to partition the table.
   optional uint64 partition_key = 4;
 
-  // The topic compaction configuration.
+  // The table compaction configuration.
   CompactionConfiguration compaction = 5;
 
-  // The topic status.
-  TopicStatus status = 6;
+  // The table status.
+  TableStatus status = 6;
 }
 
-// The status of a topic.
-message TopicStatus {
+// The status of a table.
+message TableStatus {
   // The number of partitions.
   uint64 num_partitions = 1;
 
-  // The conditions of the topic.
-  repeated TopicCondition conditions = 2;
+  // The conditions of the table.
+  repeated TableCondition conditions = 2;
 }
 
 // Table created status.
@@ -286,8 +286,8 @@ message TableError {
   string message = 1;
 }
 
-// A condition on a topic, similar to Kubernetes conditions.
-message TopicCondition {
+// A condition on a table, similar to Kubernetes conditions.
+message TableCondition {
   // The condition type.
   string type = 1;
 
@@ -305,9 +305,9 @@ message TopicCondition {
 }
 
 message CompactionConfiguration {
-  // How often to compact the topic, in seconds.
+  // How often to compact the table, in seconds.
   uint64 freshness_seconds = 1;
-  // How long to keep the topic data, in seconds.
+  // How long to keep the table data, in seconds.
   optional uint64 ttl_seconds = 2;
   // The target file size for compacted files, in bytes.
   uint64 target_file_size_bytes = 3;

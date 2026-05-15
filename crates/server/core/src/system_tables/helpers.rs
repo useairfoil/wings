@@ -6,10 +6,10 @@ use datafusion::{
     scalar::ScalarValue,
 };
 
-pub const TOPIC_NAME_COLUMN: &str = "topic";
+pub const TOPIC_NAME_COLUMN: &str = "table";
 
-pub fn find_topic_name_in_filters(filters: &[Expr]) -> Option<Vec<String>> {
-    let filters: Vec<_> = filters.iter().flat_map(find_topic_name_in_filter).collect();
+pub fn find_table_name_in_filters(filters: &[Expr]) -> Option<Vec<String>> {
+    let filters: Vec<_> = filters.iter().flat_map(find_table_name_in_filter).collect();
     if filters.is_empty() {
         None
     } else {
@@ -17,7 +17,7 @@ pub fn find_topic_name_in_filters(filters: &[Expr]) -> Option<Vec<String>> {
     }
 }
 
-fn find_topic_name_in_filter(filter: &Expr) -> Option<String> {
+fn find_table_name_in_filter(filter: &Expr) -> Option<String> {
     match filter {
         Expr::BinaryExpr(BinaryExpr {
             left,

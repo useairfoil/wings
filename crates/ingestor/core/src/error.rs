@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parquet::errors::ParquetError;
 use snafu::Snafu;
-use wings_control_plane_core::log_metadata::LogMetadataError;
+use wings_control_plane_core::table_metadata::TableMetadataError;
 
 #[derive(Debug, Clone, Snafu)]
 #[snafu(visibility(pub))]
@@ -21,8 +21,8 @@ pub enum IngestorError {
         #[snafu(source(from(object_store::Error, Arc::new)))]
         source: Arc<object_store::Error>,
     },
-    #[snafu(display("log metadata error"))]
-    LogMetadata { source: LogMetadataError },
+    #[snafu(display("table metadata error"))]
+    TableMetadata { source: TableMetadataError },
     #[snafu(display("response channel closed"))]
     ChannelClosed,
 }

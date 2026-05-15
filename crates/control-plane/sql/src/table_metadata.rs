@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use wings_control_plane_core::log_metadata::{
+use wings_control_plane_core::table_metadata::{
     CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
-    GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogMetadata,
+    GetTableLocationRequest, ListPartitionsRequest, ListPartitionsResponse, TableLocation, TableMetadata,
     RequestTaskRequest, RequestTaskResponse, Result,
 };
 use wings_resources::NamespaceName;
@@ -11,7 +11,7 @@ use wings_resources::NamespaceName;
 use crate::SqlControlPlane;
 
 #[async_trait]
-impl LogMetadata for SqlControlPlane {
+impl TableMetadata for SqlControlPlane {
     async fn commit(
         &self,
         namespace: NamespaceName,
@@ -20,8 +20,8 @@ impl LogMetadata for SqlControlPlane {
         self.db.commit(namespace, batches).await.map_err(Into::into)
     }
 
-    async fn get_log_location(&self, request: GetLogLocationRequest) -> Result<Vec<LogLocation>> {
-        self.db.get_log_location(request).await.map_err(Into::into)
+    async fn get_table_location(&self, request: GetTableLocationRequest) -> Result<Vec<TableLocation>> {
+        self.db.get_table_location(request).await.map_err(Into::into)
     }
 
     async fn list_partitions(

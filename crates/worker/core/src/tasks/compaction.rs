@@ -2,7 +2,7 @@ use futures::TryStreamExt;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use wings_control_plane_core::log_metadata::{
+use wings_control_plane_core::table_metadata::{
     CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest, TaskMetadata,
     TaskResult,
 };
@@ -10,7 +10,7 @@ use wings_query::TopicLogicalPlanExt;
 
 use crate::{
     Worker,
-    error::{ClusterMetadataSnafu, DataLakeSnafu, LogMetadataSnafu, Result},
+    error::{ClusterMetadataSnafu, DataLakeSnafu, TableMetadataSnafu, Result},
 };
 
 impl Worker {
@@ -20,20 +20,20 @@ impl Worker {
         task: &CompactionTask,
         ct: CancellationToken,
     ) -> Result<()> {
-        let namespace_name = task.topic_name.parent().clone();
+        let namespace_name = task.table_name.parent().clone();
 
-        let topic_ref = match self.topic_cache.get(task.topic_name.clone()).await {
-            Ok(topic_ref) => topic_ref,
+        let table_ref = match self.table_cache.get(task.table_name.clone()).await {
+            Ok(table_ref) => table_ref,
             Err(err) => {
                 if err.is_not_found() {
                     warn!(
-                        topic = %task.topic_name,
-                        "received compaction task for non-existent topic"
+                        table = %task.table_name,
+                        "received compaction task for non-existent table"
                     );
                     return Ok(());
                 }
                 return Err(err).context(ClusterMetadataSnafu {
-                    operation: "get_topic",
+                    operation: "get_table",
                 });
             }
         };
@@ -54,15 +54,15 @@ impl Worker {
         let ctx = provider.new_session_context().await?;
 
         let mut partition_columns = Vec::new();
-        if let Some(field) = topic_ref.partition_field() {
+        if let Some(field) = table_ref.partition_field() {
             partition_columns.push(field.name());
         }
 
-        let plan = topic_ref
+        let plan = table_ref
             .logical_plan(
                 &ctx,
-                task.start_offset,
-                task.end_offset,
+                task.start_seqnum,
+                task.end_seqnum,
                 task.partition_value.clone(),
             )
             .await?;
@@ -84,10 +84,10 @@ impl Worker {
 
         let mut data_lake_writer = data_lake
             .batch_writer(
-                topic_ref.clone(),
+                table_ref.clone(),
                 task.partition_value.clone(),
-                task.start_offset,
-                task.end_offset,
+                task.start_seqnum,
+                task.end_seqnum,
                 task.target_file_size,
             )
             .await
@@ -127,13 +127,13 @@ impl Worker {
             operation: CompactionOperation::Append,
         });
 
-        self.log_meta
+        self.table_metadata
             .complete_task(CompleteTaskRequest::new_completed(
                 metadata.task_id.clone(),
                 result,
             ))
             .await
-            .context(LogMetadataSnafu {
+            .context(TableMetadataSnafu {
                 operation: "complete_task",
             })?;
 

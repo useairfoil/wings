@@ -9,15 +9,15 @@ use datafusion::{
 };
 use tracing::debug;
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics},
-    log_metadata::LogMetadata,
+    cluster_metadata::{ClusterMetadata, CollectNamespaceTablesOptions, collect_namespace_tables},
+    table_metadata::TableMetadata,
 };
 use wings_object_store::ObjectStoreFactory;
 use wings_observability::MetricsExporter;
-use wings_resources::{Namespace, NamespaceName, Topic};
+use wings_resources::{Namespace, NamespaceName, Table};
 
 use crate::{
-    options::FetchOptions, query::topic::TopicTableProvider, system_tables::SystemSchemaProvider,
+    options::FetchOptions, query::table::WingsTableProvider, system_tables::SystemSchemaProvider,
 };
 
 pub const DEFAULT_CATALOG: &str = "wings";
@@ -27,30 +27,30 @@ pub const SYSTEM_SCHEMA: &str = "system";
 #[derive(Clone)]
 pub struct NamespaceProviderFactory {
     cluster_meta: Arc<dyn ClusterMetadata>,
-    log_meta: Arc<dyn LogMetadata>,
+    table_metadata: Arc<dyn TableMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
     metrics_exporter: MetricsExporter,
 }
 
 #[derive(Clone)]
 pub struct NamespaceProvider {
-    log_meta: Arc<dyn LogMetadata>,
+    table_metadata: Arc<dyn TableMetadata>,
     object_store_factory: Arc<dyn ObjectStoreFactory>,
     namespace: Namespace,
-    topics: Vec<Topic>,
+    tables: Vec<Table>,
     system_schema_provider: Arc<SystemSchemaProvider>,
 }
 
 impl NamespaceProviderFactory {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         metrics_exporter: MetricsExporter,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
     ) -> Self {
         Self {
             cluster_meta,
-            log_meta,
+            table_metadata,
             object_store_factory,
             metrics_exporter,
         }
@@ -62,7 +62,7 @@ impl NamespaceProviderFactory {
     ) -> Result<NamespaceProvider, DataFusionError> {
         NamespaceProvider::new(
             self.cluster_meta.clone(),
-            self.log_meta.clone(),
+            self.table_metadata.clone(),
             self.object_store_factory.clone(),
             self.metrics_exporter.clone(),
             namespace_name,
@@ -74,31 +74,31 @@ impl NamespaceProviderFactory {
 impl NamespaceProvider {
     pub async fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         metrics_exporter: MetricsExporter,
         namespace_name: NamespaceName,
     ) -> Result<Self, DataFusionError> {
         let namespace = cluster_meta.get_namespace(namespace_name.clone()).await?;
-        // TODO: for now we collect all topics here. This becomes slow for large namespaces.
-        let topics = collect_namespace_topics(
+        // TODO: for now we collect all tables here. This becomes slow for large namespaces.
+        let tables = collect_namespace_tables(
             &cluster_meta,
             &namespace_name,
-            CollectNamespaceTopicsOptions::default(),
+            CollectNamespaceTablesOptions::default(),
         )
         .await?;
         let system_schema_provider = SystemSchemaProvider::new(
             cluster_meta.clone(),
-            log_meta.clone(),
+            table_metadata.clone(),
             metrics_exporter,
             namespace_name,
         );
 
         Ok(Self {
-            log_meta,
+            table_metadata,
             object_store_factory,
             namespace,
-            topics,
+            tables,
             system_schema_provider: Arc::new(system_schema_provider),
         })
     }
@@ -154,26 +154,26 @@ impl SchemaProvider for NamespaceProvider {
     }
 
     fn table_names(&self) -> Vec<String> {
-        self.topics
+        self.tables
             .iter()
-            .map(|topic| topic.name.id.clone())
+            .map(|table| table.name.id.clone())
             .collect()
     }
 
     fn table_exist(&self, name: &str) -> bool {
-        self.topics.iter().any(|topic| topic.name.id == name)
+        self.tables.iter().any(|table| table.name.id == name)
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>, DataFusionError> {
         let provider = self
-            .topics
+            .tables
             .iter()
-            .find(|topic| topic.name.id == name)
-            .map(|topic| {
-                TopicTableProvider::new_provider(
-                    self.log_meta.clone(),
+            .find(|table| table.name.id == name)
+            .map(|table| {
+                WingsTableProvider::new_provider(
+                    self.table_metadata.clone(),
                     self.namespace.clone(),
-                    topic.clone(),
+                    table.clone(),
                 )
             });
         Ok(provider)

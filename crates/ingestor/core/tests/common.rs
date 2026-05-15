@@ -16,10 +16,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use wings_control_plane_core::{
     cluster_metadata::ClusterMetadata,
-    log_metadata::{
+    table_metadata::{
         CommitBatchRequest, CommittedBatch, CompleteTaskRequest, CompleteTaskResponse,
-        GetLogLocationRequest, ListPartitionsRequest, ListPartitionsResponse, LogLocation,
-        LogMetadata, RequestTaskRequest, RequestTaskResponse,
+        GetTableLocationRequest, ListPartitionsRequest, ListPartitionsResponse, TableLocation,
+        TableMetadata, RequestTaskRequest, RequestTaskResponse,
     },
 };
 use wings_control_plane_sql::SqlControlPlane;
@@ -27,41 +27,41 @@ use wings_ingestor_core::{IngestionRequest, Ingestor, IngestorClient, Result, Wr
 use wings_object_store::{InMemoryFactory, ObjectStoreFactory};
 use wings_resources::{
     AwsConfiguration, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName,
-    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Topic, TopicName,
-    TopicOptions,
+    NamespaceOptions, ObjectStoreConfiguration, ObjectStoreName, TenantName, Table, TableName,
+    TableOptions,
 };
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 mock! {
-    pub LogMetadataService {}
+    pub TableMetadataService {}
 
     #[async_trait::async_trait]
-    impl LogMetadata for LogMetadataService {
+    impl TableMetadata for TableMetadataService {
         async fn commit(
             &self,
             namespace: NamespaceName,
             batches: Vec<CommitBatchRequest>,
-        ) -> wings_control_plane_core::log_metadata::Result<Vec<CommittedBatch>>;
+        ) -> wings_control_plane_core::table_metadata::Result<Vec<CommittedBatch>>;
 
-        async fn get_log_location(
+        async fn get_table_location(
             &self,
-            request: GetLogLocationRequest,
-        ) -> wings_control_plane_core::log_metadata::Result<Vec<LogLocation>>;
+            request: GetTableLocationRequest,
+        ) -> wings_control_plane_core::table_metadata::Result<Vec<TableLocation>>;
 
         async fn list_partitions(
             &self,
             request: ListPartitionsRequest,
-        ) -> wings_control_plane_core::log_metadata::Result<ListPartitionsResponse>;
+        ) -> wings_control_plane_core::table_metadata::Result<ListPartitionsResponse>;
 
         async fn request_task(
             &self,
             request: RequestTaskRequest,
-        ) -> wings_control_plane_core::log_metadata::Result<RequestTaskResponse>;
+        ) -> wings_control_plane_core::table_metadata::Result<RequestTaskResponse>;
 
         async fn complete_task(
             &self,
             request: CompleteTaskRequest,
-        ) -> wings_control_plane_core::log_metadata::Result<CompleteTaskResponse>;
+        ) -> wings_control_plane_core::table_metadata::Result<CompleteTaskResponse>;
     }
 }
 
@@ -181,12 +181,12 @@ pub struct TestIngestor {
 }
 
 impl TestIngestor {
-    pub async fn start(log_meta: MockLogMetadataService) -> Self {
+    pub async fn start(table_metadata: MockTableMetadataService) -> Self {
         let control_plane = Arc::new(SqlControlPlane::new_in_memory().await);
         let cluster_meta: Arc<dyn ClusterMetadata> = control_plane.clone();
-        let log_meta: Arc<dyn LogMetadata> = Arc::new(log_meta);
+        let table_metadata: Arc<dyn TableMetadata> = Arc::new(table_metadata);
         let object_store_factory: Arc<dyn ObjectStoreFactory> = Arc::new(InMemoryFactory::new());
-        let ingestor = Ingestor::new(object_store_factory.clone(), log_meta);
+        let ingestor = Ingestor::new(object_store_factory.clone(), table_metadata);
         let client = ingestor.client();
         let ct = CancellationToken::new();
         let ct_guard = ct.clone().drop_guard();
@@ -204,13 +204,13 @@ impl TestIngestor {
     }
 
     pub async fn start_with_factory(
-        log_meta: MockLogMetadataService,
+        table_metadata: MockTableMetadataService,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
     ) -> Self {
         let control_plane = Arc::new(SqlControlPlane::new_in_memory().await);
         let cluster_meta: Arc<dyn ClusterMetadata> = control_plane.clone();
-        let log_meta: Arc<dyn LogMetadata> = Arc::new(log_meta);
-        let ingestor = Ingestor::new(object_store_factory, log_meta);
+        let table_metadata: Arc<dyn TableMetadata> = Arc::new(table_metadata);
+        let ingestor = Ingestor::new(object_store_factory, table_metadata);
         let client = ingestor.client();
         let ct = CancellationToken::new();
         let ct_guard = ct.clone().drop_guard();
@@ -321,40 +321,40 @@ pub async fn initialize_test_namespace(cluster_meta: &Arc<dyn ClusterMetadata>) 
     namespace.into()
 }
 
-pub async fn initialize_test_topic(
+pub async fn initialize_test_table(
     cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
-) -> Arc<Topic> {
-    let topic_name = TopicName::new_unchecked("people", namespace.clone());
+) -> Arc<Table> {
+    let table_name = TableName::new_unchecked("people", namespace.clone());
     cluster_meta
-        .create_topic(topic_name, TopicOptions::new(schema_without_partition()))
+        .create_table(table_name, TableOptions::new(schema_without_partition()))
         .await
-        .expect("create_topic")
+        .expect("create_table")
         .into()
 }
 
-pub async fn initialize_test_partitioned_topic(
+pub async fn initialize_test_partitioned_table(
     cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
-) -> Arc<Topic> {
-    let topic_name = TopicName::new_unchecked("people_by_region", namespace.clone());
+) -> Arc<Table> {
+    let table_name = TableName::new_unchecked("people_by_region", namespace.clone());
     cluster_meta
-        .create_topic(
-            topic_name,
-            TopicOptions::new_with_partition_key(schema_with_partition(), Some(0)),
+        .create_table(
+            table_name,
+            TableOptions::new_with_partition_key(schema_with_partition(), Some(0)),
         )
         .await
-        .expect("create_topic")
+        .expect("create_table")
         .into()
 }
 
-pub fn people_records(topic: &Topic, people: &[(i32, &str, i32)]) -> RecordBatch {
+pub fn people_records(table: &Table, people: &[(i32, &str, i32)]) -> RecordBatch {
     let ids = people.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
     let names = people.iter().map(|(_, name, _)| *name).collect::<Vec<_>>();
     let ages = people.iter().map(|(_, _, age)| *age).collect::<Vec<_>>();
 
     RecordBatch::try_new(
-        topic.arrow_schema_without_partition_field(),
+        table.arrow_schema_without_partition_field(),
         vec![
             Arc::new(Int32Array::from(ids)) as ArrayRef,
             Arc::new(StringArray::from(names)) as ArrayRef,

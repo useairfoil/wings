@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::mpsc;
 use tokio_util::{sync::CancellationToken, time::DelayQueue};
-use wings_control_plane_core::log_metadata::LogMetadata;
+use wings_control_plane_core::table_metadata::TableMetadata;
 use wings_object_store::ObjectStoreFactory;
 
 use crate::{
@@ -25,10 +25,10 @@ pub struct Ingestor {
 impl Ingestor {
     pub fn new(
         object_store_factory: Arc<dyn ObjectStoreFactory>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(INGESTOR_CHANNEL_SIZE);
-        let client = IngestorClient { log_meta, tx };
+        let client = IngestorClient { table_metadata, tx };
         let uploader = FolioUploader::new_ulid(object_store_factory);
         Self {
             client,

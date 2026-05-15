@@ -1,40 +1,40 @@
 use std::sync::Arc;
 
-use wings_resources::{NamespaceName, Topic};
+use wings_resources::{NamespaceName, Table};
 
-use super::{ClusterMetadata, ListTopicsRequest, Result};
+use super::{ClusterMetadata, ListTablesRequest, Result};
 
 #[derive(Debug, Clone)]
-pub struct CollectNamespaceTopicsOptions {
+pub struct CollectNamespaceTablesOptions {
     pub page_size: usize,
 }
 
-pub async fn collect_namespace_topics(
+pub async fn collect_namespace_tables(
     cluster_meta: &Arc<dyn ClusterMetadata>,
     namespace: &NamespaceName,
-    options: CollectNamespaceTopicsOptions,
-) -> Result<Vec<Topic>> {
+    options: CollectNamespaceTablesOptions,
+) -> Result<Vec<Table>> {
     let mut page_token = None;
-    let mut topics = Vec::new();
+    let mut tables = Vec::new();
     loop {
         let mut response = cluster_meta
-            .list_topics(ListTopicsRequest {
+            .list_tables(ListTablesRequest {
                 parent: namespace.clone(),
                 page_size: options.page_size.into(),
                 page_token: page_token.clone(),
             })
             .await?;
-        topics.append(&mut response.topics);
+        tables.append(&mut response.tables);
         page_token = response.next_page_token;
         if page_token.is_none() {
             break;
         }
     }
 
-    Ok(topics)
+    Ok(tables)
 }
 
-impl Default for CollectNamespaceTopicsOptions {
+impl Default for CollectNamespaceTablesOptions {
     fn default() -> Self {
         Self { page_size: 100 }
     }

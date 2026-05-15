@@ -7,9 +7,9 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use wings_client::WingsClient;
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, TopicView, tonic::ClusterMetadataClient,
+    ClusterMetadata, TableView, tonic::ClusterMetadataClient,
 };
-use wings_resources::{CompactionConfiguration, NamespaceName, Topic, TopicName, TopicOptions};
+use wings_resources::{CompactionConfiguration, NamespaceName, Table, TableName, TableOptions};
 use wings_schema::{DataType, Field, Schema, SchemaBuilder};
 
 use crate::{
@@ -36,17 +36,17 @@ struct Cli {
     /// The batch size for each push request.
     #[arg(long, default_value = "773")]
     batch_size: usize,
-    /// The number of partitions for each topic.
+    /// The number of partitions for each table.
     ///
-    /// If unspecified, the topic won't have a partition column.
+    /// If unspecified, the table won't have a partition column.
     #[arg(long)]
     num_partitions: Option<usize>,
-    /// The topic's namespace.
+    /// The table's namespace.
     #[arg(long, default_value = "tenants/default/namespaces/default")]
     namespace: String,
-    /// If specified, use an existing topic.
+    /// If specified, use an existing table.
     #[arg(long)]
-    topic_id: Option<String>,
+    table_id: Option<String>,
     #[clap(flatten)]
     remote: RemoteArgs,
 }
@@ -81,14 +81,14 @@ async fn main() -> Result<()> {
     let cluster_meta = cli.remote.cluster_metadata_client().await?;
     let ingestion_client = cli.remote.ingestion_client().await?;
 
-    let topic_id = cli.topic_id.unwrap_or_else(new_random_topic_id);
+    let table_id = cli.table_id.unwrap_or_else(new_random_table_id);
 
-    let topic_name = TopicName::new(topic_id, namespace)
-        .context(InvalidResourceNameSnafu { resource: "topic" })?;
+    let table_name = TableName::new(table_id, namespace)
+        .context(InvalidResourceNameSnafu { resource: "table" })?;
 
-    let topic = ensure_topic_exists(
+    let table = ensure_table_exists(
         &cluster_meta,
-        topic_name.clone(),
+        table_name.clone(),
         cli.num_partitions.is_some(),
     )
     .await?;
@@ -105,9 +105,9 @@ async fn main() -> Result<()> {
         let ctx = ctx.clone();
         let tx = tx.clone();
         let client = ingestion_client.clone();
-        let topic = topic.clone();
+        let table = table.clone();
         let ct = ct.clone();
-        tasks.spawn(async move { run_test(ctx, client_id, tx, client, topic, ct).await });
+        tasks.spawn(async move { run_test(ctx, client_id, tx, client, table, ct).await });
     }
 
     while let Some(result) = tasks.join_next().await.transpose()? {
@@ -144,26 +144,26 @@ impl RemoteArgs {
     }
 }
 
-async fn ensure_topic_exists(
+async fn ensure_table_exists(
     cluster_meta: &ClusterMetadataClient<Channel>,
-    topic_name: TopicName,
+    table_name: TableName,
     has_partition: bool,
-) -> Result<Topic> {
+) -> Result<Table> {
     match cluster_meta
-        .get_topic(topic_name.clone(), TopicView::Basic)
+        .get_table(table_name.clone(), TableView::Basic)
         .await
     {
-        Ok(topic) => return Ok(topic),
+        Ok(table) => return Ok(table),
         Err(err) if err.is_not_found() => {}
         Err(err) => {
             return Err(err).context(ClusterMetadataSnafu {
-                operation: "get_topic",
+                operation: "get_table",
             });
         }
     };
 
-    let options = TopicOptions {
-        schema: topic_schema(has_partition),
+    let options = TableOptions {
+        schema: table_schema(has_partition),
         compaction: CompactionConfiguration {
             freshness: Duration::from_secs(60),
             ..Default::default()
@@ -173,14 +173,14 @@ async fn ensure_topic_exists(
     };
 
     cluster_meta
-        .create_topic(topic_name.clone(), options)
+        .create_table(table_name.clone(), options)
         .await
         .context(ClusterMetadataSnafu {
-            operation: "create_topic",
+            operation: "create_table",
         })
 }
 
-fn topic_schema(has_partition: bool) -> Schema {
+fn table_schema(has_partition: bool) -> Schema {
     // We want the partition column to be the first column to test some internal
     // logic related to column reordering.
     let mut columns = Vec::default();
@@ -190,10 +190,10 @@ fn topic_schema(has_partition: bool) -> Schema {
     columns.push(Field::new("col", 1, DataType::UInt64, false));
 
     // PANIC: the schema is valid.
-    SchemaBuilder::new(columns).build().expect("topic schema")
+    SchemaBuilder::new(columns).build().expect("table schema")
 }
 
-fn new_random_topic_id() -> String {
+fn new_random_table_id() -> String {
     let r = ulid::Ulid::new().to_string().to_lowercase();
     format!("t-{r}")
 }

@@ -8,9 +8,9 @@ use std::sync::Arc;
 use bytesize::ByteSize;
 use datafusion::arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
-use wings_control_plane_core::{ClusterMetadata, log_metadata::FileInfo};
+use wings_control_plane_core::{ClusterMetadata, table_metadata::FileInfo};
 use wings_object_store::ObjectStoreFactory;
-use wings_resources::{DataLakeConfiguration, NamespaceRef, PartitionValue, TopicRef};
+use wings_resources::{DataLakeConfiguration, NamespaceRef, PartitionValue, TableRef};
 
 use self::error::Result;
 pub use self::{error::DataLakeError, parquet_writer::ParquetWriter};
@@ -24,25 +24,25 @@ pub trait BatchWriter: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait DataLake: Send + Sync {
-    /// Create a new table for a topic in the data lake.
+    /// Create a new table for a table in the data lake.
     ///
     /// Returns the table id.
-    async fn create_table(&self, topic: TopicRef) -> Result<String>;
+    async fn create_table(&self, table: TableRef) -> Result<String>;
 
-    /// append data to a topic's table in the data lake.
+    /// append data to a table's table in the data lake.
     async fn batch_writer(
         &self,
-        topic: TopicRef,
+        table: TableRef,
         partition_value: Option<PartitionValue>,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         target_file_size: ByteSize,
     ) -> Result<Box<dyn BatchWriter>>;
 
-    /// Commit data files to a topic's table in the data lake.
+    /// Commit data files to a table's table in the data lake.
     ///
     /// Returns the table version after the commit.
-    async fn commit_data(&self, topic: TopicRef, new_files: &[FileInfo]) -> Result<String>;
+    async fn commit_data(&self, table: TableRef, new_files: &[FileInfo]) -> Result<String>;
 }
 
 /// Factory for creating data lake instances.

@@ -13,27 +13,27 @@ use datafusion::{
 use wings_control_plane_core::cluster_metadata::ClusterMetadata;
 use wings_resources::NamespaceName;
 
-use super::{exec::TopicDiscoveryExec, helpers::find_topic_name_in_filters};
+use super::{exec::TableDiscoveryExec, helpers::find_table_name_in_filters};
 use crate::datafusion_helpers::apply_projection;
 
-pub struct TopicSystemTable {
+pub struct TableSystemTable {
     cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
-impl TopicSystemTable {
+impl TableSystemTable {
     pub fn new(cluster_meta: Arc<dyn ClusterMetadata>, namespace: NamespaceName) -> Self {
         Self {
             cluster_meta,
             namespace,
-            schema: TopicDiscoveryExec::schema(),
+            schema: TableDiscoveryExec::schema(),
         }
     }
 }
 
 #[async_trait]
-impl TableProvider for TopicSystemTable {
+impl TableProvider for TableSystemTable {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -60,20 +60,20 @@ impl TableProvider for TopicSystemTable {
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let topic_filters = find_topic_name_in_filters(filters);
+        let table_filters = find_table_name_in_filters(filters);
 
-        let topic_exec = TopicDiscoveryExec::new(
+        let table_exec = TableDiscoveryExec::new(
             self.cluster_meta.clone(),
             self.namespace.clone(),
-            topic_filters,
+            table_filters,
         );
-        let topic_exec = Arc::new(topic_exec);
+        let table_exec = Arc::new(table_exec);
 
-        apply_projection(topic_exec, projection)
+        apply_projection(table_exec, projection)
     }
 }
 
-impl std::fmt::Debug for TopicSystemTable {
+impl std::fmt::Debug for TableSystemTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TopicTable")
             .field("namespace", &self.namespace)

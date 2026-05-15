@@ -4,7 +4,7 @@ use std::{
 };
 
 use tokio_util::time::{DelayQueue, delay_queue};
-use wings_resources::{NamespaceName, NamespaceRef, PartitionValue, TopicName};
+use wings_resources::{NamespaceName, NamespaceRef, PartitionValue, TableName};
 
 use crate::{
     metrics::IngestorMetrics,
@@ -36,8 +36,8 @@ struct NamespaceFolioState {
     pub namespace: NamespaceRef,
     /// Size threshold after which to flush the folio
     pub flush_size: u64,
-    /// Map from (topic, partition) to the partition folio writer
-    pub partitions: HashMap<(TopicName, Option<PartitionValue>), PartitionPageWriter>,
+    /// Map from (table, partition) to the partition folio writer
+    pub partitions: HashMap<(TableName, Option<PartitionValue>), PartitionPageWriter>,
     /// The current size of the folio
     pub current_size: u64,
     /// The timer key for the flush timer
@@ -66,14 +66,14 @@ impl NamespaceFolioWriter {
 
         let folio_writer = match folio_state
             .partitions
-            .entry((request.topic.name.clone(), request.partition.clone()))
+            .entry((request.table.name.clone(), request.partition.clone()))
         {
             Entry::Occupied(inner) => inner.into_mut(),
             Entry::Vacant(inner) => {
                 match PartitionPageWriter::new(
-                    request.topic.name.clone(),
+                    request.table.name.clone(),
                     request.partition.clone(),
-                    request.topic.arrow_schema_without_partition_field(),
+                    request.table.arrow_schema_without_partition_field(),
                 ) {
                     Ok(writer) => inner.insert(writer),
                     Err(error) => {
@@ -122,8 +122,8 @@ impl NamespaceFolioState {
         let mut pages = Vec::with_capacity(self.partitions.len());
 
         for (key, partition_writer) in self.partitions.into_iter() {
-            let (topic_name, partition) = key;
-            if let Some(folio_page) = partition_writer.finish(topic_name, partition, metrics) {
+            let (table_name, partition) = key;
+            if let Some(folio_page) = partition_writer.finish(table_name, partition, metrics) {
                 pages.push(folio_page)
             };
         }
@@ -149,18 +149,18 @@ mod tests {
     use super::*;
     use crate::test_utils::{
         generate_test_batch_with_schema, generate_write_request_for,
-        test_namespace_with_flush_size, test_topic,
+        test_namespace_with_flush_size, test_table,
     };
 
     #[tokio::test]
     async fn write_batch_inserts_timer_on_first_namespace_write() {
         let namespace = test_namespace_with_flush_size(ByteSize::mb(8));
-        let topic = test_topic();
+        let table = test_table();
         let mut writer = NamespaceFolioWriter::default();
         let mut delay_queue = DelayQueue::new();
 
         let (reply, _rx) = oneshot::channel();
-        let request = write_request(topic.clone(), 0, 1);
+        let request = write_request(table.clone(), 0, 1);
 
         let folio = writer.write_batch(namespace.clone(), request, reply, &mut delay_queue);
 
@@ -176,7 +176,7 @@ mod tests {
         assert!(state.current_size > 0);
 
         let (reply, _rx) = oneshot::channel();
-        let request = write_request(topic, 0, 1);
+        let request = write_request(table, 0, 1);
 
         let folio = writer.write_batch(namespace.clone(), request, reply, &mut delay_queue);
 
@@ -187,15 +187,15 @@ mod tests {
     #[tokio::test]
     async fn write_batch_flushes_when_size_limit_is_hit() {
         let namespace = test_namespace_with_flush_size(ByteSize::b(32));
-        let topic = test_topic();
-        let topic_name = topic.name.clone();
+        let table = test_table();
+        let table_name = table.name.clone();
         let mut writer = NamespaceFolioWriter::default();
         let mut delay_queue = DelayQueue::new();
         let (reply0, _rx) = oneshot::channel();
 
         let folio = writer.write_batch(
             namespace.clone(),
-            write_request(topic.clone(), 0, 3),
+            write_request(table.clone(), 0, 3),
             reply0,
             &mut delay_queue,
         );
@@ -206,7 +206,7 @@ mod tests {
         let folio = writer
             .write_batch(
                 namespace.clone(),
-                write_request(topic, 3, 3),
+                write_request(table, 3, 3),
                 reply1,
                 &mut delay_queue,
             )
@@ -217,7 +217,7 @@ mod tests {
         assert!(!writer.namespaces.contains_key(&namespace.name));
 
         let page = &folio.pages[0];
-        assert_eq!(page.topic_name, topic_name);
+        assert_eq!(page.table_name, table_name);
         assert_eq!(page.partition_value, None);
         assert!(!page.data.is_empty());
         assert_eq!(page.replies.len(), 2);
@@ -228,16 +228,16 @@ mod tests {
     }
 
     fn write_request(
-        topic: wings_resources::TopicRef,
+        table: wings_resources::TableRef,
         start_index: i32,
         num_rows: usize,
     ) -> WriteBatchRequest {
         let records = generate_test_batch_with_schema(
             start_index,
             num_rows,
-            topic.arrow_schema_without_partition_field(),
+            table.arrow_schema_without_partition_field(),
         );
 
-        generate_write_request_for(topic, None, records, None)
+        generate_write_request_for(table, None, records, None)
     }
 }

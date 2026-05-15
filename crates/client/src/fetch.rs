@@ -10,7 +10,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::debug;
 use wings_flight::FetchTicket;
-use wings_resources::{PartitionValue, Topic, TopicName};
+use wings_resources::{PartitionValue, Table, TableName};
 use wings_schema::{DataType, Field};
 
 use crate::{
@@ -22,27 +22,27 @@ use crate::{
 #[derive(Clone)]
 pub struct FetchClient {
     inner: FlightServiceClient<Channel>,
-    topic_name: TopicName,
+    table_name: TableName,
     partition_field: Option<Field>,
     partition_value: Option<PartitionValue>,
-    current_offset: u64,
+    current_seqnum: u64,
     min_batch_size: usize,
     max_batch_size: usize,
     timeout: Duration,
 }
 
 impl FetchClient {
-    pub(crate) fn new(client: &WingsClient, topic: Topic) -> Self {
-        let partition_field = topic.partition_field().cloned();
-        let topic_name = topic.name;
+    pub(crate) fn new(client: &WingsClient, table: Table) -> Self {
+        let partition_field = table.partition_field().cloned();
+        let table_name = table.name;
         let inner = client.flight.clone();
 
         Self {
             inner,
-            topic_name,
+            table_name,
             partition_field,
             partition_value: None,
-            current_offset: 0,
+            current_seqnum: 0,
             min_batch_size: 1,
             max_batch_size: 1000,
             timeout: Duration::from_millis(250),
@@ -55,8 +55,8 @@ impl FetchClient {
             .map(|field| field.data_type.clone())
     }
 
-    pub fn with_offset(mut self, offset: u64) -> Self {
-        self.current_offset = offset;
+    pub fn with_seqnum(mut self, seqnum: u64) -> Self {
+        self.current_seqnum = seqnum;
         self
     }
 
@@ -81,22 +81,22 @@ impl FetchClient {
     }
 
     pub async fn fetch_next(&mut self) -> Result<Vec<RecordBatch>> {
-        debug!(topic = ?self.topic_name, "fetching data from flight do_get endpoint");
+        debug!(table = ?self.table_name, "fetching data from flight do_get endpoint");
 
         if self.partition_field.is_some() && self.partition_value.is_none() {
             return MissingPartitionValueSnafu {}.fail();
         }
 
-        let ticket = FetchTicket::new(self.topic_name.clone())
+        let ticket = FetchTicket::new(self.table_name.clone())
             .with_partition_value(self.partition_value.clone())
-            .with_offset(self.current_offset)
+            .with_seqnum(self.current_seqnum)
             .with_min_batch_size(self.min_batch_size)
             .with_max_batch_size(self.max_batch_size)
             .with_timeout(self.timeout)
             .into_ticket()
             .context(TicketEncodeSnafu {})?;
 
-        let request = new_request_for_namespace(&self.topic_name.parent, ticket);
+        let request = new_request_for_namespace(&self.table_name.parent, ticket);
         let response = self.inner.do_get(request).await.context(TonicSnafu {})?;
 
         let decoded = FlightDataDecoder::new(response.into_inner().map_err(FlightError::from));
@@ -119,7 +119,7 @@ impl FetchClient {
             .context(FlightSnafu {})?;
 
         let num_rows: u64 = batches.iter().map(|batch| batch.num_rows() as u64).sum();
-        self.current_offset += num_rows;
+        self.current_seqnum += num_rows;
 
         Ok(batches)
     }

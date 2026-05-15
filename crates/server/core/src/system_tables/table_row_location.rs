@@ -10,39 +10,36 @@ use datafusion::{
     physical_plan::ExecutionPlan,
     prelude::Expr,
 };
-use wings_control_plane_core::{cluster_metadata::ClusterMetadata, log_metadata::LogMetadata};
+use wings_control_plane_core::{cluster_metadata::ClusterMetadata, table_metadata::TableMetadata};
 use wings_resources::NamespaceName;
 
-use crate::{
-    datafusion_helpers::apply_projection,
-    system_tables::{exec::TopicPartitionValueDiscoveryExec, helpers::find_topic_name_in_filters},
-};
+use super::{exec::TableRowLocationDiscoveryExec, helpers::find_table_name_in_filters};
+use crate::{datafusion_helpers::apply_projection, options::SessionConfigExt};
 
-/// System table for discovering partition values for topics.
-pub struct TopicPartitionValueSystemTable {
+pub struct TableRowLocationSystemTable {
     cluster_meta: Arc<dyn ClusterMetadata>,
-    log_meta: Arc<dyn LogMetadata>,
+    table_metadata: Arc<dyn TableMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
-impl TopicPartitionValueSystemTable {
+impl TableRowLocationSystemTable {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         namespace: NamespaceName,
     ) -> Self {
         Self {
             cluster_meta,
-            log_meta,
+            table_metadata,
             namespace,
-            schema: TopicPartitionValueDiscoveryExec::schema(),
+            schema: TableRowLocationDiscoveryExec::schema(),
         }
     }
 }
 
 #[async_trait]
-impl TableProvider for TopicPartitionValueSystemTable {
+impl TableProvider for TableRowLocationSystemTable {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -51,7 +48,7 @@ impl TableProvider for TopicPartitionValueSystemTable {
         TableType::View
     }
 
-    fn schema(&self) -> arrow_schema::SchemaRef {
+    fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 
@@ -64,27 +61,30 @@ impl TableProvider for TopicPartitionValueSystemTable {
 
     async fn scan(
         &self,
-        _state: &dyn Session,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
-        let topics_filter = find_topic_name_in_filters(filters);
+        let tables_filter = find_table_name_in_filters(filters);
 
-        let topic_partition_exec = TopicPartitionValueDiscoveryExec::new(
+        let fetch_options = state.config().fetch_options().clone();
+
+        let table_row_exec = TableRowLocationDiscoveryExec::new(
             self.cluster_meta.clone(),
-            self.log_meta.clone(),
+            self.table_metadata.clone(),
             self.namespace.clone(),
-            topics_filter,
+            tables_filter,
+            fetch_options,
         );
 
-        apply_projection(Arc::new(topic_partition_exec), projection)
+        apply_projection(Arc::new(table_row_exec), projection)
     }
 }
 
-impl std::fmt::Debug for TopicPartitionValueSystemTable {
+impl std::fmt::Debug for TableRowLocationSystemTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TopicPartitionValueSystemTable")
+        f.debug_struct("TableRowLocationTable")
             .field("namespace", &self.namespace)
             .finish()
     }

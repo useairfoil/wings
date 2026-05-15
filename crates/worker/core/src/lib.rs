@@ -7,9 +7,9 @@ use tracing::warn;
 use wings_control_plane_core::{
     cluster_metadata::{
         ClusterMetadata,
-        cache::{NamespaceCache, TopicCache},
+        cache::{NamespaceCache, TableCache},
     },
-    log_metadata::{LogMetadata, RequestTaskRequest, RequestTaskResponse, Task},
+    table_metadata::{TableMetadata, RequestTaskRequest, RequestTaskResponse, Task},
 };
 use wings_data_lake::DataLakeFactory;
 use wings_object_store::ObjectStoreFactory;
@@ -18,14 +18,14 @@ use wings_server_core::query::NamespaceProviderFactory;
 mod error;
 mod tasks;
 
-use crate::error::LogMetadataSnafu;
+use crate::error::TableMetadataSnafu;
 pub use crate::error::{Result, WorkerPoolError};
 
 #[derive(Clone)]
 pub struct Worker {
-    pub(crate) topic_cache: TopicCache,
+    pub(crate) table_cache: TableCache,
     pub(crate) namespace_cache: NamespaceCache,
-    pub(crate) log_meta: Arc<dyn LogMetadata>,
+    pub(crate) table_metadata: Arc<dyn TableMetadata>,
     pub(crate) data_lake_factory: DataLakeFactory,
     pub(crate) namespace_provider_factory: NamespaceProviderFactory,
 }
@@ -49,18 +49,18 @@ pub async fn run_worker_pool(
 
 impl WorkerPool {
     pub fn new(
-        topic_cache: TopicCache,
+        table_cache: TableCache,
         namespace_cache: NamespaceCache,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         cluster_meta: Arc<dyn ClusterMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         namespace_provider_factory: NamespaceProviderFactory,
         options: WorkerPoolOptions,
     ) -> Self {
         let worker = Worker::new(
-            topic_cache,
+            table_cache,
             namespace_cache,
-            log_meta,
+            table_metadata,
             cluster_meta,
             object_store_factory,
             namespace_provider_factory,
@@ -97,18 +97,18 @@ impl WorkerPool {
 
 impl Worker {
     pub fn new(
-        topic_cache: TopicCache,
+        table_cache: TableCache,
         namespace_cache: NamespaceCache,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         cluster_meta: Arc<dyn ClusterMetadata>,
         object_store_factory: Arc<dyn ObjectStoreFactory>,
         namespace_provider_factory: NamespaceProviderFactory,
     ) -> Self {
         let data_lake_factory = DataLakeFactory::new(cluster_meta, object_store_factory).clone();
         Self {
-            topic_cache,
+            table_cache,
             namespace_cache,
-            log_meta,
+            table_metadata,
             data_lake_factory,
             namespace_provider_factory,
         }
@@ -117,10 +117,10 @@ impl Worker {
     pub async fn run(self, ct: CancellationToken) -> Result<()> {
         'outer: loop {
             let RequestTaskResponse { task } = self
-                .log_meta
+                .table_metadata
                 .request_task(RequestTaskRequest::default())
                 .await
-                .context(LogMetadataSnafu {
+                .context(TableMetadataSnafu {
                     operation: "request_task",
                 })?;
 

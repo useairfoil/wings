@@ -4,16 +4,16 @@ use std::collections::HashMap;
 
 use bytesize::ByteSize;
 use snafu::{ResultExt, ensure};
-use wings_resources::{PartitionValue, TopicName};
+use wings_resources::{PartitionValue, TableName};
 use wings_schema::Datum;
 
 use crate::{
-    log_metadata::{
+    table_metadata::{
         AcceptedBatchInfo, CommitBatchRequest, CommitResult, CommitTask, CommittedBatch,
         CompactionOperation, CompactionResult, CompactionTask, CompleteTaskRequest,
         CompleteTaskResponse, CreateTableResult, CreateTableTask, DataLakeLocation, FileInfo,
-        FileMetadata, FolioLocation, GetLogLocationOptions, GetLogLocationRequest,
-        ListPartitionsRequest, ListPartitionsResponse, LogLocation, LogOffset, PartitionMetadata,
+        FileMetadata, FolioLocation, GetTableLocationOptions, GetTableLocationRequest,
+        ListPartitionsRequest, ListPartitionsResponse, TableLocation, SeqNum, PartitionMetadata,
         RejectedBatchInfo, RequestTaskRequest, RequestTaskResponse, Task, TaskCompletionResult,
         TaskMetadata, TaskResult, TaskStatus,
     },
@@ -24,24 +24,24 @@ use crate::{
     },
 };
 
-impl TryFrom<pb::LogOffset> for LogOffset {
+impl TryFrom<pb::SeqNum> for SeqNum {
     type Error = WireError;
 
-    fn try_from(offset: pb::LogOffset) -> Result<Self, Self::Error> {
-        let timestamp = offset.timestamp.unwrap_or_default().try_into()?;
+    fn try_from(seqnum: pb::SeqNum) -> Result<Self, Self::Error> {
+        let timestamp = seqnum.timestamp.unwrap_or_default().try_into()?;
 
         Ok(Self {
-            offset: offset.offset,
+            seqnum: seqnum.seqnum,
             timestamp,
         })
     }
 }
 
-impl From<LogOffset> for pb::LogOffset {
-    fn from(offset: LogOffset) -> Self {
+impl From<SeqNum> for pb::SeqNum {
+    fn from(seqnum: SeqNum) -> Self {
         Self {
-            offset: offset.offset,
-            timestamp: Some(offset.timestamp.into()),
+            seqnum: seqnum.seqnum,
+            timestamp: Some(seqnum.timestamp.into()),
         }
     }
 }
@@ -61,14 +61,14 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
     type Error = WireError;
 
     fn try_from(meta: pb::CommitBatchRequest) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&meta.topic).context(ResourceSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&meta.table).context(ResourceSnafu { resource: "table" })?;
         let partition_value = meta.partition.map(TryFrom::try_from).transpose()?;
 
         let Some(timestamp) = meta.timestamp else {
             return Ok(CommitBatchRequest {
                 batch_id: meta.batch_id,
-                topic_name,
+                table_name,
                 partition_value,
                 file_ref: meta.file_ref,
                 page_offset_bytes: meta.page_offset_bytes,
@@ -85,7 +85,7 @@ impl TryFrom<pb::CommitBatchRequest> for CommitBatchRequest {
 
         Ok(CommitBatchRequest {
             batch_id: meta.batch_id,
-            topic_name,
+            table_name,
             partition_value,
             file_ref: meta.file_ref,
             page_offset_bytes: meta.page_offset_bytes,
@@ -102,7 +102,7 @@ impl From<&CommitBatchRequest> for pb::CommitBatchRequest {
 
         pb::CommitBatchRequest {
             batch_id: meta.batch_id,
-            topic: meta.topic_name.to_string(),
+            table: meta.table_name.to_string(),
             partition: meta.partition_value.as_ref().map(Into::into),
             timestamp,
             num_rows: meta.num_rows,
@@ -166,8 +166,8 @@ impl TryFrom<pb::committed_batch::Accepted> for AcceptedBatchInfo {
 
         Ok(AcceptedBatchInfo {
             batch_id: info.batch_id,
-            start_offset: info.start_offset,
-            end_offset: info.end_offset,
+            start_seqnum: info.start_seqnum,
+            end_seqnum: info.end_seqnum,
             timestamp,
         })
     }
@@ -177,8 +177,8 @@ impl From<AcceptedBatchInfo> for pb::committed_batch::Accepted {
     fn from(info: AcceptedBatchInfo) -> Self {
         pb::committed_batch::Accepted {
             batch_id: info.batch_id,
-            start_offset: info.start_offset,
-            end_offset: info.end_offset,
+            start_seqnum: info.start_seqnum,
+            end_seqnum: info.end_seqnum,
             timestamp: Some(info.timestamp.into()),
         }
     }
@@ -215,33 +215,33 @@ impl From<RejectedBatchInfo> for pb::committed_batch::Rejected {
  * ░░░░░░░░░░░    ░░░░░░░      ░░░░░░░░░  ░░░░░   ░░░░░    ░░░░░    ░░░░░    ░░░░░░░    ░░░░░    ░░░░░
  */
 
-impl TryFrom<pb::GetLogLocationRequest> for GetLogLocationRequest {
+impl TryFrom<pb::GetTableLocationRequest> for GetTableLocationRequest {
     type Error = WireError;
 
-    fn try_from(request: pb::GetLogLocationRequest) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&request.topic).context(ResourceSnafu { resource: "topic" })?;
+    fn try_from(request: pb::GetTableLocationRequest) -> Result<Self, Self::Error> {
+        let table_name =
+            TableName::parse(&request.table).context(ResourceSnafu { resource: "table" })?;
 
         let partition_value = request.partition.map(TryFrom::try_from).transpose()?;
 
         let options = request.options.required("options")?.try_into()?;
 
-        Ok(GetLogLocationRequest {
-            topic_name,
+        Ok(GetTableLocationRequest {
+            table_name,
             partition_value,
             options,
-            offset: request.offset,
+            seqnum: request.seqnum,
         })
     }
 }
 
-impl TryFrom<pb::GetLogLocationOptions> for GetLogLocationOptions {
+impl TryFrom<pb::GetTableLocationOptions> for GetTableLocationOptions {
     type Error = WireError;
 
-    fn try_from(options: pb::GetLogLocationOptions) -> Result<Self, Self::Error> {
+    fn try_from(options: pb::GetTableLocationOptions) -> Result<Self, Self::Error> {
         let deadline = options.deadline.required("deadline")?.try_into()?;
 
-        Ok(GetLogLocationOptions {
+        Ok(GetTableLocationOptions {
             deadline,
             min_rows: options.min_rows as _,
             max_rows: options.max_rows as _,
@@ -249,24 +249,24 @@ impl TryFrom<pb::GetLogLocationOptions> for GetLogLocationOptions {
     }
 }
 
-impl TryFrom<GetLogLocationRequest> for pb::GetLogLocationRequest {
+impl TryFrom<GetTableLocationRequest> for pb::GetTableLocationRequest {
     type Error = WireError;
 
-    fn try_from(request: GetLogLocationRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: GetTableLocationRequest) -> Result<Self, Self::Error> {
         let options = request.options.try_into()?;
-        Ok(pb::GetLogLocationRequest {
-            topic: request.topic_name.to_string(),
+        Ok(pb::GetTableLocationRequest {
+            table: request.table_name.to_string(),
             partition: request.partition_value.as_ref().map(Into::into),
-            offset: request.offset,
+            seqnum: request.seqnum,
             options: Some(options),
         })
     }
 }
 
-impl TryFrom<GetLogLocationOptions> for pb::GetLogLocationOptions {
+impl TryFrom<GetTableLocationOptions> for pb::GetTableLocationOptions {
     type Error = WireError;
 
-    fn try_from(options: GetLogLocationOptions) -> Result<Self, Self::Error> {
+    fn try_from(options: GetTableLocationOptions) -> Result<Self, Self::Error> {
         let deadline = options.deadline.try_into()?;
 
         Ok(Self {
@@ -277,11 +277,11 @@ impl TryFrom<GetLogLocationOptions> for pb::GetLogLocationOptions {
     }
 }
 
-impl TryFrom<pb::GetLogLocationResponse> for Vec<LogLocation> {
+impl TryFrom<pb::GetTableLocationResponse> for Vec<TableLocation> {
     type Error = WireError;
 
-    fn try_from(response: pb::GetLogLocationResponse) -> Result<Self, Self::Error> {
-        use pb::log_location::Location as ProtoLocation;
+    fn try_from(response: pb::GetTableLocationResponse) -> Result<Self, Self::Error> {
+        use pb::table_location::Location as ProtoLocation;
 
         response
             .locations
@@ -292,36 +292,36 @@ impl TryFrom<pb::GetLogLocationResponse> for Vec<LogLocation> {
                 }),
                 Some(ProtoLocation::FolioLocation(folio)) => {
                     let inner = folio.try_into()?;
-                    Ok(LogLocation::Folio(inner))
+                    Ok(TableLocation::Folio(inner))
                 }
                 Some(ProtoLocation::DataLakeLocation(lake)) => {
                     let inner = lake.try_into()?;
-                    Ok(LogLocation::DataLake(inner))
+                    Ok(TableLocation::DataLake(inner))
                 }
             })
             .collect::<Result<Vec<_>, _>>()
     }
 }
 
-impl From<Vec<LogLocation>> for pb::GetLogLocationResponse {
-    fn from(locations: Vec<LogLocation>) -> Self {
-        use pb::log_location::Location;
+impl From<Vec<TableLocation>> for pb::GetTableLocationResponse {
+    fn from(locations: Vec<TableLocation>) -> Self {
+        use pb::table_location::Location;
 
         let locations = locations
             .into_iter()
             .map(|location| {
                 let inner = match location {
-                    LogLocation::Folio(folio) => Location::FolioLocation(folio.into()),
-                    LogLocation::DataLake(lake) => Location::DataLakeLocation(lake.into()),
+                    TableLocation::Folio(folio) => Location::FolioLocation(folio.into()),
+                    TableLocation::DataLake(lake) => Location::DataLakeLocation(lake.into()),
                 };
 
-                pb::LogLocation {
+                pb::TableLocation {
                     location: Some(inner),
                 }
             })
             .collect::<Vec<_>>();
 
-        pb::GetLogLocationResponse { locations }
+        pb::GetTableLocationResponse { locations }
     }
 }
 
@@ -360,15 +360,15 @@ impl TryFrom<pb::DataLakeLocation> for DataLakeLocation {
     type Error = WireError;
 
     fn try_from(location: pb::DataLakeLocation) -> Result<Self, Self::Error> {
-        let start_offset = location.start_offset.required("start_offset")?.try_into()?;
-        let end_offset = location.end_offset.required("end_offset")?.try_into()?;
+        let start_seqnum = location.start_seqnum.required("start_seqnum")?.try_into()?;
+        let end_seqnum = location.end_seqnum.required("end_seqnum")?.try_into()?;
 
         Ok(Self {
             file_ref: location.file_ref,
             size_bytes: location.size_bytes,
             num_rows: location.num_rows as _,
-            start_offset,
-            end_offset,
+            start_seqnum,
+            end_seqnum,
         })
     }
 }
@@ -379,8 +379,8 @@ impl From<DataLakeLocation> for pb::DataLakeLocation {
             file_ref: location.file_ref,
             size_bytes: location.size_bytes,
             num_rows: location.num_rows as _,
-            start_offset: Some(location.start_offset.into()),
-            end_offset: Some(location.end_offset.into()),
+            start_seqnum: Some(location.start_seqnum.into()),
+            end_seqnum: Some(location.end_seqnum.into()),
         }
     }
 }
@@ -400,11 +400,11 @@ impl TryFrom<pb::ListPartitionsRequest> for ListPartitionsRequest {
     type Error = WireError;
 
     fn try_from(request: pb::ListPartitionsRequest) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&request.topic).context(ResourceSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&request.table).context(ResourceSnafu { resource: "table" })?;
 
         Ok(ListPartitionsRequest {
-            topic_name,
+            table_name,
             page_size: request.page_size.map(|size| size as usize),
             page_token: request.page_token,
         })
@@ -414,7 +414,7 @@ impl TryFrom<pb::ListPartitionsRequest> for ListPartitionsRequest {
 impl From<ListPartitionsRequest> for pb::ListPartitionsRequest {
     fn from(request: ListPartitionsRequest) -> Self {
         pb::ListPartitionsRequest {
-            topic: request.topic_name.to_string(),
+            table: request.table_name.to_string(),
             page_size: request.page_size.map(|v| v as i32),
             page_token: request.page_token,
         }
@@ -452,11 +452,11 @@ impl TryFrom<pb::PartitionMetadata> for PartitionMetadata {
 
     fn try_from(metadata: pb::PartitionMetadata) -> Result<Self, Self::Error> {
         let partition_value = metadata.value.map(TryInto::try_into).transpose()?;
-        let end_offset = metadata.end_offset.required("end_offset")?.try_into()?;
+        let end_seqnum = metadata.end_seqnum.required("end_seqnum")?.try_into()?;
 
         Ok(PartitionMetadata {
             partition_value,
-            end_offset,
+            end_seqnum,
         })
     }
 }
@@ -465,7 +465,7 @@ impl From<PartitionMetadata> for pb::PartitionMetadata {
     fn from(metadata: PartitionMetadata) -> Self {
         pb::PartitionMetadata {
             value: metadata.partition_value.as_ref().map(Into::into),
-            end_offset: Some(metadata.end_offset.into()),
+            end_seqnum: Some(metadata.end_seqnum.into()),
         }
     }
 }
@@ -608,10 +608,10 @@ impl From<TaskStatus> for pb::TaskStatus {
 impl From<CompactionTask> for pb::CompactionTask {
     fn from(task: CompactionTask) -> Self {
         pb::CompactionTask {
-            topic: task.topic_name.to_string(),
+            table: task.table_name.to_string(),
             partition: task.partition_value.as_ref().map(Into::into),
-            start_offset: task.start_offset,
-            end_offset: task.end_offset,
+            start_seqnum: task.start_seqnum,
+            end_seqnum: task.end_seqnum,
             target_file_size: task.target_file_size.as_u64(),
             operation: match task.operation {
                 CompactionOperation::Append => pb::CompactionOperation::Append.into(),
@@ -625,8 +625,8 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
     type Error = WireError;
 
     fn try_from(task: pb::CompactionTask) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&task.topic).context(ResourceSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&task.table).context(ResourceSnafu { resource: "table" })?;
 
         let partition_value = task.partition.clone().map(TryFrom::try_from).transpose()?;
 
@@ -642,10 +642,10 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
         };
 
         Ok(CompactionTask {
-            topic_name,
+            table_name,
             partition_value,
-            start_offset: task.start_offset,
-            end_offset: task.end_offset,
+            start_seqnum: task.start_seqnum,
+            end_seqnum: task.end_seqnum,
             target_file_size: ByteSize::b(task.target_file_size),
             operation,
         })
@@ -655,7 +655,7 @@ impl TryFrom<pb::CompactionTask> for CompactionTask {
 impl From<CreateTableTask> for pb::CreateTableTask {
     fn from(task: CreateTableTask) -> Self {
         pb::CreateTableTask {
-            topic: task.topic_name.to_string(),
+            table: task.table_name.to_string(),
         }
     }
 }
@@ -664,10 +664,10 @@ impl TryFrom<pb::CreateTableTask> for CreateTableTask {
     type Error = WireError;
 
     fn try_from(task: pb::CreateTableTask) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&task.topic).context(ResourceSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&task.table).context(ResourceSnafu { resource: "table" })?;
 
-        Ok(CreateTableTask { topic_name })
+        Ok(CreateTableTask { table_name })
     }
 }
 
@@ -680,7 +680,7 @@ impl From<CommitTask> for pb::CommitTask {
             .collect::<Vec<_>>();
 
         pb::CommitTask {
-            topic: task.topic_name.to_string(),
+            table: task.table_name.to_string(),
             new_files,
         }
     }
@@ -690,8 +690,8 @@ impl TryFrom<pb::CommitTask> for CommitTask {
     type Error = WireError;
 
     fn try_from(task: pb::CommitTask) -> Result<Self, Self::Error> {
-        let topic_name =
-            TopicName::parse(&task.topic).context(ResourceSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&task.table).context(ResourceSnafu { resource: "table" })?;
 
         let new_files = task
             .new_files
@@ -700,7 +700,7 @@ impl TryFrom<pb::CommitTask> for CommitTask {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(CommitTask {
-            topic_name,
+            table_name,
             new_files,
         })
     }
@@ -832,8 +832,8 @@ impl From<FileInfo> for pb::FileInfo {
         pb::FileInfo {
             file_ref: info.file_ref,
             partition_value: info.partition_value.as_ref().map(Into::into),
-            start_offset: Some(info.start_offset.into()),
-            end_offset: Some(info.end_offset.into()),
+            start_seqnum: Some(info.start_seqnum.into()),
+            end_seqnum: Some(info.end_seqnum.into()),
             metadata: Some(info.metadata.into()),
             modification_time: Some(info.modification_time.into()),
         }
@@ -884,8 +884,8 @@ impl TryFrom<pb::FileInfo> for FileInfo {
             .map(TryFrom::try_from)
             .transpose()?;
 
-        let start_offset = info.start_offset.required("start_offset")?.try_into()?;
-        let end_offset = info.end_offset.required("end_offset")?.try_into()?;
+        let start_seqnum = info.start_seqnum.required("start_seqnum")?.try_into()?;
+        let end_seqnum = info.end_seqnum.required("end_seqnum")?.try_into()?;
 
         let metadata = info.metadata.required("metadata")?.try_into()?;
         let modification_time = info
@@ -896,8 +896,8 @@ impl TryFrom<pb::FileInfo> for FileInfo {
         Ok(FileInfo {
             file_ref: info.file_ref,
             partition_value,
-            start_offset,
-            end_offset,
+            start_seqnum,
+            end_seqnum,
             metadata,
             modification_time,
         })

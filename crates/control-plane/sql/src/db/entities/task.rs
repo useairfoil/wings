@@ -2,7 +2,7 @@ use prost::Message;
 use sea_orm::{ActiveValue::Set, DatabaseTransaction, entity::prelude::*};
 use time::OffsetDateTime;
 use wings_control_plane_core::{
-    log_metadata::{
+    table_metadata::{
         CommitTask, CompactionTask, CreateTableTask, DatabaseTask, Task, TaskMetadata, TaskStatus,
     },
     pb,

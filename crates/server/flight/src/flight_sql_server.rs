@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 use tracing::{debug, instrument};
-use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TopicCache};
+use wings_control_plane_core::cluster_metadata::cache::{NamespaceCache, TableCache};
 use wings_ingestor_core::IngestorClient;
 use wings_query::TopicLogicalPlanExt;
 use wings_resources::NamespaceName;
@@ -41,7 +41,7 @@ const DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("arrow_flight_
 const INGESTION_CHANNEL_SIZE: usize = 64;
 
 pub struct WingsFlightSqlServer {
-    topic_cache: TopicCache,
+    table_cache: TableCache,
     namespace_cache: NamespaceCache,
     ingestor: IngestorClient,
     provider_factory: NamespaceProviderFactory,
@@ -51,13 +51,13 @@ pub struct WingsFlightSqlServer {
 impl WingsFlightSqlServer {
     pub fn new(
         namespace_cache: NamespaceCache,
-        topic_cache: TopicCache,
+        table_cache: TableCache,
         ingestor: IngestorClient,
         provider_factory: NamespaceProviderFactory,
     ) -> Self {
         Self {
             namespace_cache,
-            topic_cache,
+            table_cache,
             ingestor,
             provider_factory,
             metrics: FlightServerMetrics::default(),
@@ -363,9 +363,9 @@ impl FlightSqlService for WingsFlightSqlServer {
         let namespace_name = get_namespace_from_headers(request.metadata())?;
 
         let FetchTicket {
-            topic_name,
+            table_name,
             partition_value,
-            offset,
+            seqnum,
             timeout,
             min_batch_size,
             max_batch_size,
@@ -374,21 +374,21 @@ impl FlightSqlService for WingsFlightSqlServer {
         let min_batch_size = min_batch_size.unwrap_or(1);
         let max_batch_size = max_batch_size.unwrap_or(10_000);
 
-        if topic_name.parent() != &namespace_name {
+        if table_name.parent() != &namespace_name {
             return Err(Status::invalid_argument(format!(
-                "topic name must be in namespace: {namespace_name}"
+                "table name must be in namespace: {namespace_name}"
             )));
         }
 
-        let topic_ref = self
-            .topic_cache
-            .get(topic_name.clone())
+        let table_ref = self
+            .table_cache
+            .get(table_name.clone())
             .await
             .map_err(|err| {
                 if err.is_not_found() {
-                    Status::not_found(format!("topic not found: {topic_name}"))
+                    Status::not_found(format!("table not found: {table_name}"))
                 } else {
-                    Status::internal(format!("failed to resolve topic: {topic_name}"))
+                    Status::internal(format!("failed to resolve table: {table_name}"))
                 }
             })?;
 
@@ -413,11 +413,11 @@ impl FlightSqlService for WingsFlightSqlServer {
                 .expect("update wings.timeout_ms");
         }
 
-        let plan = topic_ref
+        let plan = table_ref
             .logical_plan(
                 &ctx,
-                offset,
-                offset + max_batch_size as u64 - 1,
+                seqnum,
+                seqnum + max_batch_size as u64 - 1,
                 partition_value,
             )
             .await
@@ -439,14 +439,14 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         let metrics_kv = {
             use wings_observability::KeyValue as KV;
-            let topic_id = topic_name.id().to_string();
-            let namespace_id = topic_name.parent().id().to_string();
-            let tenant_id = topic_name.parent().parent().id().to_string();
+            let table_id = table_name.id().to_string();
+            let namespace_id = table_name.parent().id().to_string();
+            let tenant_id = table_name.parent().parent().id().to_string();
 
             vec![
                 KV::new("tenant", tenant_id),
                 KV::new("namespace", namespace_id),
-                KV::new("topic", topic_id),
+                KV::new("table", table_id),
             ]
         };
 
@@ -514,13 +514,13 @@ impl FlightSqlService for WingsFlightSqlServer {
 
         tokio::spawn({
             let namespace_ref = namespace_ref.clone();
-            let topic_cache = self.topic_cache.clone();
+            let table_cache = self.table_cache.clone();
             let ingestor = self.ingestor.clone();
 
             async move {
                 match process_ingestion_stream(
                     namespace_ref,
-                    topic_cache,
+                    table_cache,
                     request_stream,
                     ingestor,
                     tx.clone(),

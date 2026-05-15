@@ -9,10 +9,10 @@ use tracing::info;
 use wings_control_plane_core::{
     cluster_metadata::{
         ClusterMetadata,
-        cache::{NamespaceCache, TopicCache},
+        cache::{NamespaceCache, TableCache},
         tonic::ClusterMetadataServer,
     },
-    log_metadata::tonic::LogMetadataServer,
+    table_metadata::tonic::TableMetadataServer,
 };
 use wings_control_plane_sql::{Database, SqlControlPlane};
 use wings_flight::WingsFlightSqlServer;
@@ -189,7 +189,7 @@ impl DevArgs {
         info!("Default object store: {}", default_object_store);
         info!("Default data lake: {}", default_data_lake);
         info!(
-            "You can create new tenants, namespaces, object stores, data lakes, and topics using the CLI"
+            "You can create new tenants, namespaces, object stores, data lakes, and tables using the CLI"
         );
 
         let _ct_guard = ct.child_token().drop_guard();
@@ -203,10 +203,10 @@ impl DevArgs {
 
         let ingestor = Ingestor::new(object_store_factory.clone(), control_plane.clone());
         let worker_pool = {
-            let topic_cache = TopicCache::new(control_plane.clone());
+            let table_cache = TableCache::new(control_plane.clone());
             let namespace_cache = NamespaceCache::new(control_plane.clone());
             WorkerPool::new(
-                topic_cache,
+                table_cache,
                 namespace_cache,
                 control_plane.clone(),
                 control_plane.clone(),
@@ -398,21 +398,21 @@ async fn run_grpc_server(
             wings_control_plane_core::pb::cluster_metadata_file_descriptor_set(),
         )
         .register_encoded_file_descriptor_set(
-            wings_control_plane_core::pb::log_metadata_file_descriptor_set(),
+            wings_control_plane_core::pb::table_metadata_file_descriptor_set(),
         )
         .register_encoded_file_descriptor_set(WingsFlightSqlServer::file_descriptor_set())
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let topic_cache = TopicCache::new(control_plane.clone());
+    let table_cache = TableCache::new(control_plane.clone());
     let namespace_cache = NamespaceCache::new(control_plane.clone());
 
     let admin_service = ClusterMetadataServer::new(control_plane.clone()).into_tonic_server();
-    let offset_registry_service = LogMetadataServer::new(control_plane).into_tonic_server();
+    let table_meta_service = TableMetadataServer::new(control_plane).into_tonic_server();
 
     let sql_service = WingsFlightSqlServer::new(
         namespace_cache,
-        topic_cache,
+        table_cache,
         batch_ingestor,
         namespace_provider_factory,
     )
@@ -421,7 +421,7 @@ async fn run_grpc_server(
     let server = tonic::transport::Server::builder()
         .add_service(reflection_service)
         .add_service(admin_service)
-        .add_service(offset_registry_service)
+        .add_service(table_meta_service)
         .add_service(sql_service)
         .serve_with_shutdown(address, async move {
             ct.cancelled().await;
@@ -436,10 +436,10 @@ async fn run_http_server(
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
-    let topic_cache = TopicCache::new(cluster_meta.clone());
+    let table_cache = TableCache::new(cluster_meta.clone());
     let namespace_cache = NamespaceCache::new(cluster_meta.clone());
 
-    let ingestor = HttpIngestor::new(topic_cache, namespace_cache, batch_ingestor);
+    let ingestor = HttpIngestor::new(table_cache, namespace_cache, batch_ingestor);
 
     let app = Router::new().merge(ingestor.into_router());
 

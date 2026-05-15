@@ -11,42 +11,42 @@ use wings_schema::{
 
 use crate::{NamespaceName, resource_type};
 
-pub const OFFSET_COLUMN_NAME: &str = "__offset__";
-pub const OFFSET_COLUMN_ID: u64 = u64::MAX;
+pub const SEQNUM_COLUMN_NAME: &str = "__seqnum__";
+pub const SEQNUM_COLUMN_ID: u64 = u64::MAX;
 pub const TIMESTAMP_COLUMN_NAME: &str = "__timestamp__";
 pub const TIMESTAMP_COLUMN_ID: u64 = u64::MAX - 1;
 
-resource_type!(Topic, "topics", Namespace);
+resource_type!(Table, "tables", Namespace);
 
-/// A topic belonging to a namespace.
+/// A table belonging to a namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Topic {
-    /// The topic name.
-    pub name: TopicName,
-    /// The topic's schema.
+pub struct Table {
+    /// The table name.
+    pub name: TableName,
+    /// The table's schema.
     pub schema: Schema,
-    /// The index of the field that is used to partition the topic.
+    /// The index of the field that is used to partition the table.
     pub partition_key: Option<u64>,
-    /// The topic description.
+    /// The table description.
     pub description: Option<String>,
-    /// The topic compaction configuration.
+    /// The table compaction configuration.
     pub compaction: CompactionConfiguration,
-    /// The topic status.
-    pub status: Option<TopicStatus>,
+    /// The table status.
+    pub status: Option<TableStatus>,
 }
 
-/// The status of a topic.
+/// The status of a table.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct TopicStatus {
+pub struct TableStatus {
     /// The number of partitions.
     pub num_partitions: u64,
-    /// The conditions of the topic.
-    pub conditions: Vec<TopicCondition>,
+    /// The conditions of the table.
+    pub conditions: Vec<TableCondition>,
 }
 
-/// A condition on a topic, similar to Kubernetes conditions.
+/// A condition on a table, similar to Kubernetes conditions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopicCondition {
+pub struct TableCondition {
     /// The condition type.
     pub condition_type: String,
     /// Whether the condition is operational.
@@ -61,15 +61,15 @@ pub struct TopicCondition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionConfiguration {
-    /// How often to compact the topic.
+    /// How often to compact the table.
     pub freshness: Duration,
-    /// How long to keep the topic data.
+    /// How long to keep the table data.
     pub ttl: Option<Duration>,
     /// The target file size for compacted files.
     pub target_file_size: ByteSize,
 }
 
-pub type TopicRef = Arc<Topic>;
+pub type TableRef = Arc<Table>;
 
 /// Whether to include the partition field (if any) in the schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,13 +78,13 @@ pub enum PartitionPosition {
     Skip,
     /// Include it in the original position.
     Original,
-    /// Include it after all topic's columns, but before the metadata columns.
+    /// Include it after all table's columns, but before the metadata columns.
     Last,
 }
 
-impl Topic {
-    /// Create a new topic with the given name and options.
-    pub fn new(name: TopicName, options: TopicOptions) -> Self {
+impl Table {
+    /// Create a new table with the given name and options.
+    pub fn new(name: TableName, options: TableOptions) -> Self {
         Self {
             name,
             schema: options.schema,
@@ -95,8 +95,8 @@ impl Topic {
         }
     }
 
-    /// Set the topic status.
-    pub fn with_status(mut self, status: TopicStatus) -> Self {
+    /// Set the table status.
+    pub fn with_status(mut self, status: TableStatus) -> Self {
         self.status = Some(status);
         self
     }
@@ -114,7 +114,7 @@ impl Topic {
         self.partition_field().map(|col| &col.data_type)
     }
 
-    /// The topic's schema.
+    /// The table's schema.
     pub fn schema(&self) -> &Schema {
         &self.schema
     }
@@ -123,7 +123,7 @@ impl Topic {
         self.schema().arrow_schema().into()
     }
 
-    /// Returns the topic's schema without the partition field.
+    /// Returns the table's schema without the partition field.
     ///
     /// Since partition fields are usually not stored in the physical Parquet
     /// file, this method returns a schema that excludes the partition field.
@@ -131,7 +131,7 @@ impl Topic {
         schema_without_partition_field(self.schema(), self.partition_key)
     }
 
-    /// Returns the topic's schema without the partition field.
+    /// Returns the table's schema without the partition field.
     ///
     /// Since partition fields are usually not stored in the physical Parquet
     /// file, this method returns a schema that excludes the partition field.
@@ -139,11 +139,11 @@ impl Topic {
         self.schema_without_partition_field().arrow_schema().into()
     }
 
-    /// Returns the topic's schema with the extra metadata columns (e.g. offset and timestamp).
+    /// Returns the table's schema with the extra metadata columns (e.g. seqnum and timestamp).
     ///
     /// Optionally, include the partition column (if any).
     ///
-    /// Notice that this method can fail if the topic's columns include one with
+    /// Notice that this method can fail if the table's columns include one with
     /// the same id as the metadata columns.
     pub fn schema_with_metadata(
         &self,
@@ -181,7 +181,7 @@ impl Topic {
         };
 
         fields
-            .push(Field::new(OFFSET_COLUMN_NAME, OFFSET_COLUMN_ID, DataType::UInt64, true).into());
+            .push(Field::new(SEQNUM_COLUMN_NAME, SEQNUM_COLUMN_ID, DataType::UInt64, true).into());
         fields.push(
             Field::new(
                 TIMESTAMP_COLUMN_NAME,
@@ -204,20 +204,20 @@ impl Topic {
     }
 }
 
-/// Options for creating a topic.
+/// Options for creating a table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopicOptions {
-    /// The topic's schema.
+pub struct TableOptions {
+    /// The table's schema.
     pub schema: Schema,
-    /// The index of the field that is used to partition the topic.
+    /// The index of the field that is used to partition the table.
     pub partition_key: Option<u64>,
-    /// The topic description.
+    /// The table description.
     pub description: Option<String>,
-    /// The topic compaction configuration.
+    /// The table compaction configuration.
     pub compaction: CompactionConfiguration,
 }
 
-impl TopicOptions {
+impl TableOptions {
     pub fn new(schema: Schema) -> Self {
         Self {
             schema,
@@ -289,62 +289,62 @@ mod tests {
     use wings_schema::{DataType, Field, SchemaBuilder};
 
     use crate::{
-        CompactionConfiguration, NamespaceName, PartitionPosition, TenantName, TopicName,
-        TopicOptions, TopicStatus, validate_compaction,
+        CompactionConfiguration, NamespaceName, PartitionPosition, TableName, TableOptions,
+        TableStatus, TenantName, validate_compaction,
     };
 
     #[test]
-    fn test_topic_name_creation() {
+    fn test_table_name_creation() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name.clone()).unwrap();
+        let table_name = TableName::new("test-table", namespace_name.clone()).unwrap();
 
-        assert_eq!(topic_name.id(), "test-topic");
-        assert_eq!(topic_name.parent(), &namespace_name);
+        assert_eq!(table_name.id(), "test-table");
+        assert_eq!(table_name.parent(), &namespace_name);
         assert_eq!(
-            topic_name.name(),
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+            table_name.name(),
+            "tenants/test-tenant/namespaces/test-namespace/tables/test-table"
         );
         assert_eq!(
-            topic_name.to_string(),
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+            table_name.to_string(),
+            "tenants/test-tenant/namespaces/test-namespace/tables/test-table"
         );
     }
 
     #[test]
-    fn test_topic_name_parse() {
-        let topic_name =
-            TopicName::parse("tenants/test-tenant/namespaces/test-namespace/topics/test-topic")
+    fn test_table_name_parse() {
+        let table_name =
+            TableName::parse("tenants/test-tenant/namespaces/test-namespace/tables/test-table")
                 .unwrap();
-        assert_eq!(topic_name.id(), "test-topic");
+        assert_eq!(table_name.id(), "test-table");
 
         // Test parse with invalid format
-        let result = TopicName::parse("invalid-format");
+        let result = TableName::parse("invalid-format");
         assert!(result.is_err());
 
         // Test parse with missing parent
-        let result = TopicName::parse("topics/test-topic");
+        let result = TableName::parse("tables/test-table");
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_topic_name_from_str() {
-        let topic_name: TopicName =
-            "tenants/test-tenant/namespaces/test-namespace/topics/test-topic"
+    fn test_table_name_from_str() {
+        let table_name: TableName =
+            "tenants/test-tenant/namespaces/test-namespace/tables/test-table"
                 .parse()
                 .unwrap();
-        assert_eq!(topic_name.id(), "test-topic");
+        assert_eq!(table_name.id(), "test-table");
 
-        let result: Result<TopicName, _> = "invalid".parse();
+        let result: Result<TableName, _> = "invalid".parse();
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_topic_name_new_unchecked() {
+    fn test_table_name_new_unchecked() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new_unchecked("test-topic", namespace_name);
-        assert_eq!(topic_name.id(), "test-topic");
+        let table_name = TableName::new_unchecked("test-table", namespace_name);
+        assert_eq!(table_name.id(), "test-table");
     }
 
     #[test]
@@ -416,20 +416,20 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_options_with_description() {
+    fn test_table_options_with_description() {
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new(schema).with_description("Test topic description");
+        let options = TableOptions::new(schema).with_description("Test table description");
 
         assert_eq!(
             options.description,
-            Some("Test topic description".to_string())
+            Some("Test table description".to_string())
         );
     }
 
     #[test]
-    fn test_topic_options_with_compaction() {
+    fn test_table_options_with_compaction() {
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
@@ -438,7 +438,7 @@ mod tests {
             ttl: Some(Duration::from_hours(24)),
             target_file_size: ByteSize::mb(256),
         };
-        let options = TopicOptions::new(schema).with_compaction(compaction.clone());
+        let options = TableOptions::new(schema).with_compaction(compaction.clone());
 
         assert_eq!(options.compaction.freshness, compaction.freshness);
         assert_eq!(options.compaction.ttl, compaction.ttl);
@@ -449,111 +449,111 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_with_status() {
+    fn test_table_with_status() {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new(schema);
-        let status = TopicStatus {
+        let options = TableOptions::new(schema);
+        let status = TableStatus {
             num_partitions: 10,
             conditions: vec![],
         };
-        let topic = crate::Topic::new(topic_name, options).with_status(status);
+        let table = crate::Table::new(table_name, options).with_status(status);
 
-        assert!(topic.status.is_some());
-        assert_eq!(topic.status.as_ref().unwrap().num_partitions, 10);
+        assert!(table.status.is_some());
+        assert_eq!(table.status.as_ref().unwrap().num_partitions, 10);
     }
 
     #[test]
-    fn test_topic_partition_field() {
+    fn test_table_partition_field() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let partition_field = topic.partition_field();
+        let partition_field = table.partition_field();
         assert!(partition_field.is_some());
         assert_eq!(partition_field.unwrap().id, 0);
         assert_eq!(partition_field.unwrap().name, "id");
     }
 
     #[test]
-    fn test_topic_partition_field_none() {
+    fn test_table_partition_field_none() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new(schema); // No partition key
+        let options = TableOptions::new(schema); // No partition key
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let partition_field = topic.partition_field();
+        let partition_field = table.partition_field();
         assert!(partition_field.is_none());
     }
 
     #[test]
-    fn test_topic_partition_field_data_type() {
+    fn test_table_partition_field_data_type() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let data_type = topic.partition_field_data_type();
+        let data_type = table.partition_field_data_type();
         assert!(data_type.is_some());
         assert_eq!(data_type.unwrap(), &DataType::Int64);
     }
 
     #[test]
-    fn test_topic_arrow_schema() {
+    fn test_table_arrow_schema() {
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new(schema);
+        let options = TableOptions::new(schema);
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let arrow_schema = topic.arrow_schema();
+        let arrow_schema = table.arrow_schema();
         assert_eq!(arrow_schema.fields().len(), 1);
     }
 
     #[test]
-    fn test_topic_schema_without_partition_field() {
+    fn test_table_schema_without_partition_field() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let schema_without_partition = topic.schema_without_partition_field();
+        let schema_without_partition = table.schema_without_partition_field();
         assert_eq!(schema_without_partition.fields.len(), 1); // Only message field
         assert!(
             schema_without_partition
@@ -563,93 +563,93 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_arrow_schema_without_partition_field() {
+    fn test_table_arrow_schema_without_partition_field() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let arrow_schema = topic.arrow_schema_without_partition_field();
+        let arrow_schema = table.arrow_schema_without_partition_field();
         assert_eq!(arrow_schema.fields().len(), 1);
     }
 
     #[test]
-    fn test_topic_schema_with_metadata_skip() {
+    fn test_table_schema_with_metadata_skip() {
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new(schema);
+        let options = TableOptions::new(schema);
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let schema_with_metadata = topic.schema_with_metadata(PartitionPosition::Skip).unwrap();
-        // Should have original field + offset + timestamp = 3 fields
+        let schema_with_metadata = table.schema_with_metadata(PartitionPosition::Skip).unwrap();
+        // Should have original field + seqnum + timestamp = 3 fields
         assert_eq!(schema_with_metadata.fields.len(), 3);
     }
 
     #[test]
-    fn test_topic_schema_with_metadata_original() {
+    fn test_table_schema_with_metadata_original() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let schema_with_metadata = topic
+        let schema_with_metadata = table
             .schema_with_metadata(PartitionPosition::Original)
             .unwrap();
-        // Should have all original fields + offset + timestamp
+        // Should have all original fields + seqnum + timestamp
         assert_eq!(schema_with_metadata.fields.len(), 4);
     }
 
     #[test]
-    fn test_topic_schema_with_metadata_last() {
+    fn test_table_schema_with_metadata_last() {
         let schema = SchemaBuilder::new(vec![
             Field::new("id", 0, DataType::Int64, false),
             Field::new("message", 1, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let schema_with_metadata = topic.schema_with_metadata(PartitionPosition::Last).unwrap();
-        // Should have all fields with partition last + offset + timestamp = 4
+        let schema_with_metadata = table.schema_with_metadata(PartitionPosition::Last).unwrap();
+        // Should have all fields with partition last + seqnum + timestamp = 4
         assert_eq!(schema_with_metadata.fields.len(), 4);
     }
 
     #[test]
-    fn test_topic_arrow_schema_with_metadata() {
+    fn test_table_arrow_schema_with_metadata() {
         let schema = SchemaBuilder::new(vec![Field::new("test", 1, DataType::Utf8, false)])
             .build()
             .unwrap();
-        let options = TopicOptions::new(schema);
+        let options = TableOptions::new(schema);
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
-        let topic = crate::Topic::new(topic_name, options);
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
+        let table = crate::Table::new(table_name, options);
 
-        let arrow_schema = topic
+        let arrow_schema = table
             .arrow_schema_with_metadata(PartitionPosition::Skip)
             .unwrap();
-        assert_eq!(arrow_schema.fields().len(), 3); // test + offset + timestamp
+        assert_eq!(arrow_schema.fields().len(), 3); // test + seqnum + timestamp
     }
 }

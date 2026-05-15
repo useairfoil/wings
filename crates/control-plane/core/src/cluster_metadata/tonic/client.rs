@@ -5,16 +5,16 @@ use bytes::Bytes;
 use http_body::Body;
 use wings_resources::{
     DataLake, DataLakeConfiguration, DataLakeName, Namespace, NamespaceName, NamespaceOptions,
-    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Topic, TopicName,
-    TopicOptions,
+    ObjectStore, ObjectStoreConfiguration, ObjectStoreName, Tenant, TenantName, Table, TableName,
+    TableOptions,
 };
 
 use crate::{
     cluster_metadata::{
         ClusterMetadata, ListDataLakesRequest, ListDataLakesResponse, ListNamespacesRequest,
         ListNamespacesResponse, ListObjectStoresRequest, ListObjectStoresResponse,
-        ListTenantsRequest, ListTenantsResponse, ListTopicsRequest, ListTopicsResponse, Result,
-        TopicView,
+        ListTenantsRequest, ListTenantsResponse, ListTablesRequest, ListTablesResponse, Result,
+        TableView,
     },
     pb::{self, cluster_metadata_service_client::ClusterMetadataServiceClient as TonicClient},
 };
@@ -163,58 +163,58 @@ where
         Ok(())
     }
 
-    async fn create_topic(&self, name: TopicName, options: TopicOptions) -> Result<Topic> {
-        let topic = pb::Topic::try_from(options)?;
-        let request = pb::CreateTopicRequest {
+    async fn create_table(&self, name: TableName, options: TableOptions) -> Result<Table> {
+        let table = pb::Table::try_from(options)?;
+        let request = pb::CreateTableRequest {
             parent: name.parent().to_string(),
-            topic_id: name.id().to_string(),
-            topic: Some(topic),
+            table_id: name.id().to_string(),
+            table: Some(table),
         };
 
         self.client
             .clone()
-            .create_topic(request)
+            .create_table(request)
             .await?
             .into_inner()
             .try_into()
             .map_err(Into::into)
     }
 
-    async fn get_topic(&self, name: TopicName, view: TopicView) -> Result<Topic> {
-        let view: pb::TopicView = view.into();
-        let request = pb::GetTopicRequest {
+    async fn get_table(&self, name: TableName, view: TableView) -> Result<Table> {
+        let view: pb::TableView = view.into();
+        let request = pb::GetTableRequest {
             name: name.to_string(),
             view: Some(view as i32),
         };
 
         self.client
             .clone()
-            .get_topic(request)
+            .get_table(request)
             .await?
             .into_inner()
             .try_into()
             .map_err(Into::into)
     }
 
-    async fn list_topics(&self, request: ListTopicsRequest) -> Result<ListTopicsResponse> {
-        let request = pb::ListTopicsRequest::from(request);
+    async fn list_tables(&self, request: ListTablesRequest) -> Result<ListTablesResponse> {
+        let request = pb::ListTablesRequest::from(request);
 
         self.client
             .clone()
-            .list_topics(request)
+            .list_tables(request)
             .await?
             .into_inner()
             .try_into()
             .map_err(Into::into)
     }
 
-    async fn delete_topic(&self, name: TopicName, force: bool) -> Result<()> {
-        let request = pb::DeleteTopicRequest {
+    async fn delete_table(&self, name: TableName, force: bool) -> Result<()> {
+        let request = pb::DeleteTableRequest {
             name: name.to_string(),
             force,
         };
 
-        self.client.clone().delete_topic(request).await?;
+        self.client.clone().delete_table(request).await?;
 
         Ok(())
     }

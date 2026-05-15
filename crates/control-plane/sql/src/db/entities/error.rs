@@ -1,7 +1,7 @@
 use sea_orm::DbErr;
 use snafu::Snafu;
 use wings_control_plane_core::{
-    ClusterMetadataError, log_metadata::LogMetadataError, pb::WireError,
+    ClusterMetadataError, table_metadata::TableMetadataError, pb::WireError,
 };
 use wings_resources::ResourceError;
 use wings_schema::SchemaError;
@@ -66,33 +66,33 @@ impl From<Error> for ClusterMetadataError {
     }
 }
 
-impl From<Error> for LogMetadataError {
+impl From<Error> for TableMetadataError {
     fn from(err: Error) -> Self {
         match err {
-            Error::NotFound { resource, name } => LogMetadataError::NotFound {
+            Error::NotFound { resource, name } => TableMetadataError::NotFound {
                 resource: resource.to_string(),
                 name,
             },
             Error::InvalidResourceName { resource, source } => {
-                LogMetadataError::InvalidResourceName {
+                TableMetadataError::InvalidResourceName {
                     resource: resource.to_string(),
                     message: format!("{source}"),
                 }
             }
-            Error::Internal { message } => LogMetadataError::Internal { message },
-            Error::Schema { source } => LogMetadataError::Schema {
+            Error::Internal { message } => TableMetadataError::Internal { message },
+            Error::Schema { source } => TableMetadataError::Schema {
                 message: source.to_string(),
             },
-            Error::Wire { source } => LogMetadataError::Internal {
+            Error::Wire { source } => TableMetadataError::Internal {
                 message: format!("wire error: {source}"),
             },
-            Error::Prost { source } => LogMetadataError::Internal {
+            Error::Prost { source } => TableMetadataError::Internal {
                 message: format!("prost decode error: {source}"),
             },
-            Error::Json { source } => LogMetadataError::Internal {
+            Error::Json { source } => TableMetadataError::Internal {
                 message: format!("json error: {source}"),
             },
-            Error::Db { source } => LogMetadataError::Internal {
+            Error::Db { source } => TableMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
         }

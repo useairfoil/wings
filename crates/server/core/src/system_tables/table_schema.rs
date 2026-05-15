@@ -10,30 +10,30 @@ use datafusion::{
     prelude::Expr,
 };
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, CollectNamespaceTopicsOptions, collect_namespace_topics,
+    ClusterMetadata, CollectNamespaceTablesOptions, collect_namespace_tables,
 };
-use wings_resources::{NamespaceName, Topic};
+use wings_resources::{NamespaceName, Table};
 
 use super::{helpers::TOPIC_NAME_COLUMN, provider::SystemTable};
 
-pub struct TopicSchemaTable {
+pub struct TableSchemaTable {
     cluster_meta: Arc<dyn ClusterMetadata>,
     namespace: NamespaceName,
     schema: SchemaRef,
 }
 
-impl TopicSchemaTable {
+impl TableSchemaTable {
     pub fn new(cluster_meta: Arc<dyn ClusterMetadata>, namespace: NamespaceName) -> Self {
         Self {
             cluster_meta,
             namespace,
-            schema: topic_schema_schema(),
+            schema: table_schema_schema(),
         }
     }
 }
 
 #[async_trait]
-impl SystemTable for TopicSchemaTable {
+impl SystemTable for TableSchemaTable {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
@@ -43,26 +43,26 @@ impl SystemTable for TopicSchemaTable {
         _filters: Vec<Expr>,
         _limit: Option<usize>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let topics = collect_namespace_topics(
+        let tables = collect_namespace_tables(
             &self.cluster_meta,
             &self.namespace,
-            CollectNamespaceTopicsOptions::default(),
+            CollectNamespaceTablesOptions::default(),
         )
         .await?;
 
-        from_topics(self.schema.clone(), &topics)
+        from_tables(self.schema.clone(), &tables)
     }
 }
 
-impl std::fmt::Debug for TopicSchemaTable {
+impl std::fmt::Debug for TableSchemaTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TopicSchemaTable")
+        f.debug_struct("TableSchemaTable")
             .field("namespace", &self.namespace)
             .finish()
     }
 }
 
-fn topic_schema_schema() -> SchemaRef {
+fn table_schema_schema() -> SchemaRef {
     let fields = vec![
         Field::new("tenant", DataType::Utf8, false),
         Field::new("namespace", DataType::Utf8, false),
@@ -76,21 +76,21 @@ fn topic_schema_schema() -> SchemaRef {
     Arc::new(Schema::new(fields))
 }
 
-fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataFusionError> {
-    let mut tenant_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut namespace_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut topic_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut field_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut data_type_arr = StringBuilder::with_capacity(topics.len(), 0);
-    let mut nullable_arr = BooleanBuilder::with_capacity(topics.len());
-    let mut is_partition_key_arr = BooleanBuilder::with_capacity(topics.len());
+fn from_tables(schema: SchemaRef, tables: &[Table]) -> Result<RecordBatch, DataFusionError> {
+    let mut tenant_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut namespace_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut table_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut field_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut data_type_arr = StringBuilder::with_capacity(tables.len(), 0);
+    let mut nullable_arr = BooleanBuilder::with_capacity(tables.len());
+    let mut is_partition_key_arr = BooleanBuilder::with_capacity(tables.len());
 
-    for topic in topics {
-        let partition_key = topic.partition_key;
-        for field in topic.schema().fields_iter() {
-            let topic_name = topic.name.clone();
-            topic_arr.append_value(topic_name.id.clone());
-            let namespace_name = topic_name.parent();
+    for table in tables {
+        let partition_key = table.partition_key;
+        for field in table.schema().fields_iter() {
+            let table_name = table.name.clone();
+            table_arr.append_value(table_name.id.clone());
+            let namespace_name = table_name.parent();
             namespace_arr.append_value(namespace_name.id.clone());
             let tenant_name = namespace_name.parent();
             tenant_arr.append_value(tenant_name.id.clone());
@@ -105,7 +105,7 @@ fn from_topics(schema: SchemaRef, topics: &[Topic]) -> Result<RecordBatch, DataF
     let columns: Vec<ArrayRef> = vec![
         Arc::new(tenant_arr.finish()),
         Arc::new(namespace_arr.finish()),
-        Arc::new(topic_arr.finish()),
+        Arc::new(table_arr.finish()),
         Arc::new(field_arr.finish()),
         Arc::new(data_type_arr.finish()),
         Arc::new(nullable_arr.finish()),

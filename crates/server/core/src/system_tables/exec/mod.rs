@@ -1,10 +1,10 @@
 mod metrics;
-mod topic_discovery;
-mod topic_offset_location_discovery;
-mod topic_partition_value_discovery;
+mod table_discovery;
+mod table_row_location_discovery;
+mod table_partition_value_discovery;
 
 pub use self::{
-    metrics::MetricsExec, topic_discovery::TopicDiscoveryExec,
-    topic_offset_location_discovery::TopicOffsetLocationDiscoveryExec,
-    topic_partition_value_discovery::TopicPartitionValueDiscoveryExec,
+    metrics::MetricsExec, table_discovery::TableDiscoveryExec,
+    table_row_location_discovery::TableRowLocationDiscoveryExec,
+    table_partition_value_discovery::TablePartitionValueDiscoveryExec,
 };

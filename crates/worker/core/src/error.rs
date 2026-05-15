@@ -1,7 +1,7 @@
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 use wings_control_plane_core::{
-    cluster_metadata::ClusterMetadataError, log_metadata::LogMetadataError,
+    cluster_metadata::ClusterMetadataError, table_metadata::TableMetadataError,
 };
 use wings_data_lake::DataLakeError;
 
@@ -13,9 +13,9 @@ pub enum WorkerPoolError {}
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum WorkerError {
-    #[snafu(display("Failed log metadata operation: {}", operation))]
-    LogMetadata {
-        source: LogMetadataError,
+    #[snafu(display("Failed table metadata operation: {}", operation))]
+    TableMetadata {
+        source: TableMetadataError,
         operation: &'static str,
     },
     #[snafu(display("Failed cluster metadata operation: {}", operation))]
@@ -32,7 +32,7 @@ pub enum WorkerError {
     DataFusion { source: DataFusionError },
     #[snafu(transparent)]
     Query {
-        source: wings_query::TopicLogicalPlanError,
+        source: wings_query::TableLogicalPlanError,
     },
 }
 

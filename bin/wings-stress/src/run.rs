@@ -11,8 +11,8 @@ use snafu::ResultExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use wings_client::{WingsClient, WriteRequest};
-use wings_control_plane_core::log_metadata::CommittedBatch;
-use wings_resources::{PartitionValue, Topic};
+use wings_control_plane_core::table_metadata::CommittedBatch;
+use wings_resources::{PartitionValue, Table};
 
 use crate::{
     error::{FetchSnafu, PushSnafu, Result},
@@ -39,20 +39,20 @@ pub async fn run_test(
     client_id: u64,
     tx: mpsc::Sender<Event>,
     client: WingsClient,
-    topic: Topic,
+    table: Table,
     ct: CancellationToken,
 ) -> Result<()> {
-    let arrow_schema = topic.arrow_schema_without_partition_field();
+    let arrow_schema = table.arrow_schema_without_partition_field();
     let push_client = client
-        .push_client(topic.name.clone())
+        .push_client(table.name.clone())
         .await
         .context(PushSnafu {})?;
     let fetch_client = client
-        .fetch_client(topic.name.clone())
+        .fetch_client(table.name.clone())
         .await
         .context(FetchSnafu {})?;
 
-    let mut end_offset = 0;
+    let mut end_seqnum = 0;
 
     for _ in 0..ctx.iterations {
         if ct.is_cancelled() {
@@ -79,7 +79,7 @@ pub async fn run_test(
 
                 let response = push_client
                     .push(WriteRequest {
-                        topic_name: topic.name.clone(),
+                        table_name: table.name.clone(),
                         data: batch,
                         partition_value,
                         timestamp: None,
@@ -96,12 +96,12 @@ pub async fn run_test(
                             id,
                             client_id,
                             event: OperationEvent::PushEnd {
-                                end_offset: info.end_offset,
+                                end_seqnum: info.end_seqnum,
                             },
                         })
                         .await?;
 
-                        end_offset = info.end_offset;
+                        end_seqnum = info.end_seqnum;
                     }
                     CommittedBatch::Rejected(info) => {
                         eprintln!("[{client_id}] batch rejected: {:?}", info);
@@ -114,7 +114,7 @@ pub async fn run_test(
                 tx.send(Event {
                     id,
                     client_id,
-                    event: OperationEvent::FetchStart { offset: end_offset },
+                    event: OperationEvent::FetchStart { seqnum: end_seqnum },
                 })
                 .await?;
 
@@ -122,7 +122,7 @@ pub async fn run_test(
                     .clone()
                     .with_max_batch_size(usize::MAX)
                     .with_min_batch_size(0)
-                    .with_offset(end_offset)
+                    .with_seqnum(end_seqnum)
                     .with_partition(partition_value)
                     .fetch_next()
                     .await
@@ -138,20 +138,20 @@ pub async fn run_test(
                     .as_any()
                     .downcast_ref::<UInt64Array>()
                     .expect("value col is not UInt64Array");
-                let offset_col = batch
-                    .column_by_name("__offset__")
-                    .expect("missing offset col")
+                let seqnumt_col = batch
+                    .column_by_name("__seqnum__")
+                    .expect("missing seqnum col")
                     .as_any()
                     .downcast_ref::<UInt64Array>()
-                    .expect("offset col is not UInt64Array");
+                    .expect("seqnum col is not UInt64Array");
 
                 let value = value_col.value(0);
-                let offset = offset_col.value(0);
+                let seqnum = seqnumt_col.value(0);
 
                 tx.send(Event {
                     id,
                     client_id,
-                    event: OperationEvent::FetchEnd { offset, value },
+                    event: OperationEvent::FetchEnd { seqnum, value },
                 })
                 .await?;
             }

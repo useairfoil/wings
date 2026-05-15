@@ -18,10 +18,10 @@ pub enum Error {
     NotFound { name: NamespaceName },
     #[snafu(display("{resource} must have the same parent as the namespace"))]
     InvalidParent { resource: &'static str },
-    #[snafu(display("namespace {name} has {topics_count} topics and cannot be deleted"))]
+    #[snafu(display("namespace {name} has {tables_count} tables and cannot be deleted"))]
     NotEmpty {
         name: NamespaceName,
-        topics_count: u64,
+        tables_count: u64,
     },
     #[snafu(transparent)]
     Entity { source: entities::Error },
@@ -143,15 +143,15 @@ impl Database {
             Box::pin(async move {
                 entities::namespace::expect_exists(tx, &name).await?;
 
-                // Check if namespace has any topics
-                let topics_count = entities::topic::Entity::find()
-                    .filter(entities::topic::Column::TenantId.eq(&tenant_id))
-                    .filter(entities::topic::Column::NamespaceId.eq(&id))
+                // Check if namespace has any tables
+                let tables_count = entities::table::Entity::find()
+                    .filter(entities::table::Column::TenantId.eq(&tenant_id))
+                    .filter(entities::table::Column::NamespaceId.eq(&id))
                     .count(tx)
                     .await?;
 
-                if topics_count > 0 {
-                    return Err(Error::NotEmpty { name, topics_count });
+                if tables_count > 0 {
+                    return Err(Error::NotEmpty { name, tables_count });
                 }
 
                 let result = entities::namespace::Entity::delete_by_id((tenant_id, id))

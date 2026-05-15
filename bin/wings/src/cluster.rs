@@ -4,11 +4,11 @@ use snafu::ResultExt;
 use time::UtcDateTime;
 use tokio_util::sync::CancellationToken;
 use wings_control_plane_core::cluster_metadata::{
-    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTopicsRequest, TopicView,
+    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTablesRequest, TableView,
 };
 use wings_resources::{
     DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant, TenantName,
-    Topic, TopicName, TopicOptions,
+    Table, TableName, TableOptions,
 };
 use wings_schema::{DataType, Field, SchemaBuilder};
 
@@ -57,9 +57,9 @@ pub enum ClusterMetadataCommands {
         #[clap(flatten)]
         remote: RemoteArgs,
     },
-    /// Create a new topic
+    /// Create a new table
     CreateTopic {
-        /// Topic name in format 'tenant/namespace/topic'
+        /// Table name in format 'tenant/namespace/table'
         name: String,
         /// Comma-separated list of fields in format 'column_name:column_type'
         fields: Vec<String>,
@@ -69,28 +69,28 @@ pub enum ClusterMetadataCommands {
         #[clap(flatten)]
         remote: RemoteArgs,
     },
-    /// List topics for a namespace
+    /// List tables for a namespace
     ListTopics {
         /// Namespace name in format 'tenant/namespace'
         namespace: String,
         #[clap(flatten)]
         remote: RemoteArgs,
     },
-    /// Get a topic
+    /// Get a table
     GetTopic {
-        /// Topic name in format 'tenant/namespace/topic'
+        /// Table name in format 'tenant/namespace/table'
         name: String,
-        /// Include full topic details
+        /// Include full table details
         #[clap(long)]
         full: bool,
         #[clap(flatten)]
         remote: RemoteArgs,
     },
-    /// Delete a topic
+    /// Delete a table
     DeleteTopic {
-        /// Topic name in format 'tenant/namespace/topic'
+        /// Table name in format 'tenant/namespace/table'
         name: String,
-        /// Force deletion even if topic has data
+        /// Force deletion even if table has data
         #[clap(long)]
         force: bool,
         #[clap(flatten)]
@@ -211,9 +211,9 @@ impl ClusterMetadataCommands {
             } => {
                 let client = remote.cluster_metadata_client().await?;
 
-                // Parse topic name
-                let topic_name = TopicName::parse(&name)
-                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
+                // Parse table name
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
 
                 // Parse fields
                 let parsed_fields = parse_fields(&fields)?;
@@ -238,16 +238,16 @@ impl ClusterMetadataCommands {
                 let schema = SchemaBuilder::new(parsed_fields)
                     .build()
                     .context(InvalidSchemaSnafu {})?;
-                let topic_options = TopicOptions::new_with_partition_key(schema, partition_key);
+                let table_options = TableOptions::new_with_partition_key(schema, partition_key);
 
-                let topic = client
-                    .create_topic(topic_name, topic_options)
+                let table = client
+                    .create_table(table_name, table_options)
                     .await
                     .context(ClusterMetadataSnafu {
-                        operation: "create_topic",
+                        operation: "create_table",
                     })?;
 
-                print_topic(&topic);
+                print_table(&table);
 
                 Ok(())
             }
@@ -260,14 +260,14 @@ impl ClusterMetadataCommands {
                     })?;
 
                 let response = client
-                    .list_topics(ListTopicsRequest::new(namespace_name))
+                    .list_tables(ListTablesRequest::new(namespace_name))
                     .await
                     .context(ClusterMetadataSnafu {
-                        operation: "list_topics",
+                        operation: "list_tables",
                     })?;
 
-                for topic in response.topics {
-                    print_topic(&topic);
+                for table in response.tables {
+                    print_table(&table);
                 }
 
                 Ok(())
@@ -275,24 +275,24 @@ impl ClusterMetadataCommands {
             ClusterMetadataCommands::GetTopic { name, full, remote } => {
                 let client = remote.cluster_metadata_client().await?;
 
-                let topic_name = TopicName::parse(&name)
-                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
 
                 let view = if full {
-                    TopicView::Full
+                    TableView::Full
                 } else {
-                    TopicView::Basic
+                    TableView::Basic
                 };
 
-                let topic =
+                let table =
                     client
-                        .get_topic(topic_name, view)
+                        .get_table(table_name, view)
                         .await
                         .context(ClusterMetadataSnafu {
-                            operation: "get_topic",
+                            operation: "get_table",
                         })?;
 
-                print_topic(&topic);
+                print_table(&table);
 
                 Ok(())
             }
@@ -303,17 +303,17 @@ impl ClusterMetadataCommands {
             } => {
                 let client = remote.cluster_metadata_client().await?;
 
-                let topic_name = TopicName::parse(&name)
-                    .context(InvalidResourceNameSnafu { resource: "topic" })?;
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
 
                 client
-                    .delete_topic(topic_name, force)
+                    .delete_table(table_name, force)
                     .await
                     .context(ClusterMetadataSnafu {
-                        operation: "delete_topic",
+                        operation: "delete_table",
                     })?;
 
-                println!("Deleted topic '{}'", name);
+                println!("Deleted table '{}'", name);
 
                 Ok(())
             }
@@ -391,17 +391,17 @@ fn print_namespace(namespace: &Namespace) {
     println!("  data lake: {}", namespace.data_lake);
 }
 
-fn print_topic(topic: &Topic) {
-    println!("{}", topic.name);
-    if let Some(field) = topic.partition_field() {
+fn print_table(table: &Table) {
+    println!("{}", table.name);
+    if let Some(field) = table.partition_field() {
         println!("  partition key: {}", field.name);
     }
     println!("  fields:");
-    for field in topic.schema().fields_iter() {
+    for field in table.schema().fields_iter() {
         println!("  - {}: {}", field.name, field.data_type);
     }
 
-    let Some(status) = &topic.status else {
+    let Some(status) = &table.status else {
         return;
     };
 

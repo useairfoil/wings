@@ -7,7 +7,7 @@ use crate::pb::WireError;
 
 /// Errors related to log metadata operations.
 #[derive(Clone, Debug, Snafu)]
-pub enum LogMetadataError {
+pub enum TableMetadataError {
     #[snafu(display("{resource} not found: {name}"))]
     NotFound { resource: String, name: String },
     #[snafu(display("invalid {resource} name: {message}"))]
@@ -20,14 +20,14 @@ pub enum LogMetadataError {
     Internal { message: String },
 }
 
-pub type Result<T, E = LogMetadataError> = ::std::result::Result<T, E>;
+pub type Result<T, E = TableMetadataError> = ::std::result::Result<T, E>;
 
-/// Convert `LogMetadataError` into protobuf `Any` for use in gRPC responses.
+/// Convert `TableMetadataError` into protobuf `Any` for use in gRPC responses.
 mod details {
     use prost::{DecodeError, Message};
     use prost_types::Any;
 
-    use super::LogMetadataError;
+    use super::TableMetadataError;
 
     #[derive(Message)]
     pub struct NotFound {
@@ -38,7 +38,7 @@ mod details {
     }
 
     impl NotFound {
-        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.log_metadata.NotFound";
+        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.table_metadata.NotFound";
 
         pub fn into_any(self) -> Any {
             let value = self.encode_to_vec();
@@ -53,9 +53,9 @@ mod details {
         }
     }
 
-    impl From<NotFound> for LogMetadataError {
+    impl From<NotFound> for TableMetadataError {
         fn from(err: NotFound) -> Self {
-            LogMetadataError::NotFound {
+            TableMetadataError::NotFound {
                 resource: err.resource,
                 name: err.name,
             }
@@ -72,7 +72,7 @@ mod details {
 
     impl InvalidResourceName {
         pub const TYPE_URL: &'static str =
-            "type.googleapis.com/wings.log_metadata.InvalidResourceName";
+            "type.googleapis.com/wings.table_metadata.InvalidResourceName";
 
         pub fn into_any(self) -> Any {
             let value = self.encode_to_vec();
@@ -87,9 +87,9 @@ mod details {
         }
     }
 
-    impl From<InvalidResourceName> for LogMetadataError {
+    impl From<InvalidResourceName> for TableMetadataError {
         fn from(err: InvalidResourceName) -> Self {
-            LogMetadataError::InvalidResourceName {
+            TableMetadataError::InvalidResourceName {
                 resource: err.resource,
                 message: err.message,
             }
@@ -103,7 +103,7 @@ mod details {
     }
 
     impl InvalidArgument {
-        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.log_metadata.InvalidArgument";
+        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.table_metadata.InvalidArgument";
 
         pub fn into_any(self) -> Any {
             let value = self.encode_to_vec();
@@ -118,9 +118,9 @@ mod details {
         }
     }
 
-    impl From<InvalidArgument> for LogMetadataError {
+    impl From<InvalidArgument> for TableMetadataError {
         fn from(err: InvalidArgument) -> Self {
-            LogMetadataError::InvalidArgument {
+            TableMetadataError::InvalidArgument {
                 message: err.message,
             }
         }
@@ -133,7 +133,7 @@ mod details {
     }
 
     impl Schema {
-        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.log_metadata.Schema";
+        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.table_metadata.Schema";
 
         pub fn into_any(self) -> Any {
             let value = self.encode_to_vec();
@@ -148,9 +148,9 @@ mod details {
         }
     }
 
-    impl From<Schema> for LogMetadataError {
+    impl From<Schema> for TableMetadataError {
         fn from(err: Schema) -> Self {
-            LogMetadataError::Schema {
+            TableMetadataError::Schema {
                 message: err.message,
             }
         }
@@ -163,7 +163,7 @@ mod details {
     }
 
     impl Internal {
-        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.log_metadata.Internal";
+        pub const TYPE_URL: &'static str = "type.googleapis.com/wings.table_metadata.Internal";
 
         pub fn into_any(self) -> Any {
             let value = self.encode_to_vec();
@@ -178,38 +178,38 @@ mod details {
         }
     }
 
-    impl From<Internal> for LogMetadataError {
+    impl From<Internal> for TableMetadataError {
         fn from(err: Internal) -> Self {
-            LogMetadataError::Internal {
+            TableMetadataError::Internal {
                 message: err.message,
             }
         }
     }
 }
 
-impl From<LogMetadataError> for DataFusionError {
-    fn from(err: LogMetadataError) -> Self {
+impl From<TableMetadataError> for DataFusionError {
+    fn from(err: TableMetadataError) -> Self {
         DataFusionError::External(Box::new(err))
     }
 }
 
-impl ErrorExt for LogMetadataError {
+impl ErrorExt for TableMetadataError {
     fn status_code(&self) -> StatusCode {
         match self {
-            LogMetadataError::NotFound { .. } => StatusCode::NotFound,
-            LogMetadataError::InvalidArgument { .. } => StatusCode::InvalidArgument,
-            LogMetadataError::InvalidResourceName { .. } => StatusCode::ResourceName,
-            LogMetadataError::Schema { .. } => StatusCode::Schema,
-            LogMetadataError::Internal { .. } => StatusCode::Internal,
+            TableMetadataError::NotFound { .. } => StatusCode::NotFound,
+            TableMetadataError::InvalidArgument { .. } => StatusCode::InvalidArgument,
+            TableMetadataError::InvalidResourceName { .. } => StatusCode::ResourceName,
+            TableMetadataError::Schema { .. } => StatusCode::Schema,
+            TableMetadataError::Internal { .. } => StatusCode::Internal,
         }
     }
 }
 
-impl From<tonic::Status> for LogMetadataError {
+impl From<tonic::Status> for TableMetadataError {
     fn from(status: tonic::Status) -> Self {
         use prost_types::Any;
         let Ok(details) = Any::decode(status.details()) else {
-            return LogMetadataError::Internal {
+            return TableMetadataError::Internal {
                 message: "failed to decode error details".to_string(),
             };
         };
@@ -225,42 +225,42 @@ impl From<tonic::Status> for LogMetadataError {
             details::Schema::TYPE_URL => details::Schema::from_any(details).map(Into::into),
             details::Internal::TYPE_URL => details::Internal::from_any(details).map(Into::into),
             _ => {
-                return LogMetadataError::Internal {
+                return TableMetadataError::Internal {
                     message: format!("unknown error type {}", details.type_url),
                 };
             }
         }
-        .unwrap_or_else(|err| LogMetadataError::Internal {
+        .unwrap_or_else(|err| TableMetadataError::Internal {
             message: format!("failed to decode error details: {err}"),
         })
     }
 }
 
-impl From<LogMetadataError> for tonic::Status {
-    fn from(err: LogMetadataError) -> Self {
+impl From<TableMetadataError> for tonic::Status {
+    fn from(err: TableMetadataError) -> Self {
         use prost::Message;
 
         let code = err.status_code().to_tonic_code();
         let message = err.to_string();
         let details = match err {
-            LogMetadataError::NotFound { resource, name } => {
+            TableMetadataError::NotFound { resource, name } => {
                 details::NotFound { resource, name }.into_any()
             }
-            LogMetadataError::InvalidResourceName { message, resource } => {
+            TableMetadataError::InvalidResourceName { message, resource } => {
                 details::InvalidResourceName { resource, message }.into_any()
             }
-            LogMetadataError::InvalidArgument { message } => {
+            TableMetadataError::InvalidArgument { message } => {
                 details::InvalidArgument { message }.into_any()
             }
-            LogMetadataError::Schema { message } => details::Schema { message }.into_any(),
-            LogMetadataError::Internal { message } => details::Internal { message }.into_any(),
+            TableMetadataError::Schema { message } => details::Schema { message }.into_any(),
+            TableMetadataError::Internal { message } => details::Internal { message }.into_any(),
         };
 
         tonic::Status::with_details(code, message, details.encode_to_vec().into())
     }
 }
 
-impl From<WireError> for LogMetadataError {
+impl From<WireError> for TableMetadataError {
     fn from(err: WireError) -> Self {
         Self::Internal {
             message: err.to_string(),

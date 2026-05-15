@@ -15,7 +15,7 @@ use datafusion::common::arrow::{
 };
 use futures::stream;
 use wings_ingestor_core::{IngestionRequest, WriteBatchRequest};
-use wings_resources::{NamespaceName, TopicName};
+use wings_resources::{NamespaceName, TableName};
 
 use crate::{
     HttpIngestorState,
@@ -34,7 +34,7 @@ pub async fn push_handler(
     }
 }
 
-/// Process a push request by parsing namespace, resolving topics, and converting JSON to Arrow.
+/// Process a push request by parsing namespace, resolving tables, and converting JSON to Arrow.
 async fn process_push_request(
     state: &HttpIngestorState,
     request: PushRequest,
@@ -57,28 +57,28 @@ async fn process_push_request(
     let mut batch_id = 0;
 
     for batch in request.batches {
-        let topic_name = TopicName::new(&batch.topic, namespace_name.clone()).map_err(|err| {
+        let table_name = TableName::new(&batch.table, namespace_name.clone()).map_err(|err| {
             HttpIngestorError::BadRequest {
-                message: format!("invalid topic name: {} {err}", batch.topic),
+                message: format!("invalid table name: {} {err}", batch.table),
             }
         })?;
 
-        // Check that all batches have distinct (topic, partition).
-        if !seen.insert((topic_name.clone(), batch.partition.clone())) {
+        // Check that all batches have distinct (table, partition).
+        if !seen.insert((table_name.clone(), batch.partition.clone())) {
             return Err(HttpIngestorError::BadRequest {
                 message: format!(
-                    "duplicate batch for topic {} partition {:?}",
-                    topic_name, batch.partition
+                    "duplicate batch for table {} partition {:?}",
+                    table_name, batch.partition
                 ),
             });
         }
 
-        let topic_ref = state
-            .topic_cache
-            .get(topic_name.clone())
+        let table_ref = state
+            .table_cache
+            .get(table_name.clone())
             .await
             .map_err(|err| HttpIngestorError::Internal {
-                message: format!("failed to resolve topic: {topic_name} {err}"),
+                message: format!("failed to resolve table: {table_name} {err}"),
             })?;
 
         if batch.data.is_empty() {
@@ -87,10 +87,10 @@ async fn process_push_request(
             });
         }
 
-        let schema = topic_ref.arrow_schema_without_partition_field();
+        let schema = table_ref.arrow_schema_without_partition_field();
         let record_batch = parse_json_to_arrow(schema, &batch.data).map_err(|err| {
             HttpIngestorError::BadRequest {
-                message: format!("failed to parse JSON data for topic {topic_name}: {err}"),
+                message: format!("failed to parse JSON data for table {table_name}: {err}"),
             }
         })?;
 
@@ -100,7 +100,7 @@ async fn process_push_request(
 
         let batch = WriteBatchRequest {
             batch_id,
-            topic: topic_ref,
+            table: table_ref,
             partition: batch.partition,
             records: record_batch,
             timestamp,

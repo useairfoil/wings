@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow::{datatypes::Schema as ArrowSchema, record_batch::RecordBatch};
 use bytesize::ByteSize;
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
-use wings_control_plane_core::log_metadata::FileMetadata;
+use wings_control_plane_core::table_metadata::FileMetadata;
 use wings_schema::SchemaRef;
 
 use super::{error::Result, stats::parquet_metadata_to_file_metadata};

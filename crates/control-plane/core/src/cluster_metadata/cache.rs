@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use wings_resources::{NamespaceName, NamespaceRef, TopicName, TopicRef};
+use wings_resources::{NamespaceName, NamespaceRef, TableName, TableRef};
 
 use super::{ClusterMetadata, Result};
 
@@ -11,9 +11,9 @@ pub struct CacheOptions {
 }
 
 #[derive(Clone)]
-pub struct TopicCache {
+pub struct TableCache {
     cluster_meta: Arc<dyn ClusterMetadata>,
-    inner: moka::future::Cache<TopicName, TopicRef>,
+    inner: moka::future::Cache<TableName, TableRef>,
 }
 
 #[derive(Clone)]
@@ -22,7 +22,7 @@ pub struct NamespaceCache {
     inner: moka::future::Cache<NamespaceName, NamespaceRef>,
 }
 
-impl TopicCache {
+impl TableCache {
     pub fn new(cluster_meta: Arc<dyn ClusterMetadata>) -> Self {
         Self::with_options(cluster_meta, CacheOptions::default())
     }
@@ -40,13 +40,13 @@ impl TopicCache {
         }
     }
 
-    pub async fn get(&self, name: TopicName) -> Result<TopicRef> {
+    pub async fn get(&self, name: TableName) -> Result<TableRef> {
         let cluster_meta = self.cluster_meta.clone();
-        let topic = self
+        let table = self
             .inner
             .try_get_with(name.clone(), async move {
                 cluster_meta
-                    .get_topic(name, Default::default())
+                    .get_table(name, Default::default())
                     .await
                     .map(Arc::new)
             })
@@ -59,7 +59,7 @@ impl TopicCache {
                     }
                 })
             })?;
-        Ok(topic)
+        Ok(table)
     }
 }
 

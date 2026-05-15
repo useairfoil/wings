@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use bytesize::ByteSize;
 use parquet::file::{metadata::ParquetMetaData, statistics::Statistics};
-use wings_control_plane_core::log_metadata::FileMetadata;
+use wings_control_plane_core::table_metadata::FileMetadata;
 use wings_schema::{DataType, Datum, SchemaRef};
 
 use super::{error::Result, parquet_name_index::create_parquet_path_index};

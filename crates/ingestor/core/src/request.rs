@@ -1,29 +1,29 @@
 use std::time::SystemTime;
 
 use arrow::array::RecordBatch;
-use wings_resources::{PartitionValue, TopicRef};
+use wings_resources::{PartitionValue, TableRef};
 
-/// A request to the ingestor to write a batch of records to a topic.
+/// A request to the ingestor to write a batch of records to a table.
 #[derive(Debug, Clone)]
 pub struct WriteBatchRequest {
     pub batch_id: u32,
-    pub topic: TopicRef,
+    pub table: TableRef,
     pub partition: Option<PartitionValue>,
     pub records: RecordBatch,
     pub timestamp: Option<SystemTime>,
 }
 
 impl WriteBatchRequest {
-    /// Creates a new [`WriteBatchRequest`] with the given topic and records.
+    /// Creates a new [`WriteBatchRequest`] with the given table and records.
     ///
     /// Defaults:
     /// - `batch_id`: 0
     /// - `partition`: `None`
     /// - `timestamp`: `None`
-    pub fn new(topic: TopicRef, records: RecordBatch) -> Self {
+    pub fn new(table: TableRef, records: RecordBatch) -> Self {
         Self {
             batch_id: 0,
-            topic,
+            table,
             partition: None,
             records,
             timestamp: None,

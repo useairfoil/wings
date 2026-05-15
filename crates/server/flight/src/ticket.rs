@@ -7,8 +7,8 @@ use arrow_flight::{
 use prost::{DecodeError, Message, bytes::Bytes};
 use prost_types::{DurationError, TimestampError};
 use snafu::{ResultExt, Snafu};
-use wings_control_plane_core::{log_metadata::CommittedBatch, pb::WireError};
-use wings_resources::{PartitionValue, ResourceError, TopicName};
+use wings_control_plane_core::{pb::WireError, table_metadata::CommittedBatch};
+use wings_resources::{PartitionValue, ResourceError, TableName};
 
 use crate::error::FlightServerError;
 
@@ -21,7 +21,7 @@ pub struct StatementQueryTicket {
 #[derive(Clone, Debug)]
 pub struct IngestionRequestMetadata {
     pub batch_id: u32,
-    pub topic_name: TopicName,
+    pub table_name: TableName,
     pub partition_value: Option<PartitionValue>,
     pub timestamp: Option<SystemTime>,
 }
@@ -33,9 +33,9 @@ pub struct IngestionResponseMetadata {
 
 #[derive(Clone, Debug)]
 pub struct FetchTicket {
-    pub topic_name: TopicName,
+    pub table_name: TableName,
     pub partition_value: Option<PartitionValue>,
-    pub offset: u64,
+    pub seqnum: u64,
     pub timeout: Duration,
     pub min_batch_size: Option<usize>,
     pub max_batch_size: Option<usize>,
@@ -80,7 +80,7 @@ pub mod pb {
         #[prost(message, tag = "3")]
         pub timestamp: Option<prost_types::Timestamp>,
         #[prost(string, tag = "4")]
-        pub topic_name: String,
+        pub table_name: String,
     }
 
     #[derive(Clone, prost::Message)]
@@ -92,11 +92,11 @@ pub mod pb {
     #[derive(Clone, prost::Message)]
     pub struct FetchTicket {
         #[prost(string, tag = "1")]
-        pub topic_name: String,
+        pub table_name: String,
         #[prost(message, tag = "2")]
         pub partition_value: Option<pb::PartitionValue>,
         #[prost(uint64, tag = "3")]
-        pub offset: u64,
+        pub seqnum: u64,
         #[prost(message, tag = "4")]
         pub timeout: Option<prost_types::Duration>,
         #[prost(uint32, optional, tag = "5")]
@@ -146,13 +146,13 @@ impl StatementQueryTicket {
 impl IngestionRequestMetadata {
     pub fn new(
         batch_id: u32,
-        topic_name: TopicName,
+        table_name: TableName,
         partition_value: Option<PartitionValue>,
         timestamp: Option<SystemTime>,
     ) -> Self {
         Self {
             batch_id,
-            topic_name,
+            table_name,
             partition_value,
             timestamp,
         }
@@ -172,14 +172,14 @@ impl IngestionRequestMetadata {
             .transpose()
             .context(TimestampSnafu {})?;
 
-        let topic_name = proto
-            .topic_name
+        let table_name = proto
+            .table_name
             .parse()
-            .context(ResourceNameSnafu { resource: "topic" })?;
+            .context(ResourceNameSnafu { resource: "table" })?;
 
         Ok(Self {
             batch_id: proto.batch_id,
-            topic_name,
+            table_name,
             partition_value,
             timestamp,
         })
@@ -188,7 +188,7 @@ impl IngestionRequestMetadata {
     pub fn encode(self) -> Bytes {
         let proto = pb::IngestionRequestMetadata {
             batch_id: self.batch_id,
-            topic_name: self.topic_name.to_string(),
+            table_name: self.table_name.to_string(),
             partition_value: self.partition_value.as_ref().map(Into::into),
             timestamp: self.timestamp.map(Into::into),
         };
@@ -229,11 +229,11 @@ impl FetchTicket {
     const TYPE_URL: &str = "type.googleapis.com/wings.v1.FetchTicket";
     const DEFAULT_TIMEOUT: Duration = Duration::from_millis(100);
 
-    pub fn new(topic_name: TopicName) -> Self {
+    pub fn new(table_name: TableName) -> Self {
         Self {
-            topic_name,
+            table_name,
             partition_value: None,
-            offset: 0,
+            seqnum: 0,
             timeout: Self::DEFAULT_TIMEOUT,
             min_batch_size: None,
             max_batch_size: None,
@@ -245,8 +245,8 @@ impl FetchTicket {
         self
     }
 
-    pub fn with_offset(mut self, offset: u64) -> Self {
-        self.offset = offset;
+    pub fn with_seqnum(mut self, seqnum: u64) -> Self {
+        self.seqnum = seqnum;
         self
     }
 
@@ -279,8 +279,8 @@ impl FetchTicket {
     pub fn try_decode(ticket: &[u8]) -> Result<Self, TicketDecodeError> {
         let proto = pb::FetchTicket::decode(ticket).context(ProstSnafu {})?;
 
-        let topic_name =
-            TopicName::parse(&proto.topic_name).context(ResourceNameSnafu { resource: "topic" })?;
+        let table_name =
+            TableName::parse(&proto.table_name).context(ResourceNameSnafu { resource: "table" })?;
 
         let partition_value = proto
             .partition_value
@@ -296,9 +296,9 @@ impl FetchTicket {
             .unwrap_or(Self::DEFAULT_TIMEOUT);
 
         Ok(Self {
-            topic_name,
+            table_name,
             partition_value,
-            offset: proto.offset,
+            seqnum: proto.seqnum,
             timeout,
             min_batch_size: proto.min_batch_size.map(|v| v as usize),
             max_batch_size: proto.max_batch_size.map(|v| v as usize),
@@ -310,9 +310,9 @@ impl FetchTicket {
             self.timeout.try_into().context(EncodeDurationSnafu {})?;
 
         let proto = pb::FetchTicket {
-            topic_name: self.topic_name.to_string(),
+            table_name: self.table_name.to_string(),
             partition_value: self.partition_value.as_ref().map(Into::into),
-            offset: self.offset,
+            seqnum: self.seqnum,
             timeout: timeout.into(),
             min_batch_size: self.min_batch_size.map(|v| v as u32),
             max_batch_size: self.max_batch_size.map(|v| v as u32),
@@ -333,27 +333,27 @@ impl FetchTicket {
 mod tests {
     use std::time::SystemTime;
 
-    use wings_control_plane_core::log_metadata::{AcceptedBatchInfo, RejectedBatchInfo};
+    use wings_control_plane_core::table_metadata::{AcceptedBatchInfo, RejectedBatchInfo};
     use wings_resources::{NamespaceName, TenantName};
 
     use super::*;
 
-    fn topic_name() -> TopicName {
-        TopicName::new_unchecked(
-            "topic",
+    fn table_name() -> TableName {
+        TableName::new_unchecked(
+            "table",
             NamespaceName::new_unchecked("namespace", TenantName::new_unchecked("tenant")),
         )
     }
 
     #[test]
-    fn ingestion_request_metadata_round_trips_topic_name() {
-        let topic_name = topic_name();
-        let metadata = IngestionRequestMetadata::new(42, topic_name.clone(), None, None);
+    fn ingestion_request_metadata_round_trips_table_name() {
+        let table_name = table_name();
+        let metadata = IngestionRequestMetadata::new(42, table_name.clone(), None, None);
 
         let decoded = IngestionRequestMetadata::try_decode(metadata.encode().as_ref()).unwrap();
 
         assert_eq!(decoded.batch_id, 42);
-        assert_eq!(decoded.topic_name, topic_name);
+        assert_eq!(decoded.table_name, table_name);
         assert_eq!(decoded.partition_value, None);
         assert_eq!(decoded.timestamp, None);
     }
@@ -363,8 +363,8 @@ mod tests {
         let batches = vec![
             CommittedBatch::Accepted(AcceptedBatchInfo {
                 batch_id: 1,
-                start_offset: 10,
-                end_offset: 12,
+                start_seqnum: 10,
+                end_seqnum: 12,
                 timestamp: SystemTime::UNIX_EPOCH,
             }),
             CommittedBatch::Rejected(RejectedBatchInfo {

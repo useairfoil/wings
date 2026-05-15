@@ -17,37 +17,37 @@ use datafusion::{
 use futures::{StreamExt, TryStreamExt};
 use tracing::debug;
 use wings_control_plane_core::{
-    cluster_metadata::{ClusterMetadata, stream::PaginatedTopicStream},
-    log_metadata::{LogMetadata, PartitionMetadata, stream::PaginatedPartitionMetadataStream},
+    cluster_metadata::{ClusterMetadata, stream::PaginatedTableStream},
+    table_metadata::{PartitionMetadata, TableMetadata, stream::PaginatedPartitionMetadataStream},
 };
-use wings_resources::{NamespaceName, TopicName};
+use wings_resources::{NamespaceName, TableName};
 
 use crate::system_tables::helpers::TOPIC_NAME_COLUMN;
 
-/// Execution plan for discovering partition values for topics.
-pub struct TopicPartitionValueDiscoveryExec {
+/// Execution plan for discovering partition values for tables.
+pub struct TablePartitionValueDiscoveryExec {
     cluster_meta: Arc<dyn ClusterMetadata>,
-    log_meta: Arc<dyn LogMetadata>,
+    table_metadata: Arc<dyn TableMetadata>,
     namespace: NamespaceName,
-    topics: Option<Vec<String>>,
+    tables: Option<Vec<String>>,
     properties: PlanProperties,
 }
 
-impl TopicPartitionValueDiscoveryExec {
+impl TablePartitionValueDiscoveryExec {
     pub fn new(
         cluster_meta: Arc<dyn ClusterMetadata>,
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         namespace: NamespaceName,
-        topics: Option<Vec<String>>,
+        tables: Option<Vec<String>>,
     ) -> Self {
         let schema = Self::schema();
         let properties = Self::compute_properties(&schema);
 
         Self {
             cluster_meta,
-            log_meta,
+            table_metadata,
             namespace,
-            topics,
+            tables,
             properties,
         }
     }
@@ -58,7 +58,7 @@ impl TopicPartitionValueDiscoveryExec {
             Field::new("namespace", DataType::Utf8, false),
             Field::new(TOPIC_NAME_COLUMN, DataType::Utf8, false),
             Field::new("partition_value", DataType::Utf8, true),
-            Field::new("next_offset", DataType::UInt64, false),
+            Field::new("next_seqnum", DataType::UInt64, false),
             Field::new(
                 "latest_timestamp",
                 DataType::Timestamp(TimeUnit::Millisecond, None),
@@ -79,7 +79,7 @@ impl TopicPartitionValueDiscoveryExec {
     }
 }
 
-impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
+impl ExecutionPlan for TablePartitionValueDiscoveryExec {
     fn name(&self) -> &str {
         Self::static_name()
     }
@@ -116,35 +116,35 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
         let batch_size = context.session_config().batch_size();
         debug!(
             namespace = %self.namespace,
-            "TopicPartitionValueDiscoveryExec execute"
+            "TablePartitionValueDiscoveryExec execute"
         );
 
-        let topics = PaginatedTopicStream::new(
+        let tables = PaginatedTableStream::new(
             self.cluster_meta.clone(),
             self.namespace.clone(),
             batch_size,
-            self.topics.clone(),
+            self.tables.clone(),
         );
 
-        // Here we take the stream of topics and for each topic, we create a stream of partition values.
-        // Notice that the topics are paginated, so we need to further flatten the iterator of streams.
-        let offset_registry = self.log_meta.clone();
-        let values = topics.flat_map_unordered(None, move |topic_result| {
-            let topics = match topic_result {
-                Ok(topics) => topics,
+        // Here we take the stream of tables and for each table, we create a stream of partition values.
+        // Notice that the tables are paginated, so we need to further flatten the iterator of streams.
+        let table_metadata = self.table_metadata.clone();
+        let values = tables.flat_map_unordered(None, move |table_result| {
+            let tables = match table_result {
+                Ok(tables) => tables,
                 Err(err) => {
                     return futures::stream::once(async { Err(DataFusionError::from(err)) })
                         .boxed();
                 }
             };
 
-            let stream_iter = topics.into_iter().map({
-                let offset_registry = offset_registry.clone();
-                move |topic| {
-                    let topic_name = topic.name;
+            let stream_iter = tables.into_iter().map({
+                let table_metadata_c = table_metadata.clone();
+                move |table| {
+                    let table_name = table.name;
                     PaginatedPartitionMetadataStream::new(
-                        offset_registry.clone(),
-                        topic_name.clone(),
+                        table_metadata_c.clone(),
+                        table_name.clone(),
                         batch_size,
                     )
                     .map_err(DataFusionError::from)
@@ -159,8 +159,8 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
         let stream = RecordBatchStreamAdapter::new(
             self.schema(),
             values.map(move |result| {
-                result.and_then(|(topic_name, values)| {
-                    from_partition_values(schema.clone(), topic_name.clone(), values)
+                result.and_then(|(table_name, values)| {
+                    from_partition_values(schema.clone(), table_name.clone(), values)
                 })
             }),
         );
@@ -171,7 +171,7 @@ impl ExecutionPlan for TopicPartitionValueDiscoveryExec {
 
 fn from_partition_values(
     schema: SchemaRef,
-    topic_name: TopicName,
+    table_name: TableName,
     states: Vec<PartitionMetadata>,
 ) -> Result<RecordBatch, DataFusionError> {
     if states.is_empty() {
@@ -180,14 +180,14 @@ fn from_partition_values(
 
     let mut tenant_arr = StringBuilder::with_capacity(states.len(), 0);
     let mut namespace_arr = StringBuilder::with_capacity(states.len(), 0);
-    let mut topic_arr = StringBuilder::with_capacity(states.len(), 0);
+    let mut table_arr = StringBuilder::with_capacity(states.len(), 0);
     let mut partition_value_arr = StringBuilder::with_capacity(states.len(), 0);
-    let mut next_offset_arr = UInt64Builder::with_capacity(states.len());
+    let mut next_seqnum_arr = UInt64Builder::with_capacity(states.len());
     let mut latest_timestamp_arr = TimestampMillisecondBuilder::with_capacity(states.len());
 
     for state in states {
-        topic_arr.append_value(topic_name.id.clone());
-        let namespace_name = topic_name.parent();
+        table_arr.append_value(table_name.id.clone());
+        let namespace_name = table_name.parent();
         namespace_arr.append_value(namespace_name.id.clone());
         let tenant_name = namespace_name.parent();
         tenant_arr.append_value(tenant_name.id.clone());
@@ -196,10 +196,10 @@ fn from_partition_values(
         } else {
             partition_value_arr.append_null();
         }
-        next_offset_arr.append_value(state.end_offset.offset);
+        next_seqnum_arr.append_value(state.end_seqnum.seqnum);
         // TODO: refactor so it's easier to add timestamps arrays
         let latest_timestamp = state
-            .end_offset
+            .end_seqnum
             .timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_err(|err| {
@@ -214,28 +214,28 @@ fn from_partition_values(
     let columns: Vec<ArrayRef> = vec![
         Arc::new(tenant_arr.finish()),
         Arc::new(namespace_arr.finish()),
-        Arc::new(topic_arr.finish()),
+        Arc::new(table_arr.finish()),
         Arc::new(partition_value_arr.finish()),
-        Arc::new(next_offset_arr.finish()),
+        Arc::new(next_seqnum_arr.finish()),
         Arc::new(latest_timestamp_arr.finish()),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(DataFusionError::from)
 }
 
-impl DisplayAs for TopicPartitionValueDiscoveryExec {
+impl DisplayAs for TablePartitionValueDiscoveryExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "TopicPartitionValueDiscoveryExec: namespace=[{}]",
+            "TablePartitionValueDiscoveryExec: namespace=[{}]",
             self.namespace
         )
     }
 }
 
-impl fmt::Debug for TopicPartitionValueDiscoveryExec {
+impl fmt::Debug for TablePartitionValueDiscoveryExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TopicPartitionValueDiscoveryExec")
+        f.debug_struct("TablePartitionValueDiscoveryExec")
             .field("namespace", &self.namespace)
             .finish()
     }

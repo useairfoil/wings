@@ -1,7 +1,7 @@
 //! Request and response types for the HTTP ingestor push endpoint.
 
 use serde::{Deserialize, Serialize};
-use wings_control_plane_core::log_metadata::CommittedBatch;
+use wings_control_plane_core::table_metadata::CommittedBatch;
 use wings_resources::PartitionValue;
 
 /// Request payload for the /v1/push endpoint.
@@ -13,13 +13,13 @@ pub struct PushRequest {
     pub batches: Vec<Batch>,
 }
 
-/// A batch of data for a specific topic and partition.
+/// A batch of data for a specific table and partition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Batch {
-    /// The topic to push data to.
-    pub topic: String,
+    /// The table to push data to.
+    pub table: String,
     /// Optional partition value for the batch.
-    /// If None, the data will be partitioned based on the topic's partitioning strategy.
+    /// If None, the data will be partitioned based on the table's partitioning strategy.
     pub partition: Option<PartitionValue>,
     /// List of JSON objects representing the data to push.
     /// Each object will be converted to an Arrow RecordBatch.
@@ -46,7 +46,7 @@ pub struct ErrorResponse {
 #[serde(tag = "_tag")]
 pub enum BatchResponse {
     #[serde(rename = "success")]
-    Success { start_offset: u64, end_offset: u64 },
+    Success { start_seqnum: u64, end_seqnum: u64 },
     #[serde(rename = "error")]
     Error { message: String },
 }
@@ -55,9 +55,9 @@ impl BatchResponse {
     pub fn as_success(&self) -> Option<(u64, u64)> {
         match self {
             BatchResponse::Success {
-                start_offset,
-                end_offset,
-            } => Some((*start_offset, *end_offset)),
+                start_seqnum,
+                end_seqnum,
+            } => Some((*start_seqnum, *end_seqnum)),
             _ => None,
         }
     }
@@ -82,8 +82,8 @@ impl From<CommittedBatch> for BatchResponse {
     fn from(committed: CommittedBatch) -> Self {
         match committed {
             CommittedBatch::Accepted(accepted) => BatchResponse::Success {
-                start_offset: accepted.start_offset,
-                end_offset: accepted.end_offset,
+                start_seqnum: accepted.start_seqnum,
+                end_seqnum: accepted.end_seqnum,
             },
             CommittedBatch::Rejected(rejected) => BatchResponse::Error {
                 message: rejected.reason,

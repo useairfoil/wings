@@ -45,7 +45,7 @@ enum Commands {
         #[command(subcommand)]
         inner: FlightCommands,
     },
-    /// Push messages to Wings topics
+    /// Push messages to Wings tables
     Push {
         #[clap(flatten)]
         inner: PushArgs,

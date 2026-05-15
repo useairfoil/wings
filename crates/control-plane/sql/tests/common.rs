@@ -59,14 +59,14 @@ pub async fn seed_namespace(cp: &SqlControlPlane) {
     cp.create_namespace(name, options).await.unwrap();
 }
 
-pub async fn seed_topic(cp: &SqlControlPlane) {
-    use wings_resources::{TopicName, TopicOptions};
+pub async fn seed_table(cp: &SqlControlPlane) {
+    use wings_resources::{TableName, TableOptions};
 
-    let name = TopicName::parse("tenants/abcd/namespaces/xyz/topics/my-topic").unwrap();
+    let name = TableName::parse("tenants/abcd/namespaces/xyz/tables/my-table").unwrap();
     let schema = SchemaBuilder::new(vec![Field::new("message", 1, DataType::Utf8, false)])
         .build()
         .unwrap();
-    let options = TopicOptions::new(schema);
+    let options = TableOptions::new(schema);
 
-    cp.create_topic(name, options).await.unwrap();
+    cp.create_table(name, options).await.unwrap();
 }

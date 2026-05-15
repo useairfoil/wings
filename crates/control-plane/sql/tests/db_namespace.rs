@@ -229,14 +229,14 @@ async fn test_create_namespace_fails_if_data_lake_parent_mismatch() {
 }
 
 #[tokio::test]
-async fn test_delete_namespace_fails_if_has_topics() {
+async fn test_delete_namespace_fails_if_has_tables() {
     let cp = SqlControlPlane::new_in_memory().await;
 
     common::seed_tenant(&cp).await;
     common::seed_data_lake(&cp).await;
     common::seed_object_store(&cp).await;
     common::seed_namespace(&cp).await;
-    common::seed_topic(&cp).await;
+    common::seed_table(&cp).await;
 
     let name = NamespaceName::parse("tenants/abcd/namespaces/xyz").unwrap();
 

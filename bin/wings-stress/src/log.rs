@@ -14,9 +14,9 @@ pub struct Event {
 #[derive(Debug, Clone)]
 pub enum OperationEvent {
     PushStart { num_rows: usize, last_value: u64 },
-    PushEnd { end_offset: u64 },
-    FetchStart { offset: u64 },
-    FetchEnd { offset: u64, value: u64 },
+    PushEnd { end_seqnum: u64 },
+    FetchStart { seqnum: u64 },
+    FetchEnd { seqnum: u64, value: u64 },
 }
 
 pub async fn run_log_loop(mut rx: mpsc::Receiver<Event>) -> Result<()> {
@@ -46,14 +46,14 @@ impl std::fmt::Display for OperationEvent {
                     "", last_value, num_rows
                 )
             }
-            OperationEvent::PushEnd { end_offset } => {
-                write!(f, "END  |PUSH |{:<8}|{:<24}|", end_offset, "")
+            OperationEvent::PushEnd { end_seqnum } => {
+                write!(f, "END  |PUSH |{:<8}|{:<24}|", end_seqnum, "")
             }
-            OperationEvent::FetchStart { offset } => {
-                write!(f, "START|FETCH|{:<8}|{:<24}|", offset, "")
+            OperationEvent::FetchStart { seqnum } => {
+                write!(f, "START|FETCH|{:<8}|{:<24}|", seqnum, "")
             }
-            OperationEvent::FetchEnd { offset, value } => {
-                write!(f, "END  |FETCH|{:<8}|{:<24}|", offset, value)
+            OperationEvent::FetchEnd { seqnum, value } => {
+                write!(f, "END  |FETCH|{:<8}|{:<24}|", seqnum, value)
             }
         }
     }

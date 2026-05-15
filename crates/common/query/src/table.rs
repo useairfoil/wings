@@ -6,11 +6,11 @@ use datafusion::{
     prelude::{SessionContext, and, col, lit},
 };
 use snafu::Snafu;
-use wings_resources::{PartitionValue, Topic};
+use wings_resources::{PartitionValue, Table};
 use wings_schema::SchemaError;
 
 #[derive(Debug, Snafu)]
-pub enum TopicLogicalPlanError {
+pub enum TableLogicalPlanError {
     #[snafu(display("Missing required partition value for field '{field}'"))]
     MissingPartitionValue { field: String },
     #[snafu(transparent)]
@@ -19,44 +19,44 @@ pub enum TopicLogicalPlanError {
     Schema { source: SchemaError },
 }
 
-type Result<T, E = TopicLogicalPlanError> = std::result::Result<T, E>;
+type Result<T, E = TableLogicalPlanError> = std::result::Result<T, E>;
 
 #[async_trait]
 pub trait TopicLogicalPlanExt {
     async fn logical_plan(
         &self,
         ctx: &SessionContext,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         partition_value: Option<PartitionValue>,
     ) -> Result<LogicalPlan>;
 }
 
 #[async_trait]
-impl TopicLogicalPlanExt for Topic {
+impl TopicLogicalPlanExt for Table {
     async fn logical_plan(
         &self,
         ctx: &SessionContext,
-        start_offset: u64,
-        end_offset: u64,
+        start_seqnum: u64,
+        end_seqnum: u64,
         partition_value: Option<PartitionValue>,
     ) -> Result<LogicalPlan> {
-        let offset_expr = col("__offset__").between(lit(start_offset), lit(end_offset));
+        let seqnum_expr = col("__seqnum__").between(lit(start_seqnum), lit(end_seqnum));
 
         let filter = if let Some(field) = self.partition_field() {
             let Some(value) = partition_value else {
-                return Err(TopicLogicalPlanError::MissingPartitionValue {
+                return Err(TableLogicalPlanError::MissingPartitionValue {
                     field: field.name().to_string(),
                 });
             };
 
             let partition_expr = col(field.name()).eq(value.into_lit());
-            and(offset_expr, partition_expr)
+            and(seqnum_expr, partition_expr)
         } else {
-            offset_expr
+            seqnum_expr
         };
 
-        let sort = col("__offset__").sort(true, false);
+        let sort = col("__seqnum__").sort(true, false);
 
         let table_provider = ctx.table_provider(self.name.id()).await?;
         let table_source = provider_as_source(table_provider);
@@ -81,29 +81,29 @@ mod tests {
         },
         datasource::MemTable,
     };
-    use wings_resources::{NamespaceName, TenantName, TopicName, TopicOptions};
+    use wings_resources::{NamespaceName, TableName, TableOptions, TenantName};
     use wings_schema::{DataType, Field as WingsField, SchemaBuilder};
 
     use super::*;
 
-    fn create_test_topic_without_partition() -> Topic {
+    fn create_test_table_without_partition() -> Table {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("test-topic", namespace_name).unwrap();
+        let table_name = TableName::new("test-table", namespace_name).unwrap();
         let schema = SchemaBuilder::new(vec![
             WingsField::new("id", 1, DataType::Int32, false),
             WingsField::new("name", 2, DataType::Utf8, false),
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new(schema);
-        Topic::new(topic_name, options)
+        let options = TableOptions::new(schema);
+        Table::new(table_name, options)
     }
 
-    fn create_test_topic_with_partition() -> Topic {
+    fn create_test_table_with_partition() -> Table {
         let tenant_name = TenantName::new("test-tenant").unwrap();
         let namespace_name = NamespaceName::new("test-namespace", tenant_name).unwrap();
-        let topic_name = TopicName::new("partitioned-topic", namespace_name).unwrap();
+        let table_name = TableName::new("partitioned-table", namespace_name).unwrap();
         let schema = SchemaBuilder::new(vec![
             WingsField::new("region_id", 0, DataType::Int64, false),
             WingsField::new("id", 1, DataType::Int32, false),
@@ -111,18 +111,18 @@ mod tests {
         ])
         .build()
         .unwrap();
-        let options = TopicOptions::new_with_partition_key(schema, Some(0));
-        Topic::new(topic_name, options)
+        let options = TableOptions::new_with_partition_key(schema, Some(0));
+        Table::new(table_name, options)
     }
 
-    async fn create_session_with_table(topic: &Topic) -> SessionContext {
+    async fn create_session_with_table(table: &Table) -> SessionContext {
         let ctx = SessionContext::new();
 
-        // Create an Arrow schema that includes the topic's columns plus the __offset__ column
-        let arrow_schema = topic.arrow_schema();
+        // Create an Arrow schema that includes the table's columns plus the __seqnum__ column
+        let arrow_schema = table.arrow_schema();
         let mut fields = arrow_schema.fields().to_vec();
         fields.push(Arc::new(ArrowField::new(
-            "__offset__",
+            "__seqnum__",
             ArrowDataType::UInt64,
             true,
         )));
@@ -130,71 +130,71 @@ mod tests {
 
         // Create empty record batch to initialize the table
         let batch = RecordBatch::new_empty(full_schema.clone());
-        let table = MemTable::try_new(full_schema, vec![vec![batch]]).unwrap();
+        let mem_table = MemTable::try_new(full_schema, vec![vec![batch]]).unwrap();
 
-        // Register the table with the topic's ID
-        ctx.register_table(topic.name.id(), Arc::new(table))
+        // Register the table with the table's ID
+        ctx.register_table(table.name.id(), Arc::new(mem_table))
             .expect("register table");
 
         ctx
     }
 
     #[tokio::test]
-    async fn test_logical_plan_non_partitioned_topic() {
+    async fn test_logical_plan_non_partitioned_table() {
         // Arrange
-        let topic = create_test_topic_without_partition();
-        let ctx = create_session_with_table(&topic).await;
-        let start_offset = 0u64;
-        let end_offset = 100u64;
+        let table = create_test_table_without_partition();
+        let ctx = create_session_with_table(&table).await;
+        let start_seqnum = 0u64;
+        let end_seqnum = 100u64;
 
         // Act
-        let plan = topic
-            .logical_plan(&ctx, start_offset, end_offset, None)
+        let plan = table
+            .logical_plan(&ctx, start_seqnum, end_seqnum, None)
             .await
             .expect("logical_plan should succeed");
 
         // Assert
         insta::assert_snapshot!(plan.display_indent(), @r"
-        Sort: test-topic.__offset__ ASC NULLS LAST
-          Filter: test-topic.__offset__ BETWEEN UInt64(0) AND UInt64(100)
-            TableScan: test-topic
+        Sort: test-table.__seqnum__ ASC NULLS LAST
+          Filter: test-table.__seqnum__ BETWEEN UInt64(0) AND UInt64(100)
+            TableScan: test-table
         ");
     }
 
     #[tokio::test]
-    async fn test_logical_plan_partitioned_topic_with_value() {
+    async fn test_logical_plan_partitioned_table_with_value() {
         // Arrange
-        let topic = create_test_topic_with_partition();
-        let ctx = create_session_with_table(&topic).await;
-        let start_offset = 10u64;
-        let end_offset = 50u64;
+        let table = create_test_table_with_partition();
+        let ctx = create_session_with_table(&table).await;
+        let start_seqnum = 10u64;
+        let end_seqnum = 50u64;
         let partition_value = Some(PartitionValue::Int64(42));
 
         // Act
-        let plan = topic
-            .logical_plan(&ctx, start_offset, end_offset, partition_value)
+        let plan = table
+            .logical_plan(&ctx, start_seqnum, end_seqnum, partition_value)
             .await
             .expect("logical_plan should succeed");
 
         // Assert
         insta::assert_snapshot!(plan.display_indent(), @r"
-        Sort: partitioned-topic.__offset__ ASC NULLS LAST
-          Filter: partitioned-topic.__offset__ BETWEEN UInt64(10) AND UInt64(50) AND partitioned-topic.region_id = Int64(42)
-            TableScan: partitioned-topic
+        Sort: partitioned-table.__seqnum__ ASC NULLS LAST
+          Filter: partitioned-table.__seqnum__ BETWEEN UInt64(10) AND UInt64(50) AND partitioned-table.region_id = Int64(42)
+            TableScan: partitioned-table
         ");
     }
 
     #[tokio::test]
-    async fn test_logical_plan_partitioned_topic_missing_value() {
+    async fn test_logical_plan_partitioned_table_missing_value() {
         // Arrange
-        let topic = create_test_topic_with_partition();
-        let ctx = create_session_with_table(&topic).await;
-        let start_offset = 10u64;
-        let end_offset = 50u64;
+        let table = create_test_table_with_partition();
+        let ctx = create_session_with_table(&table).await;
+        let start_seqnum = 10u64;
+        let end_seqnum = 50u64;
 
         // Act
-        let result = topic
-            .logical_plan(&ctx, start_offset, end_offset, None)
+        let result = table
+            .logical_plan(&ctx, start_seqnum, end_seqnum, None)
             .await;
 
         // Assert
@@ -208,8 +208,8 @@ mod tests {
     #[tokio::test]
     async fn test_logical_plan_different_partition_value_types() {
         // Arrange
-        let topic = create_test_topic_with_partition();
-        let ctx = create_session_with_table(&topic).await;
+        let table = create_test_table_with_partition();
+        let ctx = create_session_with_table(&table).await;
 
         // Test with different partition value types
         let test_values = vec![
@@ -226,7 +226,7 @@ mod tests {
         ];
 
         for value in test_values {
-            let result = topic
+            let result = table
                 .logical_plan(&ctx, 0u64, 100u64, Some(value.clone()))
                 .await;
             assert!(
@@ -239,18 +239,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_logical_plan_table_not_found_error() {
-        // Arrange - create a topic but don't register a table
-        let topic = create_test_topic_without_partition();
+        // Arrange - create a table but don't register a table
+        let table = create_test_table_without_partition();
         let ctx = SessionContext::new(); // Empty context without the table
 
         // Act
-        let result = topic.logical_plan(&ctx, 0u64, 100u64, None).await;
+        let result = table.logical_plan(&ctx, 0u64, 100u64, None).await;
 
         // Assert - should return DataFusion error for missing table
         insta::assert_debug_snapshot!(result.unwrap_err(), @r#"
         DataFusion {
             source: Plan(
-                "No table named 'test-topic'",
+                "No table named 'test-table'",
             ),
         }
         "#);

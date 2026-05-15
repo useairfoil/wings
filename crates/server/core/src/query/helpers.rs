@@ -6,11 +6,11 @@ use datafusion::{
     prelude::{Expr, col},
     scalar::ScalarValue,
 };
-use wings_resources::OFFSET_COLUMN_NAME;
+use wings_resources::SEQNUM_COLUMN_NAME;
 
-pub type OffsetRangeInclusive = RangeInclusive<u64>;
+pub type SeqnumRangeInclusive = RangeInclusive<u64>;
 
-enum OffsetPart {
+enum SeqnumPart {
     Eq(u64),
     Lower(u64),
     Upper(u64),
@@ -38,73 +38,73 @@ pub fn find_partition_column_value(
     }
 }
 
-pub fn validate_offset_filters(filters: &[Expr]) -> Result<OffsetRangeInclusive, DataFusionError> {
+pub fn validate_seqnum_filters(filters: &[Expr]) -> Result<SeqnumRangeInclusive, DataFusionError> {
     match filters
         .iter()
-        .flat_map(find_offset_bound_in_filter)
+        .flat_map(find_seqnum_bound_in_filter)
         .collect::<Vec<_>>()
         .as_slice()
     {
         [] => Err(DataFusionError::Plan(format!(
             "No {0} filter provided. You must provide a lower and upper bound for {0}.",
-            OFFSET_COLUMN_NAME
+            SEQNUM_COLUMN_NAME
         ))),
-        [OffsetPart::Eq(offset)] => Ok(*offset..=*offset),
+        [SeqnumPart::Eq(seqnum)] => Ok(*seqnum..=*seqnum),
         [bound0, bound1] => match (bound0, bound1) {
-            (OffsetPart::Lower(l), OffsetPart::Upper(u)) => Ok(*l..=*u),
-            (OffsetPart::Upper(u), OffsetPart::Lower(l)) => Ok(*l..=*u),
+            (SeqnumPart::Lower(l), SeqnumPart::Upper(u)) => Ok(*l..=*u),
+            (SeqnumPart::Upper(u), SeqnumPart::Lower(l)) => Ok(*l..=*u),
             _ => Err(DataFusionError::Plan(format!(
                 "Invalid {0} filter provided. You must provide a lower and upper bound for {0}.",
-                OFFSET_COLUMN_NAME
+                SEQNUM_COLUMN_NAME
             ))),
         },
         _ => Err(DataFusionError::Plan(format!(
             "Invalid {0} filter provided. You must provide a lower and upper bound for {0}.",
-            OFFSET_COLUMN_NAME
+            SEQNUM_COLUMN_NAME
         ))),
     }
 }
 
-fn find_offset_bound_in_filter(filter: &Expr) -> Option<OffsetPart> {
+fn find_seqnum_bound_in_filter(filter: &Expr) -> Option<SeqnumPart> {
     match filter {
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::Gt,
-        }) => offset_value(left, right).map(|offset| OffsetPart::Lower(offset + 1)),
+        }) => seqnum_value(left, right).map(|seqnum| SeqnumPart::Lower(seqnum + 1)),
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::GtEq,
-        }) => offset_value(left, right).map(OffsetPart::Lower),
+        }) => seqnum_value(left, right).map(SeqnumPart::Lower),
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::Lt,
         }) => {
-            let offset = offset_value(left, right)?;
-            if offset == 0 {
+            let seqnum = seqnum_value(left, right)?;
+            if seqnum == 0 {
                 None
             } else {
-                Some(OffsetPart::Upper(offset - 1))
+                Some(SeqnumPart::Upper(seqnum - 1))
             }
         }
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::LtEq,
-        }) => offset_value(left, right).map(OffsetPart::Upper),
+        }) => seqnum_value(left, right).map(SeqnumPart::Upper),
         Expr::BinaryExpr(BinaryExpr {
             left,
             right,
             op: Operator::Eq,
-        }) => offset_value(left, right).map(OffsetPart::Eq),
+        }) => seqnum_value(left, right).map(SeqnumPart::Eq),
         _ => None,
     }
 }
 
-fn offset_value(left: &Expr, right: &Expr) -> Option<u64> {
-    if left != &col(OFFSET_COLUMN_NAME) {
+fn seqnum_value(left: &Expr, right: &Expr) -> Option<u64> {
+    if left != &col(SEQNUM_COLUMN_NAME) {
         return None;
     }
 

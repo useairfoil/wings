@@ -6,6 +6,6 @@ pub mod partition_location;
 pub mod partition_state;
 pub mod task;
 pub mod tenant;
-pub mod topic;
+pub mod table;
 
 pub use self::error::Error;

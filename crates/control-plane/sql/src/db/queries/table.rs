@@ -6,19 +6,19 @@ use time::OffsetDateTime;
 use tracing::debug;
 use wings_control_plane_core::{
     ClusterMetadataError,
-    cluster_metadata::{ListTopicsRequest, ListTopicsResponse, TopicView},
-    log_metadata::CreateTableTask,
+    cluster_metadata::{ListTablesRequest, ListTablesResponse, TableView},
+    table_metadata::CreateTableTask,
 };
-use wings_resources::{Topic, TopicName, TopicOptions, validate_compaction};
+use wings_resources::{Table, TableName, TableOptions, validate_compaction};
 
 use crate::{Database, db::entities};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("topic {name} already exists"))]
-    AlreadyExists { name: TopicName },
-    #[snafu(display("topic {name} not found"))]
-    NotFound { name: TopicName },
+    #[snafu(display("table {name} already exists"))]
+    AlreadyExists { name: TableName },
+    #[snafu(display("table {name} not found"))]
+    NotFound { name: TableName },
     #[snafu(display("no field with id {key} found in schema"))]
     InvalidPartitionKey { key: u64 },
     #[snafu(display("invalid compaction configuration: {message}"))]
@@ -32,11 +32,11 @@ pub enum Error {
 }
 
 impl Database {
-    pub async fn create_topic(
+    pub async fn create_table(
         &self,
-        name: TopicName,
-        options: TopicOptions,
-    ) -> Result<Topic, Error> {
+        name: TableName,
+        options: TableOptions,
+    ) -> Result<Table, Error> {
         let namespace_name = name.parent().clone();
         let tenant_id = namespace_name.parent().id().to_owned();
         let namespace_id = namespace_name.id().to_owned();
@@ -61,7 +61,7 @@ impl Database {
         let schema_fields = serde_json::to_value(&options.schema.fields)?;
         let schema_metadata = serde_json::to_value(&options.schema.metadata)?;
 
-        let topic = entities::topic::ActiveModel {
+        let table = entities::table::ActiveModel {
             tenant_id: Set(tenant_id.clone()),
             namespace_id: Set(namespace_id.clone()),
             id: Set(id.clone()),
@@ -80,7 +80,7 @@ impl Database {
             Box::pin(async move {
                 entities::namespace::expect_exists(tx, &namespace_name).await?;
 
-                let existing = entities::topic::Entity::find_by_id((
+                let existing = entities::table::Entity::find_by_id((
                     tenant_id.clone(),
                     namespace_id.clone(),
                     id.clone(),
@@ -92,20 +92,20 @@ impl Database {
                     return Err(Error::AlreadyExists { name });
                 }
 
-                let entity = entities::topic::Entity::insert(topic)
+                let entity = entities::table::Entity::insert(table)
                     .exec_with_returning(tx)
                     .await?;
 
                 let task_id = entities::task::insert_task(
                     tx,
                     CreateTableTask {
-                        topic_name: name.clone(),
+                        table_name: name.clone(),
                     },
                     OffsetDateTime::now_utc(),
                 )
                 .await?;
 
-                debug!(task_id, topic = %name, "Inserted table create task");
+                debug!(task_id, table = %name, "Inserted table create task");
 
                 entity.try_into().map_err(Into::into)
             })
@@ -113,12 +113,12 @@ impl Database {
         .await
     }
 
-    pub async fn get_topic(&self, name: TopicName, _view: TopicView) -> Result<Topic, Error> {
+    pub async fn get_table(&self, name: TableName, _view: TableView) -> Result<Table, Error> {
         let tenant_id = name.parent().parent().id().to_owned();
         let namespace_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
-        let existing = entities::topic::Entity::find_by_id((tenant_id, namespace_id, id))
+        let existing = entities::table::Entity::find_by_id((tenant_id, namespace_id, id))
             .one(&self.pool)
             .await?;
 
@@ -128,21 +128,21 @@ impl Database {
         }
     }
 
-    pub async fn list_topics(
+    pub async fn list_tables(
         &self,
-        request: ListTopicsRequest,
-    ) -> Result<ListTopicsResponse, Error> {
+        request: ListTablesRequest,
+    ) -> Result<ListTablesResponse, Error> {
         let tenant_id = request.parent.parent().id().to_owned();
         let namespace_id = request.parent.id().to_owned();
         let page_size = request.page_size.unwrap_or(100).clamp(1, 1_000) as u64;
 
-        let mut query = entities::topic::Entity::find()
-            .filter(entities::topic::Column::TenantId.eq(&tenant_id))
-            .filter(entities::topic::Column::NamespaceId.eq(&namespace_id))
-            .order_by_asc(entities::topic::Column::Id);
+        let mut query = entities::table::Entity::find()
+            .filter(entities::table::Column::TenantId.eq(&tenant_id))
+            .filter(entities::table::Column::NamespaceId.eq(&namespace_id))
+            .order_by_asc(entities::table::Column::Id);
 
         if let Some(id) = request.page_token {
-            query = query.filter(entities::topic::Column::Id.gt(id));
+            query = query.filter(entities::table::Column::Id.gt(id));
         }
 
         let entities = query.paginate(&self.pool, page_size).fetch().await?;
@@ -156,27 +156,27 @@ impl Database {
             None
         };
 
-        let topics = entities
+        let tables = entities
             .into_iter()
             .map(|entity| entity.try_into())
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(ListTopicsResponse {
-            topics,
+        Ok(ListTablesResponse {
+            tables,
             next_page_token,
         })
     }
 
-    pub async fn delete_topic(&self, name: TopicName, _force: bool) -> Result<(), Error> {
+    pub async fn delete_table(&self, name: TableName, _force: bool) -> Result<(), Error> {
         let tenant_id = name.parent().parent().id().to_owned();
         let namespace_id = name.parent().id().to_owned();
         let id = name.id().to_owned();
 
         self.with_transaction(|tx| {
             Box::pin(async move {
-                entities::topic::expect_exists(tx, &name).await?;
+                entities::table::expect_exists(tx, &name).await?;
 
-                let result = entities::topic::Entity::delete_by_id((
+                let result = entities::table::Entity::delete_by_id((
                     tenant_id.clone(),
                     namespace_id.clone(),
                     id.clone(),
@@ -199,19 +199,19 @@ impl From<Error> for ClusterMetadataError {
     fn from(err: Error) -> Self {
         match err {
             Error::AlreadyExists { name } => ClusterMetadataError::AlreadyExists {
-                resource: "topic".to_string(),
+                resource: "table".to_string(),
                 name: name.to_string(),
             },
             Error::NotFound { name } => ClusterMetadataError::NotFound {
-                resource: "topic".to_string(),
+                resource: "table".to_string(),
                 name: name.to_string(),
             },
             Error::InvalidPartitionKey { .. } => ClusterMetadataError::InvalidArgument {
-                resource: "topic".to_string(),
+                resource: "table".to_string(),
                 message: err.to_string(),
             },
             Error::InvalidCompactionConfiguration { .. } => ClusterMetadataError::InvalidArgument {
-                resource: "topic".to_string(),
+                resource: "table".to_string(),
                 message: err.to_string(),
             },
             Error::Json { source } => ClusterMetadataError::Internal {

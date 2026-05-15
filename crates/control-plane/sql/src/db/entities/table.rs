@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use sea_orm::{DatabaseTransaction, entity::prelude::*};
 use snafu::ResultExt;
-use wings_resources::{CompactionConfiguration, NamespaceName, TenantName, Topic, TopicName};
+use wings_resources::{CompactionConfiguration, NamespaceName, TenantName, Table, TableName};
 use wings_schema::{FieldRef, Fields, SchemaBuilder};
 
 use super::error::{Error, InvalidResourceNameSnafu};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "topics")]
+#[sea_orm(table_name = "tables")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub tenant_id: String,
@@ -55,7 +55,7 @@ impl Related<super::partition_location::Entity> for Entity {
     }
 }
 
-impl TryFrom<Model> for Topic {
+impl TryFrom<Model> for Table {
     type Error = Error;
 
     fn try_from(model: Model) -> Result<Self, Self::Error> {
@@ -65,8 +65,8 @@ impl TryFrom<Model> for Topic {
             .context(InvalidResourceNameSnafu {
                 resource: "namespace",
             })?;
-        let name = TopicName::new(model.id, namespace_name)
-            .context(InvalidResourceNameSnafu { resource: "topic" })?;
+        let name = TableName::new(model.id, namespace_name)
+            .context(InvalidResourceNameSnafu { resource: "table" })?;
 
         let fields: Vec<FieldRef> = serde_json::from_value(model.schema_fields)?;
         let fields = Fields::from(fields);
@@ -92,7 +92,7 @@ impl TryFrom<Model> for Topic {
             }
         };
 
-        Ok(Topic {
+        Ok(Table {
             name,
             schema,
             partition_key,
@@ -103,7 +103,7 @@ impl TryFrom<Model> for Topic {
     }
 }
 
-pub async fn expect_exists(tx: &DatabaseTransaction, name: &TopicName) -> Result<(), Error> {
+pub async fn expect_exists(tx: &DatabaseTransaction, name: &TableName) -> Result<(), Error> {
     let tenant_id = name.parent().parent().id().to_owned();
     let namespace_id = name.parent().id().to_owned();
     let id = name.id.to_owned();
@@ -113,7 +113,7 @@ pub async fn expect_exists(tx: &DatabaseTransaction, name: &TopicName) -> Result
 
     if existing.is_none() {
         return Err(Error::NotFound {
-            resource: "topic",
+            resource: "table",
             name: name.to_string(),
         });
     }

@@ -6,8 +6,8 @@
 //! **Wire protocol**
 //!
 //! Each batch starts with a `Schema` message. This message's metadata contains
-//! the batch id, topic name, partition value, and timestamp. The schema in the
-//! message must be compatible with the topic schema.
+//! the batch id, table name, partition value, and timestamp. The schema in the
+//! message must be compatible with the table schema.
 //!
 //! Notice that the user may push batches that are larger than the maximum message size,
 //! for this reason, the encoder will split the batch into smaller batches.
@@ -50,7 +50,7 @@ impl IngestionFlightDataEncoder {
         let schema = request.data.schema();
         let metadata = IngestionRequestMetadata::new(
             batch_id,
-            request.topic_name.clone(),
+            request.table_name.clone(),
             request.partition_value.clone(),
             request.timestamp,
         );
@@ -59,7 +59,7 @@ impl IngestionFlightDataEncoder {
             .encode_schema(schema.as_ref())
             .with_descriptor(FlightDescriptor {
                 r#type: DescriptorType::Path as _,
-                path: vec![request.topic_name.to_string()],
+                path: vec![request.table_name.to_string()],
                 ..Default::default()
             })
             .with_app_metadata(metadata.encode())

@@ -12,46 +12,46 @@ use datafusion::{
 };
 use futures::TryStreamExt;
 use tracing::debug;
-use wings_control_plane_core::log_metadata::{
-    LogLocation, LogMetadata, stream::PaginatedLogLocationStream,
+use wings_control_plane_core::table_metadata::{
+    TableLocation, TableMetadata, stream::PaginatedTableLocationStream,
 };
-use wings_resources::{Namespace, PartitionPosition, PartitionValue, Topic};
+use wings_resources::{Namespace, PartitionPosition, PartitionValue, Table};
 
 use crate::{
     datafusion_helpers::apply_projection,
     options::SessionConfigExt,
     query::{
         exec::{DataLakeExec, FolioExec},
-        helpers::{find_partition_column_value, validate_offset_filters},
+        helpers::{find_partition_column_value, validate_seqnum_filters},
     },
 };
 
-pub struct TopicTableProvider {
-    log_meta: Arc<dyn LogMetadata>,
+pub struct WingsTableProvider {
+    table_metadata: Arc<dyn TableMetadata>,
     namespace: Namespace,
-    topic: Topic,
+    table: Table,
 }
 
-impl TopicTableProvider {
-    pub fn new(log_meta: Arc<dyn LogMetadata>, namespace: Namespace, topic: Topic) -> Self {
+impl WingsTableProvider {
+    pub fn new(table_metadata: Arc<dyn TableMetadata>, namespace: Namespace, table: Table) -> Self {
         Self {
-            log_meta,
+            table_metadata,
             namespace,
-            topic,
+            table,
         }
     }
 
     pub fn new_provider(
-        log_meta: Arc<dyn LogMetadata>,
+        table_metadata: Arc<dyn TableMetadata>,
         namespace: Namespace,
-        topic: Topic,
+        table: Table,
     ) -> Arc<dyn TableProvider> {
-        Arc::new(Self::new(log_meta, namespace, topic))
+        Arc::new(Self::new(table_metadata, namespace, table))
     }
 }
 
 #[async_trait]
-impl TableProvider for TopicTableProvider {
+impl TableProvider for WingsTableProvider {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -61,7 +61,7 @@ impl TableProvider for TopicTableProvider {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.topic
+        self.table
             .arrow_schema_with_metadata(PartitionPosition::Last)
             .expect("schema should be valid")
     }
@@ -81,17 +81,17 @@ impl TableProvider for TopicTableProvider {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
         debug!(
-            topic = %self.topic.name,
+            table = %self.table.name,
             ?projection,
             ?filters,
             ?limit,
-            "TopicTableProvider::scan"
+            "WingsTableProvider::scan"
         );
 
-        let offset_range = validate_offset_filters(filters)?;
+        let seqnum_range = validate_seqnum_filters(filters)?;
 
         let (partition_value, partition_column) =
-            if let Some(partition_column) = self.topic.partition_field() {
+            if let Some(partition_column) = self.table.partition_field() {
                 let partition_value: PartitionValue =
                     find_partition_column_value(&partition_column.name, filters)?
                         .try_into()
@@ -116,30 +116,30 @@ impl TableProvider for TopicTableProvider {
 
         let fetch_options = state.config().fetch_options();
 
-        let offset_location_stream = PaginatedLogLocationStream::new_in_offset_range(
-            self.log_meta.clone(),
-            self.topic.name.clone(),
+        let row_location_stream = PaginatedTableLocationStream::new_in_seqnum_range(
+            self.table_metadata.clone(),
+            self.table.name.clone(),
             partition_value,
-            offset_range,
-            fetch_options.get_log_location_options(),
+            seqnum_range,
+            fetch_options.get_table_location_options(),
         );
 
-        let locations = offset_location_stream.try_collect::<Vec<_>>().await?;
+        let locations = row_location_stream.try_collect::<Vec<_>>().await?;
 
         let object_store_url = self.namespace.object_store.wings_object_store_url()?;
 
         let output_schema = self.schema();
-        let folio_schema = self.topic.arrow_schema_without_partition_field();
+        let folio_schema = self.table.arrow_schema_without_partition_field();
         let datalake_schema = self
-            .topic
+            .table
             .arrow_schema_with_metadata(PartitionPosition::Skip)
             .map_err(|err| DataFusionError::External(err.into()))?;
 
         let locations_exec = locations
             .into_iter()
             .map(|(_, partition_value, location)| match location {
-                LogLocation::Folio(folio) => {
-                    debug!(topic = %self.topic.name, partition = ?partition_value, ?folio, "TopicTableProvider::scan add folio");
+                TableLocation::Folio(folio) => {
+                    debug!(table = %self.table.name, partition = ?partition_value, ?folio, "WingsTableProvider::scan add folio");
                     FolioExec::try_new_exec(
                         state,
                         output_schema.clone(),
@@ -150,8 +150,8 @@ impl TableProvider for TopicTableProvider {
                         object_store_url.clone(),
                     )
                 }
-                LogLocation::DataLake(file) => {
-                    debug!(topic = %self.topic.name, partition = ?partition_value, ?file, "TopicTableProvider::scan add datalake file");
+                TableLocation::DataLake(file) => {
+                    debug!(table = %self.table.name, partition = ?partition_value, ?file, "WingsTableProvider::scan add datalake file");
                     // Notice:
                     // file and output schema are the same.
                     // partition value is included in file.
@@ -177,10 +177,10 @@ impl TableProvider for TopicTableProvider {
     }
 }
 
-impl std::fmt::Debug for TopicTableProvider {
+impl std::fmt::Debug for WingsTableProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TopicTableProvider")
-            .field("topic", &self.topic.name)
+        f.debug_struct("WingsTableProvider")
+            .field("table", &self.table.name)
             .finish()
     }
 }

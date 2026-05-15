@@ -8,7 +8,7 @@ use datafusion::common::arrow::{
 };
 use wings_resources::{
     DataLakeName, Namespace, NamespaceName, NamespaceOptions, NamespaceRef, ObjectStoreName,
-    PartitionValue, TenantName, Topic, TopicName, TopicOptions, TopicRef,
+    PartitionValue, TenantName, Table, TableName, TableOptions, TableRef,
 };
 use wings_schema::{DataType as WingsDataType, Field as WingsField, SchemaBuilder};
 
@@ -58,8 +58,8 @@ pub fn test_namespace_name() -> NamespaceName {
     NamespaceName::new_unchecked("test-namespace", test_tenant_name())
 }
 
-pub fn test_topic_name() -> TopicName {
-    TopicName::new_unchecked("test-topic", test_namespace_name())
+pub fn test_table_name() -> TableName {
+    TableName::new_unchecked("test-table", test_namespace_name())
 }
 
 pub fn test_namespace() -> NamespaceRef {
@@ -78,33 +78,33 @@ pub fn test_namespace_with_flush_size(flush_size: ByteSize) -> NamespaceRef {
     ))
 }
 
-pub fn test_topic() -> TopicRef {
+pub fn test_table() -> TableRef {
     let schema = SchemaBuilder::new(vec![
         WingsField::new("id", 1, WingsDataType::Int32, false),
         WingsField::new("batch_size", 2, WingsDataType::UInt64, false),
     ])
     .build()
-    .expect("failed to create test topic schema");
+    .expect("failed to create test table schema");
 
-    Arc::new(Topic::new(test_topic_name(), TopicOptions::new(schema)))
+    Arc::new(Table::new(test_table_name(), TableOptions::new(schema)))
 }
 
 pub fn generate_write_request(
     records: RecordBatch,
     timestamp: Option<SystemTime>,
 ) -> WriteBatchRequest {
-    generate_write_request_for(test_topic(), None, records, timestamp)
+    generate_write_request_for(test_table(), None, records, timestamp)
 }
 
 pub fn generate_write_request_for(
-    topic: TopicRef,
+    table: TableRef,
     partition: Option<PartitionValue>,
     records: RecordBatch,
     timestamp: Option<SystemTime>,
 ) -> WriteBatchRequest {
     WriteBatchRequest {
         batch_id: 0,
-        topic,
+        table,
         partition,
         records,
         timestamp,

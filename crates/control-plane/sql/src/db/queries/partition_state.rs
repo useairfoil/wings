@@ -7,9 +7,9 @@ use sea_orm::{
 };
 use snafu::Snafu;
 use tracing::debug;
-use wings_control_plane_core::log_metadata::{
+use wings_control_plane_core::table_metadata::{
     AcceptedBatchInfo, CommitBatchRequest, CommittedBatch, ListPartitionsRequest,
-    ListPartitionsResponse, LogMetadataError, LogOffset, RejectedBatchInfo,
+    ListPartitionsResponse, RejectedBatchInfo, SeqNum, TableMetadataError,
     timestamp::{ValidateRequestResult, validate_timestamp_in_request},
     validate_batches_to_commit,
 };
@@ -51,7 +51,7 @@ impl Database {
                 for (index, batch) in batches.into_iter().enumerate() {
                     partitions
                         .entry(PartitionKey::new(
-                            &batch.topic_name,
+                            &batch.table_name,
                             batch.partition_value.clone(),
                         ))
                         .or_default()
@@ -89,7 +89,7 @@ impl Database {
         request: ListPartitionsRequest,
     ) -> Result<ListPartitionsResponse, Error> {
         let ListPartitionsRequest {
-            topic_name,
+            table_name,
             page_size,
             page_token,
         } = request;
@@ -108,7 +108,7 @@ impl Database {
         self.with_transaction(|tx| {
             Box::pin(async move {
                 let paginator = entities::partition_state::Entity::find()
-                    .filter(entities::partition_state::topic_condition(&topic_name))
+                    .filter(entities::partition_state::table_condition(&table_name))
                     .paginate(tx, page_size as _);
 
                 let partitions = paginator
@@ -146,17 +146,15 @@ async fn commit_partition_batches(
         .one(tx)
         .await?;
 
-    let start_offset = state
-        .map(|state| state.next_log_offset())
-        .unwrap_or_default();
+    let start_seqnum = state.map(|state| state.next_seqnum()).unwrap_or_default();
 
-    let mut current_offset = start_offset;
+    let mut current_seqnum = start_seqnum;
     let mut locations = HashMap::<FolioBatchLocationKey, PendingFolioLocation>::new();
 
     // TODO: check that the timestamp is assigned correctly
     // we want the state to have the timestamp of the most recently assigned batch
     for (response_index, batch) in batches.iter() {
-        match validate_timestamp_in_request(&current_offset, batch) {
+        match validate_timestamp_in_request(&current_seqnum, batch) {
             ValidateRequestResult::Reject { reason } => {
                 let rejected = RejectedBatchInfo {
                     batch_id: batch.batch_id,
@@ -171,18 +169,18 @@ async fn commit_partition_batches(
                 committed_batches[*response_index] = Some(committed);
             }
             ValidateRequestResult::Accept {
-                start_offset,
-                end_offset,
+                start_seqnum,
+                end_seqnum,
                 timestamp,
-                next_offset,
+                next_seqnum,
             } => {
                 let accepted = AcceptedBatchInfo {
                     batch_id: batch.batch_id,
-                    start_offset,
-                    end_offset,
+                    start_seqnum,
+                    end_seqnum,
                     timestamp: timestamp.unwrap_or(now_ts),
                 };
-                current_offset = next_offset;
+                current_seqnum = next_seqnum;
                 let committed = CommittedBatch::Accepted(accepted);
                 locations
                     .entry(FolioBatchLocationKey::from(batch))
@@ -190,7 +188,7 @@ async fn commit_partition_batches(
                     .push(
                         batch.num_rows,
                         committed.clone(),
-                        Some((start_offset, end_offset)),
+                        Some((start_seqnum, end_seqnum)),
                     );
                 committed_batches[*response_index] = Some(committed);
             }
@@ -198,8 +196,8 @@ async fn commit_partition_batches(
     }
 
     // Update state only if we accepted any data.
-    if current_offset != start_offset {
-        current_offset = current_offset.with_timestamp(now_ts);
+    if current_seqnum != start_seqnum {
+        current_seqnum = current_seqnum.with_timestamp(now_ts);
 
         for location in locations
             .into_values()
@@ -209,13 +207,13 @@ async fn commit_partition_batches(
         }
 
         debug!(
-            topic = %partition_key.topic_id,
+            table = %partition_key.table_id,
             partition_value = ?partition_key.partition_value,
-            next_offset = ?current_offset,
+            next_seqnum = ?current_seqnum,
             "Updating partition state"
         );
 
-        let last_time_ms = current_offset
+        let last_time_ms = current_seqnum
             .timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("timestamp to epoch");
@@ -223,9 +221,9 @@ async fn commit_partition_batches(
         let new_state = entities::partition_state::ActiveModel {
             tenant_id: Set(partition_key.tenant_id),
             namespace_id: Set(partition_key.namespace_id),
-            topic_id: Set(partition_key.topic_id),
+            table_id: Set(partition_key.table_id),
             partition_value: Set(partition_key.partition_value),
-            next_offset: Set(current_offset.offset as _),
+            next_seqnum: Set(current_seqnum.seqnum as _),
             last_timestamp_ms: Set(last_time_ms.as_millis() as _),
         };
 
@@ -234,11 +232,11 @@ async fn commit_partition_batches(
                 OnConflict::columns([
                     entities::partition_state::Column::TenantId,
                     entities::partition_state::Column::NamespaceId,
-                    entities::partition_state::Column::TopicId,
+                    entities::partition_state::Column::TableId,
                     entities::partition_state::Column::PartitionValue,
                 ])
                 .update_columns([
-                    entities::partition_state::Column::NextOffset,
+                    entities::partition_state::Column::NextSeqnum,
                     entities::partition_state::Column::LastTimestampMs,
                 ])
                 .to_owned(),
@@ -272,8 +270,8 @@ struct PendingFolioLocation {
     offset_bytes: u64,
     batch_size_bytes: u64,
     num_rows: u32,
-    start_offset: Option<u64>,
-    end_offset: Option<u64>,
+    start_seqnum: Option<u64>,
+    end_seqnum: Option<u64>,
     batches: Vec<CommittedBatch>,
 }
 
@@ -284,23 +282,23 @@ impl PendingFolioLocation {
             offset_bytes: batch.page_offset_bytes,
             batch_size_bytes: batch.page_size_bytes,
             num_rows: 0,
-            start_offset: None,
-            end_offset: None,
+            start_seqnum: None,
+            end_seqnum: None,
             batches: Vec::new(),
         }
     }
 
     fn push(&mut self, num_rows: u32, batch: CommittedBatch, accepted_offsets: Option<(u64, u64)>) {
         self.num_rows += num_rows;
-        if let Some((start_offset, end_offset)) = accepted_offsets {
-            self.start_offset.get_or_insert(start_offset);
-            self.end_offset = Some(end_offset);
+        if let Some((start_seqnum, end_seqnum)) = accepted_offsets {
+            self.start_seqnum.get_or_insert(start_seqnum);
+            self.end_seqnum = Some(end_seqnum);
         }
         self.batches.push(batch);
     }
 
     fn has_accepted(&self) -> bool {
-        self.start_offset.is_some() && self.end_offset.is_some()
+        self.start_seqnum.is_some() && self.end_seqnum.is_some()
     }
 }
 
@@ -310,20 +308,20 @@ async fn insert_folio_location(
     location: PendingFolioLocation,
     now_ts: SystemTime,
 ) -> Result<(), Error> {
-    let start_offset = LogOffset {
-        offset: location.start_offset.expect("accepted folio start offset"),
+    let start_seqnum = SeqNum {
+        seqnum: location.start_seqnum.expect("accepted folio start seqnum"),
         timestamp: now_ts,
     };
-    let end_offset = LogOffset {
-        offset: location.end_offset.expect("accepted folio end offset"),
+    let end_seqnum = SeqNum {
+        seqnum: location.end_seqnum.expect("accepted folio end seqnum"),
         timestamp: now_ts,
     };
 
     debug!(
-        topic = %partition_key.topic_id,
+        table = %partition_key.table_id,
         partition_value = ?partition_key.partition_value,
-        start_offset = ?start_offset,
-        end_offset = ?end_offset,
+        start_seqnum = ?start_seqnum,
+        end_seqnum = ?end_seqnum,
         file_ref = %location.file_ref,
         "Inserting partition folio"
     );
@@ -339,10 +337,10 @@ async fn insert_folio_location(
             id: NotSet,
             tenant_id: Set(partition_key.tenant_id.clone()),
             namespace_id: Set(partition_key.namespace_id.clone()),
-            topic_id: Set(partition_key.topic_id.clone()),
+            table_id: Set(partition_key.table_id.clone()),
             partition_value: Set(partition_key.partition_value.clone()),
-            start_offset: Set(start_offset.offset as _),
-            end_offset: Set(end_offset.offset as _),
+            start_seqnum: Set(start_seqnum.seqnum as _),
+            end_seqnum: Set(end_seqnum.seqnum as _),
             file_ref: Set(location.file_ref),
             num_rows: Set(location.num_rows as _),
             location_type: Set(LocationType::Folio),
@@ -360,14 +358,14 @@ async fn insert_folio_location(
     Ok(())
 }
 
-impl From<Error> for LogMetadataError {
+impl From<Error> for TableMetadataError {
     fn from(err: Error) -> Self {
         match err {
-            Error::InvalidPageToken { .. } => LogMetadataError::InvalidArgument {
+            Error::InvalidPageToken { .. } => TableMetadataError::InvalidArgument {
                 message: err.to_string(),
             },
             Error::Entity { source } => source.into(),
-            Error::Db { source } => LogMetadataError::Internal {
+            Error::Db { source } => TableMetadataError::Internal {
                 message: format!("db error: {source}"),
             },
         }
