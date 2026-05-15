@@ -1,0 +1,26 @@
+[package]
+name = "wings-object-store"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings_object_store"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+dashmap.workspace = true
+object_store.workspace = true
+percent-encoding.workspace = true
+snafu.workspace = true
+tempfile.workspace = true
+wings-control-plane-core.workspace = true
+wings-observability.workspace = true
+wings-resources.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+wings-control-plane-sql.workspace = true

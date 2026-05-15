@@ -79,7 +79,7 @@ We follow the standard Rust style guide.
 We use the `snafu` crate for error handling. We create a custom error type per module (usually, in the `error.rs` file). Both the error and result types are exported by the module.
 
 The project defines a `StatusCode` used to signal the error type to the user with a unique numerical code. 
-Errors at the boundary between the control plane and the broker should implement the `ErrorExt` trait defined in `wings_observability/src/error.rs` to allow error propagation over gRPC.
+Errors at the boundary between the control plane and the broker should implement the `ErrorExt` trait defined in `crates/common/observability/src/error.rs` to allow error propagation over gRPC.
 
 ### Task cancellation
 
