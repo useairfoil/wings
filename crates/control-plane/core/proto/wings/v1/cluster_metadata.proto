@@ -1,0 +1,508 @@
+syntax = "proto3";
+
+package wings.v1.cluster_metadata;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "schema/arrow_type.proto";
+
+// Cluster metadata service to manage cluster resources.
+service ClusterMetadataService {
+  // Create a new tenant.
+  rpc CreateTenant(CreateTenantRequest) returns (Tenant) {}
+  // Return the specified tenant.
+  rpc GetTenant(GetTenantRequest) returns (Tenant) {}
+  // List all tenants.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse) {}
+  // Delete a tenant.
+  //
+  // The request fails if the tenant has any namespace.
+  rpc DeleteTenant(DeleteTenantRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new namespace belonging to a tenant.
+  rpc CreateNamespace(CreateNamespaceRequest) returns (Namespace) {}
+  // Return the specified namespace.
+  rpc GetNamespace(GetNamespaceRequest) returns (Namespace) {}
+  // List all namespaces belonging to a tenant.
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {}
+  // Delete a namespace.
+  //
+  // The request fails if the namespace has any table.
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new table belonging to a namespace.
+  rpc CreateTable(CreateTableRequest) returns (Table) {}
+  // Return the specified table.
+  rpc GetTable(GetTableRequest) returns (Table) {}
+  // List all tables belonging to a namespace.
+  rpc ListTables(ListTablesRequest) returns (ListTablesResponse) {}
+  // Delete a table.
+  rpc DeleteTable(DeleteTableRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new object store belonging to a tenant.
+  rpc CreateObjectStore(CreateObjectStoreRequest) returns (ObjectStore) {}
+  // Return the specified object store.
+  rpc GetObjectStore(GetObjectStoreRequest) returns (ObjectStore) {}
+  // List all object stores belonging to a tenant.
+  rpc ListObjectStores(ListObjectStoresRequest) returns (ListObjectStoresResponse) {}
+  // Delete an object store.
+  rpc DeleteObjectStore(DeleteObjectStoreRequest) returns (google.protobuf.Empty) {}
+
+  // Create a new data lake belonging to a tenant.
+  rpc CreateDataLake(CreateDataLakeRequest) returns (DataLake) {}
+  // Return the specified data lake.
+  rpc GetDataLake(GetDataLakeRequest) returns (DataLake) {}
+  // List all data lakes belonging to a tenant.
+  rpc ListDataLakes(ListDataLakesRequest) returns (ListDataLakesResponse) {}
+  // Delete a data lake.
+  rpc DeleteDataLake(DeleteDataLakeRequest) returns (google.protobuf.Empty) {}
+}
+
+message CreateTenantRequest {
+  // The tenant id.
+  string tenant_id = 1;
+
+  // The tenant metadata.
+  Tenant tenant = 2;
+}
+
+message GetTenantRequest {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
+}
+
+message ListTenantsRequest {
+  // The number of tenants to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 1;
+
+  // The continuation token.
+  optional string page_token = 2;
+}
+
+message ListTenantsResponse {
+  // The tenants.
+  repeated Tenant tenants = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteTenantRequest {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
+}
+
+message Tenant {
+  // The tenant name.
+  //
+  // Format: tenants/{tenant}
+  string name = 1;
+}
+
+message CreateNamespaceRequest {
+  // The tenant that owns the namespace.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The namespace id.
+  string namespace_id = 2;
+
+  // The namespace metadata.
+  Namespace namespace = 3;
+}
+
+message GetNamespaceRequest {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+}
+
+message ListNamespacesRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of namespaces to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListNamespacesResponse {
+  // The namespaces.
+  repeated Namespace namespaces = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteNamespaceRequest {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+}
+
+message Namespace {
+  // The namespace name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string name = 1;
+
+  // The size at which the current segment is flushed to object storage.
+  uint64 flush_size_bytes = 2;
+
+  // The maximum interval at which the current segment is flushed to object storage (in milliseconds).
+  uint64 flush_interval_millis = 3;
+
+  // The object store used by this namespace.
+  string object_store = 4;
+
+  // The data lake used by this namespace.
+  string data_lake = 5;
+}
+
+message CreateTableRequest {
+  // The namespace that owns the table.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string parent = 1;
+
+  // The table id.
+  string table_id = 2;
+
+  // The table metadata.
+  Table table = 3;
+}
+
+message GetTableRequest {
+  // The table name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
+  string name = 1;
+
+  // Which fields to include in the response.
+  optional TableView view = 2;
+}
+
+message ListTablesRequest {
+  // The parent namespace.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}
+  string parent = 1;
+
+  // The number of tables to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListTablesResponse {
+  // The tables.
+  repeated Table tables = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteTableRequest {
+  // The table name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
+  string name = 1;
+
+  // If set to true, also delete data associated with the table.
+  bool force = 2;
+}
+
+// Which fields to include in the response.
+enum TableView {
+  // Unspecified, use the default.
+  TABLE_VIEW_UNSPECIFIED = 0;
+  // Only return the basic table information.
+  TABLE_VIEW_BASIC = 1;
+  // Include the table status.
+  TABLE_VIEW_FULL = 2;
+}
+
+message Table {
+  // The table name.
+  //
+  // Format: tenants/{tenant}/namespaces/{namespace}/tables/{table}
+  string name = 1;
+
+  // The schema of the table rows.
+  wings.schema.Schema schema = 2;
+
+  // The table description.
+  optional string description = 3;
+
+  // The index of the field that is used to partition the table.
+  optional uint64 partition_key = 4;
+
+  // The table compaction configuration.
+  CompactionConfiguration compaction = 5;
+
+  // The table status.
+  TableStatus status = 6;
+}
+
+// The status of a table.
+message TableStatus {
+  // The number of partitions.
+  uint64 num_partitions = 1;
+
+  // The conditions of the table.
+  repeated TableCondition conditions = 2;
+}
+
+// Table created status.
+message TableCreated {
+  // The table ID.
+  string table_id = 1;
+}
+
+// Table error status.
+message TableError {
+  // The error message.
+  string message = 1;
+}
+
+// A condition on a table, similar to Kubernetes conditions.
+message TableCondition {
+  // The condition type.
+  string type = 1;
+
+  // Whether the condition is operational.
+  bool status = 2;
+
+  // The cause of the current status.
+  string reason = 3;
+
+  // A human-friendly message.
+  string message = 4;
+
+  // When the state changed.
+  google.protobuf.Timestamp last_transition_time = 5;
+}
+
+message CompactionConfiguration {
+  // How often to compact the table, in seconds.
+  uint64 freshness_seconds = 1;
+  // How long to keep the table data, in seconds.
+  optional uint64 ttl_seconds = 2;
+  // The target file size for compacted files, in bytes.
+  uint64 target_file_size_bytes = 3;
+}
+
+message CreateObjectStoreRequest {
+  // The tenant that owns the object store.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The object store id.
+  string object_store_id = 2;
+
+  // The object store metadata.
+  ObjectStore object_store = 3;
+}
+
+message GetObjectStoreRequest {
+  // The object store name.
+  //
+  // Format: tenants/{tenant}/object-stores/{object-store}
+  string name = 1;
+}
+
+message ListObjectStoresRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of object stores to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListObjectStoresResponse {
+  // The object stores.
+  repeated ObjectStore object_stores = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteObjectStoreRequest {
+  // The object store name.
+  //
+  // Format: tenants/{tenant}/object-stores/{object-store}
+  string name = 1;
+}
+
+message ObjectStore {
+  // The object store name.
+  //
+  // Format: tenants/{tenant}/object-stores/{object-store}
+  string name = 1;
+
+  // Object store configuration.
+  oneof object_store_config {
+    AwsConfiguration aws = 2;
+    AzureConfiguration azure = 3;
+    GoogleConfiguration google = 4;
+    S3CompatibleConfiguration s3_compatible = 5;
+  }
+}
+
+message AwsConfiguration {
+  // Bucket name.
+  string bucket_name = 1;
+  // Bucket prefix.
+  optional string prefix = 2;
+  /// `AWS_ACCESS_KEY_ID`
+  string access_key_id = 3;
+  /// `AWS_SECRET_ACCESS_KEY`
+  string secret_access_key = 4;
+  /// `AWS_DEFAULT_REGION`
+  optional string region = 5;
+}
+
+message AzureConfiguration {
+  // Azure container name.
+  string container_name = 1;
+  // Container prefix.
+  optional string prefix = 2;
+  // `AZURE_STORAGE_ACCOUNT_NAME`
+  string storage_account_name = 3;
+  // `AZURE_STORAGE_ACCOUNT_KEY`
+  string storage_account_key = 4;
+}
+
+message GoogleConfiguration {
+  /// Bucket name.
+  string bucket_name = 1;
+  /// Bucket prefix.
+  optional string prefix = 2;
+  /// `GOOGLE_SERVICE_ACCOUNT`
+  string service_account = 3;
+  /// `GOOGLE_SERVICE_ACCOUNT_KEY`
+  string service_account_key = 4;
+}
+
+message S3CompatibleConfiguration {
+  // Bucket name.
+  string bucket_name = 1;
+  // Bucket prefix.
+  optional string prefix = 2;
+  /// `AWS_ACCESS_KEY_ID`
+  string access_key_id = 3;
+  /// `AWS_SECRET_ACCESS_KEY`
+  string secret_access_key = 4;
+  /// `AWS_DEFAULT_REGION`
+  optional string region = 5;
+  /// `AWS_ENDPOINT`
+  string endpoint = 6;
+  /// Allow HTTP connections.
+  bool allow_http = 7;
+}
+
+message CreateDataLakeRequest {
+  // The tenant that owns the data lake.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The data lake id.
+  string data_lake_id = 2;
+
+  // The data lake metadata.
+  DataLake data_lake = 3;
+}
+
+message GetDataLakeRequest {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+}
+
+message ListDataLakesRequest {
+  // The parent tenant.
+  //
+  // Format: tenants/{tenant}
+  string parent = 1;
+
+  // The number of data lakes to return.
+  //
+  // Default: 100
+  // Maximum: 1000.
+  optional int32 page_size = 2;
+
+  // The continuation token.
+  optional string page_token = 3;
+}
+
+message ListDataLakesResponse {
+  // The data lakes.
+  repeated DataLake data_lakes = 1;
+
+  // The continuation token.
+  string next_page_token = 2;
+}
+
+message DeleteDataLakeRequest {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+}
+
+message DataLake {
+  // The data lake name.
+  //
+  // Format: tenants/{tenant}/data-lakes/{data-lake}
+  string name = 1;
+
+  // Data lake configuration.
+  oneof data_lake_config {
+    ParquetConfiguration parquet = 2;
+    IcebergConfiguration iceberg = 3;
+    DeltaConfiguration delta = 4;
+  }
+}
+
+message IcebergConfiguration {}
+
+message ParquetConfiguration {}
+
+message DeltaConfiguration {
+  // The object store where to store the data lake data.
+  //
+  // If not specified, use the default object store for the namespace.
+  optional string object_store = 1;
+}

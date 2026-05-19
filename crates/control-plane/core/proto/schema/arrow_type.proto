@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package wings.schema;
+
+message Schema {
+  repeated Field fields = 1;
+  map<string, string> metadata = 2;
+}
+
+message Field {
+  string name = 1;
+  uint64 id = 2;
+  ArrowType arrow_type = 3;
+  bool nullable = 4;
+  map<string, string> metadata = 5;
+}
+
+message EmptyMessage {}
+
+enum TimeUnit {
+  TIME_UNIT_UNSPECIFIED = 0;
+  TIME_UNIT_SECOND = 1;
+  TIME_UNIT_MILLISECOND = 2;
+  TIME_UNIT_MICROSECOND = 3;
+  TIME_UNIT_NANOSECOND = 4;
+}
+
+message Timestamp {
+  TimeUnit time_unit = 1;
+  string timezone = 2;
+}
+
+message List {
+  Field field_type = 1;
+}
+
+message Struct {
+  repeated Field sub_field_types = 1;
+}
+
+message ArrowType {
+  oneof arrow_type_enum {
+    EmptyMessage none = 1;
+
+    EmptyMessage bool = 2;
+
+    EmptyMessage uint8 = 3;
+    EmptyMessage int8 = 4;
+    EmptyMessage uint16 = 5;
+    EmptyMessage int16 = 6;
+    EmptyMessage uint32 = 7;
+    EmptyMessage int32 = 8;
+    EmptyMessage uint64 = 9;
+    EmptyMessage int64 = 10;
+
+    EmptyMessage float16 = 11;
+    EmptyMessage float32 = 12;
+    EmptyMessage float64 = 13;
+
+    EmptyMessage utf8 = 14;
+
+    EmptyMessage binary = 15;
+
+    EmptyMessage date_32 = 16;
+    EmptyMessage date_64 = 17;
+
+    TimeUnit duration = 18;
+    Timestamp timestamp = 19;
+
+    List list = 20;
+
+    Struct struct = 21;
+  }
+}
+
+// A value serialized to bytes
+message Datum {
+  ArrowType type = 1;
+  bytes content = 2;
+}

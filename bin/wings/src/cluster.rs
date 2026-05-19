@@ -1,0 +1,419 @@
+use std::time::Duration;
+
+use snafu::ResultExt;
+use time::UtcDateTime;
+use tokio_util::sync::CancellationToken;
+use wings_control_plane_core::cluster_metadata::{
+    ClusterMetadata, ListNamespacesRequest, ListTenantsRequest, ListTablesRequest, TableView,
+};
+use wings_resources::{
+    DataLakeName, Namespace, NamespaceName, NamespaceOptions, ObjectStoreName, Tenant, TenantName,
+    Table, TableName, TableOptions,
+};
+use wings_schema::{DataType, Field, SchemaBuilder};
+
+use crate::{
+    error::{CliError, ClusterMetadataSnafu, InvalidResourceNameSnafu, InvalidSchemaSnafu, Result},
+    remote::RemoteArgs,
+};
+
+#[derive(clap::Subcommand)]
+pub enum ClusterMetadataCommands {
+    /// Create a new tenant
+    CreateTenant {
+        /// Tenant name
+        name: String,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// List all tenants
+    ListTenants {
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// Create a new namespace
+    CreateNamespace {
+        /// Namespace name
+        namespace: String,
+        /// Object store name
+        #[arg(long)]
+        object_store: String,
+        /// Data lake name
+        #[arg(long)]
+        data_lake: String,
+        /// Flush interval in milliseconds
+        #[arg(long)]
+        flush_millis: Option<u64>,
+        /// Flush size in megabytes
+        #[arg(long)]
+        flush_mib: Option<u64>,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// List namespaces for a tenant
+    ListNamespaces {
+        /// Tenant name
+        tenant: String,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// Create a new table
+    CreateTopic {
+        /// Table name in format 'tenant/namespace/table'
+        name: String,
+        /// Comma-separated list of fields in format 'column_name:column_type'
+        fields: Vec<String>,
+        /// Partition key column name (must be one of the specified fields)
+        #[clap(long)]
+        partition: Option<String>,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// List tables for a namespace
+    ListTopics {
+        /// Namespace name in format 'tenant/namespace'
+        namespace: String,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// Get a table
+    GetTopic {
+        /// Table name in format 'tenant/namespace/table'
+        name: String,
+        /// Include full table details
+        #[clap(long)]
+        full: bool,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+    /// Delete a table
+    DeleteTopic {
+        /// Table name in format 'tenant/namespace/table'
+        name: String,
+        /// Force deletion even if table has data
+        #[clap(long)]
+        force: bool,
+        #[clap(flatten)]
+        remote: RemoteArgs,
+    },
+}
+
+impl ClusterMetadataCommands {
+    pub async fn run(self, _ct: CancellationToken) -> Result<()> {
+        match self {
+            ClusterMetadataCommands::CreateTenant { name, remote } => {
+                let client = remote.cluster_metadata_client().await?;
+                let tenant_name = TenantName::new(name)
+                    .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+
+                let tenant =
+                    client
+                        .create_tenant(tenant_name)
+                        .await
+                        .context(ClusterMetadataSnafu {
+                            operation: "create_tenant",
+                        })?;
+
+                print_tenant(&tenant);
+
+                Ok(())
+            }
+            ClusterMetadataCommands::ListTenants { remote } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let response = client
+                    .list_tenants(ListTenantsRequest::default())
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "list_tenants",
+                    })?;
+
+                for tenant in response.tenants {
+                    print_tenant(&tenant);
+                }
+
+                Ok(())
+            }
+            ClusterMetadataCommands::CreateNamespace {
+                namespace,
+                object_store,
+                data_lake,
+                flush_millis,
+                flush_mib,
+                remote,
+            } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let namespace_name =
+                    NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
+                        resource: "namespace",
+                    })?;
+
+                let object_store_name =
+                    ObjectStoreName::parse(&object_store).context(InvalidResourceNameSnafu {
+                        resource: "object store",
+                    })?;
+
+                let data_lake_name =
+                    DataLakeName::parse(&data_lake).context(InvalidResourceNameSnafu {
+                        resource: "data lake",
+                    })?;
+
+                let mut options = NamespaceOptions::new(object_store_name, data_lake_name);
+
+                if let Some(millis) = flush_millis {
+                    options.flush_interval = Duration::from_millis(millis);
+                }
+
+                if let Some(mib) = flush_mib {
+                    options.flush_size = bytesize::ByteSize::mib(mib);
+                }
+
+                let namespace = client
+                    .create_namespace(namespace_name, options)
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "create_namespace",
+                    })?;
+
+                print_namespace(&namespace);
+
+                Ok(())
+            }
+            ClusterMetadataCommands::ListNamespaces { tenant, remote } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let tenant_name = TenantName::parse(&tenant)
+                    .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+
+                let response = client
+                    .list_namespaces(ListNamespacesRequest {
+                        parent: tenant_name,
+                        page_size: None,
+                        page_token: None,
+                    })
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "list_namespaces",
+                    })?;
+
+                for namespace in response.namespaces {
+                    print_namespace(&namespace);
+                }
+
+                Ok(())
+            }
+            ClusterMetadataCommands::CreateTopic {
+                name,
+                fields,
+                partition,
+                remote,
+            } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                // Parse table name
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
+
+                // Parse fields
+                let parsed_fields = parse_fields(&fields)?;
+
+                // Validate partition key if provided
+                let partition_key = if let Some(partition_column) = partition {
+                    let index = parsed_fields
+                        .iter()
+                        .position(|f| f.name == partition_column)
+                        .ok_or_else(|| CliError::InvalidArgument {
+                            name: "partition",
+                            message: format!(
+                                "partition key column '{}' not found in fields",
+                                partition_column
+                            ),
+                        })?;
+                    Some(index as u64)
+                } else {
+                    None
+                };
+
+                let schema = SchemaBuilder::new(parsed_fields)
+                    .build()
+                    .context(InvalidSchemaSnafu {})?;
+                let table_options = TableOptions::new_with_partition_key(schema, partition_key);
+
+                let table = client
+                    .create_table(table_name, table_options)
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "create_table",
+                    })?;
+
+                print_table(&table);
+
+                Ok(())
+            }
+            ClusterMetadataCommands::ListTopics { namespace, remote } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let namespace_name =
+                    NamespaceName::parse(&namespace).context(InvalidResourceNameSnafu {
+                        resource: "namespace",
+                    })?;
+
+                let response = client
+                    .list_tables(ListTablesRequest::new(namespace_name))
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "list_tables",
+                    })?;
+
+                for table in response.tables {
+                    print_table(&table);
+                }
+
+                Ok(())
+            }
+            ClusterMetadataCommands::GetTopic { name, full, remote } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
+
+                let view = if full {
+                    TableView::Full
+                } else {
+                    TableView::Basic
+                };
+
+                let table =
+                    client
+                        .get_table(table_name, view)
+                        .await
+                        .context(ClusterMetadataSnafu {
+                            operation: "get_table",
+                        })?;
+
+                print_table(&table);
+
+                Ok(())
+            }
+            ClusterMetadataCommands::DeleteTopic {
+                name,
+                force,
+                remote,
+            } => {
+                let client = remote.cluster_metadata_client().await?;
+
+                let table_name = TableName::parse(&name)
+                    .context(InvalidResourceNameSnafu { resource: "table" })?;
+
+                client
+                    .delete_table(table_name, force)
+                    .await
+                    .context(ClusterMetadataSnafu {
+                        operation: "delete_table",
+                    })?;
+
+                println!("Deleted table '{}'", name);
+
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Parse field specifications from strings like "column_name:column_type"
+fn parse_fields(fields: &[String]) -> Result<Vec<Field>, CliError> {
+    let mut parsed_fields = Vec::new();
+
+    for field_str in fields {
+        let parts: Vec<&str> = field_str.split(':').collect();
+        if parts.len() != 2 {
+            return Err(CliError::InvalidArgument {
+                name: "field",
+                message: format!(
+                    "invalid field format '{}'. Expected 'column_name:column_type'",
+                    field_str
+                ),
+            });
+        }
+
+        let column_name = parts[0].trim();
+        let type_str = parts[1].trim();
+
+        if column_name.is_empty() {
+            return Err(CliError::InvalidArgument {
+                name: "field",
+                message: "column name cannot be empty".to_string(),
+            });
+        }
+
+        let data_type = match type_str.to_lowercase().as_str() {
+            "int8" | "i8" => DataType::Int8,
+            "int16" | "i16" => DataType::Int16,
+            "int32" | "i32" => DataType::Int32,
+            "int64" | "i64" => DataType::Int64,
+            "uint8" | "u8" => DataType::UInt8,
+            "uint16" | "u16" => DataType::UInt16,
+            "uint32" | "u32" => DataType::UInt32,
+            "uint64" | "u64" => DataType::UInt64,
+            "float32" | "f32" => DataType::Float32,
+            "float64" | "f64" => DataType::Float64,
+            "string" | "utf8" => DataType::Utf8,
+            "bool" | "boolean" => DataType::Boolean,
+            "binary" => DataType::Binary,
+            _ => {
+                return Err(CliError::InvalidArgument {
+                    name: "field",
+                    message: format!(
+                        "unsupported type '{}'. Supported types: int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, string, bool, binary",
+                        type_str
+                    ),
+                });
+            }
+        };
+
+        let field_id = parsed_fields.len() as u64;
+        parsed_fields.push(Field::new(column_name, field_id, data_type, false));
+    }
+
+    Ok(parsed_fields)
+}
+
+fn print_tenant(tenant: &Tenant) {
+    println!("{}", tenant.name);
+}
+
+fn print_namespace(namespace: &Namespace) {
+    println!("{}", namespace.name);
+    println!("  flush interval: {:?}", namespace.flush_interval);
+    println!("  flush size: {}", namespace.flush_size);
+    println!("  object store: {}", namespace.object_store);
+    println!("  data lake: {}", namespace.data_lake);
+}
+
+fn print_table(table: &Table) {
+    println!("{}", table.name);
+    if let Some(field) = table.partition_field() {
+        println!("  partition key: {}", field.name);
+    }
+    println!("  fields:");
+    for field in table.schema().fields_iter() {
+        println!("  - {}: {}", field.name, field.data_type);
+    }
+
+    let Some(status) = &table.status else {
+        return;
+    };
+
+    println!("  status:");
+    println!("    num partitions: {}", status.num_partitions);
+    println!("    conditions:");
+    for condition in status.conditions.iter() {
+        let last_transition = UtcDateTime::from(condition.last_transition_time);
+        println!("    - Type: {}", condition.condition_type);
+        println!("      Last Transition Time: {}", last_transition);
+        println!("      Status: {:?}", condition.status);
+        println!("      Reason: {}", condition.reason);
+        println!("      Message: {}", condition.message);
+    }
+}

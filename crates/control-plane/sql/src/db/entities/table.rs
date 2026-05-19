@@ -1,0 +1,122 @@
+use std::collections::HashMap;
+
+use sea_orm::{DatabaseTransaction, entity::prelude::*};
+use snafu::ResultExt;
+use wings_resources::{CompactionConfiguration, NamespaceName, TenantName, Table, TableName};
+use wings_schema::{FieldRef, Fields, SchemaBuilder};
+
+use super::error::{Error, InvalidResourceNameSnafu};
+
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+#[sea_orm(table_name = "tables")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub tenant_id: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub namespace_id: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: String,
+    pub schema_fields: Json,
+    pub schema_metadata: Json,
+    pub partition_key: Option<u32>,
+    pub description: Option<String>,
+    pub compaction_freshness_ms: u32,
+    pub compaction_ttl_ms: Option<u32>,
+    pub compaction_target_file_size_bytes: u32,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+    #[sea_orm(has_one = "super::namespace::Entity")]
+    Namespace,
+    #[sea_orm(has_many = "super::partition_state::Entity")]
+    PartitionState,
+    #[sea_orm(has_many = "super::partition_location::Entity")]
+    PartitionLocation,
+}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+impl Related<super::namespace::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Namespace.def()
+    }
+}
+
+impl Related<super::partition_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PartitionState.def()
+    }
+}
+
+impl Related<super::partition_location::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PartitionLocation.def()
+    }
+}
+
+impl TryFrom<Model> for Table {
+    type Error = Error;
+
+    fn try_from(model: Model) -> Result<Self, Self::Error> {
+        let tenant_name = TenantName::new(model.tenant_id.clone())
+            .context(InvalidResourceNameSnafu { resource: "tenant" })?;
+        let namespace_name = NamespaceName::new(model.namespace_id.clone(), tenant_name.clone())
+            .context(InvalidResourceNameSnafu {
+                resource: "namespace",
+            })?;
+        let name = TableName::new(model.id, namespace_name)
+            .context(InvalidResourceNameSnafu { resource: "table" })?;
+
+        let fields: Vec<FieldRef> = serde_json::from_value(model.schema_fields)?;
+        let fields = Fields::from(fields);
+
+        let metadata: HashMap<String, String> = serde_json::from_value(model.schema_metadata)?;
+
+        let schema = SchemaBuilder::new(fields).with_metadata(metadata).build()?;
+
+        let partition_key = model.partition_key.map(|id| id as u64);
+
+        let compaction = {
+            let freshness = std::time::Duration::from_millis(model.compaction_freshness_ms as u64);
+            let ttl = model
+                .compaction_ttl_ms
+                .map(|ms| std::time::Duration::from_millis(ms as u64));
+            let target_file_size =
+                bytesize::ByteSize::b(model.compaction_target_file_size_bytes as u64);
+
+            CompactionConfiguration {
+                freshness,
+                ttl,
+                target_file_size,
+            }
+        };
+
+        Ok(Table {
+            name,
+            schema,
+            partition_key,
+            description: model.description,
+            compaction,
+            status: None,
+        })
+    }
+}
+
+pub async fn expect_exists(tx: &DatabaseTransaction, name: &TableName) -> Result<(), Error> {
+    let tenant_id = name.parent().parent().id().to_owned();
+    let namespace_id = name.parent().id().to_owned();
+    let id = name.id.to_owned();
+    let existing = Entity::find_by_id((tenant_id, namespace_id, id))
+        .one(tx)
+        .await?;
+
+    if existing.is_none() {
+        return Err(Error::NotFound {
+            resource: "table",
+            name: name.to_string(),
+        });
+    }
+
+    Ok(())
+}

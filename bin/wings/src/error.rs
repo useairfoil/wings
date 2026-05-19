@@ -1,0 +1,64 @@
+use std::net::AddrParseError;
+
+use axum::http::uri::InvalidUri;
+use snafu::Snafu;
+use wings_control_plane_core::cluster_metadata::ClusterMetadataError;
+use wings_observability::ObservabilityError;
+use wings_resources::{PartitionValueParseError, ResourceError};
+use wings_schema::SchemaError;
+
+/// CLI error types.
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum CliError {
+    #[snafu(display("Invalid {resource} name"))]
+    InvalidResourceName {
+        resource: &'static str,
+        source: ResourceError,
+    },
+    #[snafu(display("Failed cluster metadata operation {operation}"))]
+    ClusterMetadata {
+        operation: &'static str,
+        #[snafu(source(from(ClusterMetadataError, Box::new)))]
+        source: Box<ClusterMetadataError>,
+    },
+    #[snafu(display("Invalid {name} argument: {message}"))]
+    InvalidArgument { name: &'static str, message: String },
+    #[snafu(display("IO error"))]
+    Io { source: std::io::Error },
+    #[snafu(display("Invalid partition value"))]
+    InvalidPartitionValue,
+    #[snafu(display("Failed to parse partition value"))]
+    PartitionValueParse { source: PartitionValueParseError },
+    #[snafu(display("Invalid schema"))]
+    InvalidSchema { source: SchemaError },
+    #[snafu(display("Invalid timestamp format"))]
+    InvalidTimestampFormat { source: chrono::ParseError },
+    #[snafu(display("Invalid remote URL"))]
+    InvalidRemoteUrl { source: InvalidUri },
+    #[snafu(display("Invalid server URL"))]
+    InvalidServerUrl { source: AddrParseError },
+    #[snafu(display("Connection error"))]
+    Connection { source: tonic::transport::Error },
+    #[snafu(display("Tonic reflection error"))]
+    TonicReflection {
+        source: tonic_reflection::server::Error,
+    },
+    #[snafu(display("Tonic server error"))]
+    TonicServer { source: tonic::transport::Error },
+    #[snafu(display("Client error"))]
+    Client {
+        #[snafu(source(from(wings_client::ClientError, Box::new)))]
+        source: Box<wings_client::ClientError>,
+    },
+    #[snafu(display("Arrow error"))]
+    Arrow { source: arrow::error::ArrowError },
+    #[snafu(display("Flight error"))]
+    Flight {
+        source: arrow_flight::error::FlightError,
+    },
+    #[snafu(display("Failed to initialize observability"))]
+    Observability { source: ObservabilityError },
+}
+
+pub type Result<T, E = CliError> = std::result::Result<T, E>;
