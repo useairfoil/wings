@@ -5118,6 +5118,7 @@ dependencies = [
  "azure_core",
  "azure_identity",
  "azure_security_keyvault_secrets",
+ "dashmap",
  "reqwest 0.13.3",
  "snafu",
  "tokio",

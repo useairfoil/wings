@@ -1,4 +1,5 @@
 pub mod azure;
+pub mod memory;
 mod secret_id;
 
 use std::fmt::Debug;
