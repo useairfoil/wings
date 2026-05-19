@@ -3,8 +3,8 @@ pub mod name;
 mod namespace;
 mod object_store;
 mod partition;
-mod tenant;
 mod table;
+mod tenant;
 
 pub use self::{
     data_lake::{
@@ -18,9 +18,9 @@ pub use self::{
         ObjectStoreConfiguration, ObjectStoreName, ObjectStoreRef, S3CompatibleConfiguration,
     },
     partition::{PartitionValue, PartitionValueError, PartitionValueParseError},
-    tenant::{Tenant, TenantName, TenantRef},
     table::{
-        CompactionConfiguration, SEQNUM_COLUMN_NAME, PartitionPosition, TIMESTAMP_COLUMN_NAME,
+        CompactionConfiguration, PartitionPosition, SEQNUM_COLUMN_NAME, TIMESTAMP_COLUMN_NAME,
         Table, TableCondition, TableName, TableOptions, TableRef, TableStatus, validate_compaction,
     },
+    tenant::{Tenant, TenantName, TenantRef},
 };

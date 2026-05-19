@@ -11,6 +11,7 @@ members = [
     "crates/common/observability",
     "crates/common/resources",
     "crates/common/schema",
+    "crates/common/secret-manager",
 ]
 
 [profile.maxperf]
@@ -67,9 +68,9 @@ pin-project = "1.1.10"
 prost = "0.14.1"
 prost-types = "0.14.1"
 rand = "0.10"
-reqwest = { version = "0.11", features = [
+reqwest = { version = "0.13", features = [
     "json",
-    "rustls-tls",
+    "rustls",
 ], default-features = false }
 sea-orm = { version = "2.0.0-rc.37", features = ["sqlx-postgres", "sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-uuid", "with-json", "with-time"] }
 sea-orm-migration = "2.0.0-rc.37"
@@ -79,7 +80,7 @@ snafu = "0.8.0"
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.0"
 time = { version = "0.3.44", features = ["formatting", "local-offset"] }
-tokio = { version = "1.45.1", features = ["full", "rt-multi-thread", "test-util"] }
+tokio = { version = "1.52.3", features = ["full", "rt-multi-thread", "test-util"] }
 tokio-stream = "0.1.17"
 tokio-util = { version = "0.7.15", features = ["time"] }
 tonic = "0.14.2"
