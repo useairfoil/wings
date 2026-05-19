@@ -6,24 +6,11 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "2"
-default-members = ["bin/wings"]
+# default-members = ["bin/wings"]
 members = [
-    "crates/client",
-    "crates/control-plane/core",
-    "crates/control-plane/sql",
-    "crates/common/data-lake",
-    "crates/server/flight",
-    "crates/ingestor/core",
-    "crates/ingestor/http",
-    "crates/common/object-store",
     "crates/common/observability",
-    "crates/common/query",
     "crates/common/resources",
     "crates/common/schema",
-    "crates/server/core",
-    "crates/worker/core",
-    "bin/wings",
-    "bin/wings-stress",
 ]
 
 [profile.maxperf]
@@ -111,16 +98,9 @@ ulid = "1.2.1"
 url = "2.5.4"
 uuid = "1.19.0"
 wings-client = { path = "crates/client" }
-wings-control-plane-core = { path = "crates/control-plane/core" }
-wings-control-plane-sql = { path = "crates/control-plane/sql" }
 wings-data-lake = { path = "crates/common/data-lake" }
-wings-flight = { path = "crates/server/flight" }
-wings-ingestor-core = { path = "crates/ingestor/core" }
-wings-ingestor-http = { path = "crates/ingestor/http" }
 wings-object-store = { path = "crates/common/object-store" }
 wings-observability = { path = "crates/common/observability" }
 wings-query = { path = "crates/common/query" }
 wings-resources = { path = "crates/common/resources" }
 wings-schema = { path = "crates/common/schema" }
-wings-server-core = { path = "crates/server/core" }
-wings-worker = { path = "crates/worker/core" }
