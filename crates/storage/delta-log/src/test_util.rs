@@ -212,12 +212,16 @@ mod tests {
     fn test_pretty_format_partition_delta_log() {
         let table = test_table();
         let mut pv_log = PartitionDeltaLog::new(table, None);
-        pv_log.append(DeltaLog::Update(DeltaUpdate {
-            records: test_data(),
-        }));
-        pv_log.append(DeltaLog::Delete(DeltaDelete {
-            records: test_data(),
-        }));
+        pv_log
+            .append(DeltaLog::Update(DeltaUpdate {
+                records: test_data(),
+            }))
+            .unwrap();
+        pv_log
+            .append(DeltaLog::Delete(DeltaDelete {
+                records: test_data(),
+            }))
+            .unwrap();
 
         insta::assert_snapshot!(pretty_format_partition_delta_log(&pv_log).unwrap(), @r"
         ┌─────────────────────────────────────────┐
