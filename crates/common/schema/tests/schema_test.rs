@@ -130,6 +130,17 @@ fn test_schema_field_by_id() {
 }
 
 #[test]
+fn test_schema_root_field_by_id() {
+    let schema = nested_schema();
+
+    let root_field = schema.root_field_by_id(FIELD_ID_ADDRESS).unwrap();
+    assert_eq!(root_field.name(), "address");
+
+    assert!(schema.field_by_id(FIELD_ID_STREET).is_some());
+    assert!(schema.root_field_by_id(FIELD_ID_STREET).is_none());
+}
+
+#[test]
 fn test_schema_arrow_schema_conversion() {
     let fields = vec![
         test_field("name", 1, DataType::Utf8, false),

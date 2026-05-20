@@ -84,6 +84,10 @@ impl Schema {
         self.field_id_to_field.get(&id)
     }
 
+    pub fn root_field_by_id(&self, id: u64) -> Option<&Field> {
+        self.fields_iter().find(|field| field.id == id)
+    }
+
     pub fn arrow_schema(&self) -> ArrowSchema {
         let fields = self
             .fields
