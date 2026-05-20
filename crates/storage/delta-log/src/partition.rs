@@ -10,7 +10,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use snafu::{Snafu, ensure};
-use wings_resources::{PartitionValue, Table, TableRef};
+use wings_resources::{PartitionValue, Table, TableName, TableRef};
 use wings_schema::{Schema, SchemaBuilder, schema_without_partition_field};
 
 use crate::DeltaLog;
@@ -25,6 +25,20 @@ pub enum Error {
     },
     #[snafu(display("empty {operation} log"))]
     EmptyLog { operation: &'static str },
+    #[snafu(display(
+        "cannot merge delta log from a different table: expected {expected}, got {actual}"
+    ))]
+    TableMismatch {
+        expected: TableName,
+        actual: TableName,
+    },
+    #[snafu(display(
+        "cannot merge delta log from a different partition: expected {expected:?}, got {actual:?}"
+    ))]
+    PartitionValueMismatch {
+        expected: Option<PartitionValue>,
+        actual: Option<PartitionValue>,
+    },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -69,6 +83,27 @@ impl PartitionDeltaLog {
         );
 
         self.logs.push(log);
+
+        Ok(())
+    }
+
+    pub fn merge(&mut self, other: PartitionDeltaLog) -> Result<()> {
+        ensure!(
+            self.table.name == other.table.name,
+            TableMismatchSnafu {
+                expected: self.table.name.clone(),
+                actual: other.table.name.clone(),
+            }
+        );
+        ensure!(
+            self.partition_value == other.partition_value,
+            PartitionValueMismatchSnafu {
+                expected: self.partition_value.clone(),
+                actual: other.partition_value.clone(),
+            }
+        );
+
+        self.logs.extend(other.logs);
 
         Ok(())
     }
@@ -218,7 +253,7 @@ mod tests {
         array::{ArrayRef, StringArray, TimestampMillisecondArray},
         record_batch::RecordBatch,
     };
-    use wings_resources::{Table, TableName, TableOptions, TableRef};
+    use wings_resources::{PartitionValue, Table, TableName, TableOptions, TableRef};
     use wings_schema::{
         DataType, Field, Schema, SchemaBuilder, TimeUnit, schema_without_partition_field,
     };
@@ -245,6 +280,12 @@ mod tests {
 
     fn test_table() -> TableRef {
         let table_name = TableName::parse("namespaces/my-namespace/tables/my-table").unwrap();
+        let options = TableOptions::new(test_schema(), 0, 1).with_partition_field(Some(2));
+        Arc::new(Table::new(table_name, options).unwrap())
+    }
+
+    fn named_test_table(name: &str) -> TableRef {
+        let table_name = TableName::parse(name).unwrap();
         let options = TableOptions::new(test_schema(), 0, 1).with_partition_field(Some(2));
         Arc::new(Table::new(table_name, options).unwrap())
     }
@@ -405,6 +446,99 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(field_names, vec!["key", "update_at"]);
+    }
+
+    #[test]
+    fn merge_appends_logs_for_the_same_table_and_partition_value() {
+        let table = test_table();
+        let partition_value = Some(PartitionValue::String("partition-a".to_string()));
+
+        let mut left = PartitionDeltaLog::new(table.clone(), partition_value.clone());
+        left.append(DeltaLog::Update(DeltaUpdate {
+            records: update_records(&table, &[("a", "left-a", "api", 1_000)]),
+        }))
+        .unwrap();
+
+        let mut right = PartitionDeltaLog::new(table.clone(), partition_value);
+        right
+            .append(DeltaLog::Delete(DeltaDelete {
+                records: delete_records(&table, &[("b", 2_000)]),
+            }))
+            .unwrap();
+
+        insta::assert_snapshot!(pretty_format_partition_delta_log(&left).unwrap(), @r"
+        ┌─────────────────────────────────────────────────┐
+        │ namespaces/my-namespace/tables/my-table         │
+        │ partition-a                                     │
+        ├─────────────────────────────────────────────────┤
+        │ ┌─Δ update─────┬────────┬─────────────────────┐ │
+        │ │ key │ value  │ source │ update_at           │ │
+        │ ├─────┼────────┼────────┼─────────────────────┤ │
+        │ │ a   │ left-a │ api    │ 1970-01-01T00:00:01 │ │
+        │ └─────┴────────┴────────┴─────────────────────┘ │
+        └─────────────────────────────────────────────────┘
+        ");
+        insta::assert_snapshot!(pretty_format_partition_delta_log(&right).unwrap(), @r"
+        ┌─────────────────────────────────────────┐
+        │ namespaces/my-namespace/tables/my-table │
+        │ partition-a                             │
+        ├─────────────────────────────────────────┤
+        │ ┌─Δ delete──────────────────┐           │
+        │ │ key │ update_at           │           │
+        │ ├─────┼─────────────────────┤           │
+        │ │ b   │ 1970-01-01T00:00:02 │           │
+        │ └─────┴─────────────────────┘           │
+        └─────────────────────────────────────────┘
+        ");
+
+        left.merge(right).unwrap();
+
+        insta::assert_snapshot!(pretty_format_partition_delta_log(&left).unwrap(), @r"
+        ┌─────────────────────────────────────────────────┐
+        │ namespaces/my-namespace/tables/my-table         │
+        │ partition-a                                     │
+        ├─────────────────────────────────────────────────┤
+        │ ┌─Δ update─────┬────────┬─────────────────────┐ │
+        │ │ key │ value  │ source │ update_at           │ │
+        │ ├─────┼────────┼────────┼─────────────────────┤ │
+        │ │ a   │ left-a │ api    │ 1970-01-01T00:00:01 │ │
+        │ └─────┴────────┴────────┴─────────────────────┘ │
+        │ ┌─Δ delete──────────────────┐                   │
+        │ │ key │ update_at           │                   │
+        │ ├─────┼─────────────────────┤                   │
+        │ │ b   │ 1970-01-01T00:00:02 │                   │
+        │ └─────┴─────────────────────┘                   │
+        └─────────────────────────────────────────────────┘
+        ");
+    }
+
+    #[test]
+    fn merge_rejects_different_tables() {
+        let table = test_table();
+        let other_table = named_test_table("namespaces/my-namespace/tables/other-table");
+        let mut left = PartitionDeltaLog::new(table, None);
+        let right = PartitionDeltaLog::new(other_table, None);
+
+        let error = left.merge(right).unwrap_err();
+
+        assert!(matches!(error, Error::TableMismatch { .. }));
+    }
+
+    #[test]
+    fn merge_rejects_different_partition_values() {
+        let table = test_table();
+        let mut left = PartitionDeltaLog::new(
+            table.clone(),
+            Some(PartitionValue::String("partition-a".to_string())),
+        );
+        let right = PartitionDeltaLog::new(
+            table,
+            Some(PartitionValue::String("partition-b".to_string())),
+        );
+
+        let error = left.merge(right).unwrap_err();
+
+        assert!(matches!(error, Error::PartitionValueMismatch { .. }));
     }
 
     #[test]

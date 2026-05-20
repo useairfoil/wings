@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 arrow-cast.workspace = true
+bytes.workspace = true
 datafusion.workspace = true
 snafu.workspace = true
 tabled.workspace = true

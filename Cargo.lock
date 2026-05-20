@@ -5174,6 +5174,7 @@ name = "wings-delta-log"
 version = "0.1.0"
 dependencies = [
  "arrow-cast",
+ "bytes",
  "datafusion",
  "insta",
  "snafu",
