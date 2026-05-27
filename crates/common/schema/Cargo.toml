@@ -14,9 +14,14 @@ path = "src/lib.rs"
 datafusion.workspace = true
 deltalake-core.workspace = true
 parquet.workspace = true
+prost.workspace = true
 serde.workspace = true
 snafu.workspace = true
+tonic.workspace = true
 wings-observability.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true

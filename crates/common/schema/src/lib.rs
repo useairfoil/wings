@@ -20,6 +20,7 @@ mod data_type;
 mod datum;
 mod delta;
 pub mod error;
+pub mod pb;
 pub mod visitor;
 
 use std::{
