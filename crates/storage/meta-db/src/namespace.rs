@@ -24,6 +24,12 @@ pub struct NamespaceManifest {
     pub updated_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ListNamespaceNamesResult {
+    pub names: Vec<NamespaceName>,
+    pub next_page_token: Option<String>,
+}
+
 pub struct NamespaceStore {
     object_store: Arc<dyn DynObjectStore>,
     codec: Box<dyn ObjectCodec<NamespaceManifest>>,
@@ -122,6 +128,46 @@ impl NamespaceStore {
 
     pub async fn delete_namespace(&self, name: &NamespaceName) -> Result<()> {
         self.delete_manifest(name).await
+    }
+
+    pub async fn list_namespace_names(
+        &self,
+        page_size: Option<usize>,
+        page_token: Option<String>,
+    ) -> Result<ListNamespaceNamesResult> {
+        let prefix = Path::from("namespaces");
+        let page_size = page_size.unwrap_or(100).clamp(1, 1000);
+        let mut namespace_names = self
+            .object_store
+            .list_with_delimiter(Some(&prefix))
+            .await?
+            .common_prefixes
+            .into_iter()
+            .filter_map(|path| NamespaceName::parse(path.as_ref()).ok())
+            .collect::<Vec<_>>();
+
+        namespace_names.sort_by_key(|name| name.to_string());
+
+        let mut names: Vec<NamespaceName> = Vec::new();
+        let mut next_page_token = None;
+        for name in namespace_names {
+            let token = name.to_string();
+            if page_token.as_ref().is_some_and(|offset| token <= *offset) {
+                continue;
+            }
+
+            if names.len() == page_size {
+                next_page_token = names.last().map(|name| name.to_string());
+                break;
+            }
+
+            names.push(name);
+        }
+
+        Ok(ListNamespaceNamesResult {
+            names,
+            next_page_token,
+        })
     }
 
     pub async fn write_manifest(&self, manifest: &NamespaceManifest) -> Result<()> {
@@ -279,6 +325,65 @@ mod tests {
         let err = store.read_manifest(&manifest.name).await.unwrap_err();
 
         insta::assert_compact_debug_snapshot!(err, @r#"NotFound { path: "namespaces/test-namespace/manifest.json" }"#);
+    }
+
+    #[tokio::test]
+    async fn list_namespace_names_returns_namespace_folders_in_path_order() {
+        let object_store = Arc::new(InMemory::new());
+        let store = namespace_store(object_store.clone());
+
+        store
+            .write_manifest(&test_manifest("charlie"))
+            .await
+            .unwrap();
+        store.write_manifest(&test_manifest("alpha")).await.unwrap();
+        store.write_manifest(&test_manifest("bravo")).await.unwrap();
+        object_store
+            .put(
+                &Path::from("namespaces/not-a-namespace.json"),
+                PutPayload::from(Bytes::from_static(b"not a folder")),
+            )
+            .await
+            .unwrap();
+
+        let result = store.list_namespace_names(None, None).await.unwrap();
+        insta::assert_yaml_snapshot!(result, @r"
+        names:
+          - namespaces/alpha
+          - namespaces/bravo
+          - namespaces/charlie
+        next_page_token: ~
+        ");
+    }
+
+    #[tokio::test]
+    async fn list_namespace_names_paginates_with_next_page_token() {
+        let store = namespace_store(Arc::new(InMemory::new()));
+
+        store
+            .write_manifest(&test_manifest("charlie"))
+            .await
+            .unwrap();
+        store.write_manifest(&test_manifest("alpha")).await.unwrap();
+        store.write_manifest(&test_manifest("bravo")).await.unwrap();
+
+        let first_page = store.list_namespace_names(Some(2), None).await.unwrap();
+        insta::assert_yaml_snapshot!(first_page, @r"
+        names:
+          - namespaces/alpha
+          - namespaces/bravo
+        next_page_token: namespaces/bravo
+        ");
+
+        let second_page = store
+            .list_namespace_names(Some(2), first_page.next_page_token)
+            .await
+            .unwrap();
+        insta::assert_yaml_snapshot!(second_page, @r"
+        names:
+          - namespaces/charlie
+        next_page_token: ~
+        ");
     }
 
     #[tokio::test]

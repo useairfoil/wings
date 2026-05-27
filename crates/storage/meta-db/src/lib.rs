@@ -3,5 +3,5 @@ mod namespace;
 
 pub use self::{
     error::Error,
-    namespace::{NamespaceManifest, NamespaceStore},
+    namespace::{ListNamespaceNamesResult, NamespaceManifest, NamespaceStore},
 };
