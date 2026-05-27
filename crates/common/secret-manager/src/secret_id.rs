@@ -23,10 +23,6 @@ impl SecretId {
             raw: raw.to_string(),
         })
     }
-
-    pub fn to_string(&self) -> String {
-        self.raw.clone()
-    }
 }
 
 impl AsRef<str> for SecretId {
@@ -38,5 +34,24 @@ impl AsRef<str> for SecretId {
 impl std::fmt::Display for SecretId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.raw)
+    }
+}
+
+impl serde::ser::Serialize for SecretId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.raw)
+    }
+}
+
+impl<'de> serde::de::Deserialize<'de> for SecretId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::parse(&s).map_err(serde::de::Error::custom)
     }
 }

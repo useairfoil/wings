@@ -1,8 +1,6 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use bytesize::ByteSize;
-
-use crate::resource_type;
+use crate::{Lake, ObjectStore, resource_type};
 
 resource_type!(Namespace, "namespaces");
 
@@ -13,52 +11,29 @@ resource_type!(Namespace, "namespaces");
 pub struct Namespace {
     /// The namespace name.
     pub name: NamespaceName,
-    /// The size at which the current segment is flushed to object storage.
-    pub flush_size: ByteSize,
-    /// The maximum interval at which the current segment is flushed to object storage.
-    pub flush_interval: Duration,
+    /// The object store configuration.
+    pub object_store: ObjectStore,
+    /// The data lake configuration.
+    pub lake: Lake,
 }
 
 pub type NamespaceRef = Arc<Namespace>;
 
-impl Namespace {
-    /// Create a new namespace with the given name and options.
-    pub fn new(name: NamespaceName, options: NamespaceOptions) -> Self {
-        Self {
-            name,
-            flush_size: options.flush_size,
-            flush_interval: options.flush_interval,
-        }
-    }
-}
-
 /// Options for creating a namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamespaceOptions {
-    /// The size at which the current delta log is flushed to object storage.
-    pub flush_size: ByteSize,
-    /// The maximum interval at which the current delta log is flushed to object storage.
-    pub flush_interval: Duration,
+    /// The object store configuration.
+    pub object_store: ObjectStore,
+    /// The data lake configuration.
+    pub lake: Lake,
 }
 
-impl NamespaceOptions {
-    /// Create new namespace options with the given configurations.
-    pub fn new() -> Self {
+impl Namespace {
+    pub fn into_redacted(self) -> Self {
         Self {
-            flush_size: ByteSize::mb(8),
-            flush_interval: Duration::from_millis(250),
+            name: self.name,
+            object_store: self.object_store.into_redacted(),
+            lake: self.lake.into_redacted(),
         }
-    }
-
-    /// Change the flush size for the namespace.
-    pub fn with_flush_size(mut self, flush_size: ByteSize) -> Self {
-        self.flush_size = flush_size;
-        self
-    }
-
-    /// Change the flush interval for the namespace.
-    pub fn with_flush_interval(mut self, flush_interval: Duration) -> Self {
-        self.flush_interval = flush_interval;
-        self
     }
 }

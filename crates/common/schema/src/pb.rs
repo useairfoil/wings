@@ -42,9 +42,8 @@ pub use self::inner::*;
 mod conversion {
     use std::sync::Arc;
 
-    use crate::{DataType, Datum, Field, FieldRef, Schema, SchemaBuilder, TimeUnit};
-
     use super::{Result, WireError, inner};
+    use crate::{DataType, Datum, Field, FieldRef, Schema, SchemaBuilder, TimeUnit};
 
     impl From<&Schema> for inner::Schema {
         fn from(value: &Schema) -> Self {

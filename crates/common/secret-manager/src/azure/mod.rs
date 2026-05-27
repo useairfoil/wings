@@ -2,6 +2,7 @@ mod builder;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use azure_security_keyvault_secrets::{SecretClient, models::SetSecretParameters};
 
 pub use self::builder::AzureKeyVaultBuilder;
@@ -16,6 +17,7 @@ pub struct AzureKeyVault {
     client: Arc<SecretClient>,
 }
 
+#[async_trait]
 impl SecretManager for AzureKeyVault {
     async fn get_secret(&self, id: &SecretId) -> Result<GetResult> {
         let secret = self

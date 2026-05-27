@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use dashmap::DashMap;
 
 use crate::{GetResult, Result, SecretId, SecretManager};
@@ -15,6 +16,7 @@ impl MemorySecretManager {
     }
 }
 
+#[async_trait]
 impl SecretManager for MemorySecretManager {
     async fn get_secret(&self, id: &SecretId) -> Result<GetResult> {
         let value = self

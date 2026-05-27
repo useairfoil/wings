@@ -1,13 +1,17 @@
 use wings_secret_manager::{Error, SecretId, SecretManager, azure::AzureKeyVaultBuilder};
 
-fn get_test_vault_name() -> String {
-    std::env::var("TEST_AZURE_VAULT_NAME").expect("TEST_AZURE_VAULT_NAME must be set")
+fn get_test_vault_name() -> Option<String> {
+    std::env::var("TEST_AZURE_VAULT_NAME").ok()
 }
 
 #[tokio::test]
 async fn test_azure_key_vault() {
+    let Some(vault_name) = get_test_vault_name() else {
+        return;
+    };
+
     let azure = AzureKeyVaultBuilder::new()
-        .with_vault_name(get_test_vault_name())
+        .with_vault_name(vault_name)
         .build()
         .unwrap();
 

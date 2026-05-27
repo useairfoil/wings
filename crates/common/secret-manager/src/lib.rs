@@ -1,28 +1,27 @@
 pub mod azure;
 pub mod memory;
 mod secret_id;
+mod typed;
 
 use std::fmt::Debug;
 
+use async_trait::async_trait;
 use snafu::Snafu;
 
-pub use self::secret_id::SecretId;
+pub use self::{secret_id::SecretId, typed::TypedSecretManager};
 
 pub struct GetResult {
     /// The secret value.
     pub value: String,
 }
 
+#[async_trait]
 pub trait SecretManager: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static {
-    fn get_secret(&self, id: &SecretId) -> impl Future<Output = Result<GetResult>> + Send;
+    async fn get_secret(&self, id: &SecretId) -> Result<GetResult>;
 
-    fn create_secret(
-        &self,
-        id: &SecretId,
-        value: String,
-    ) -> impl Future<Output = Result<()>> + Send;
+    async fn create_secret(&self, id: &SecretId, value: String) -> Result<()>;
 
-    fn delete_secret(&self, id: &SecretId) -> impl Future<Output = Result<()>> + Send;
+    async fn delete_secret(&self, id: &SecretId) -> Result<()>;
 }
 
 #[derive(Debug, Snafu)]
@@ -43,6 +42,18 @@ pub enum Error {
     Unauthorized {
         secret_id: String,
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+
+    #[snafu(display("Could not serialize secret {secret_id}: {source}"))]
+    Serialize {
+        secret_id: String,
+        source: serde_json::Error,
+    },
+
+    #[snafu(display("Could not deserialize secret {secret_id}: {source}"))]
+    Deserialize {
+        secret_id: String,
+        source: serde_json::Error,
     },
 }
 
