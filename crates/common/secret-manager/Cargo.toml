@@ -16,10 +16,13 @@ azure_core = "1.0.0"
 azure_identity = { version = "1.0.0", features = ["tokio"] }
 azure_security_keyvault_secrets = "1.0.0"
 dashmap.workspace = true
+object_store.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

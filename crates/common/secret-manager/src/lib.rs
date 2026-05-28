@@ -1,5 +1,6 @@
 pub mod azure;
 pub mod memory;
+pub mod object_storage;
 mod secret_id;
 mod typed;
 
@@ -8,7 +9,10 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use snafu::Snafu;
 
-pub use self::{secret_id::SecretId, typed::TypedSecretManager};
+pub use self::{
+    object_storage::UnsecureObjectStorageSecretManager, secret_id::SecretId,
+    typed::TypedSecretManager,
+};
 
 pub struct GetResult {
     /// The secret value.

@@ -5418,11 +5418,13 @@ dependencies = [
  "azure_security_keyvault_secrets",
  "dashmap",
  "insta",
+ "object_store",
  "reqwest 0.13.3",
  "serde",
  "serde_json",
  "snafu",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
