@@ -203,6 +203,7 @@
 
             buildInputs = [
               pkgs.cargo-insta
+              pkgs.just
             ];
           };
 
