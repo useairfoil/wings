@@ -5426,7 +5426,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wings-server-core"
+name = "wings-server-cluster"
 version = "0.1.0"
 dependencies = [
  "prost",

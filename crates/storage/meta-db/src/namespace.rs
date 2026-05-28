@@ -30,9 +30,10 @@ pub struct ListNamespaceNamesResult {
     pub next_page_token: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct NamespaceStore {
     object_store: Arc<dyn DynObjectStore>,
-    codec: Box<dyn ObjectCodec<NamespaceManifest>>,
+    codec: Arc<dyn ObjectCodec<NamespaceManifest>>,
 }
 
 struct NamespaceManifestJsonCodec;
@@ -57,7 +58,7 @@ impl NamespaceStore {
     pub fn new(object_store: Arc<dyn DynObjectStore>) -> Self {
         Self {
             object_store,
-            codec: Box::new(NamespaceManifestJsonCodec),
+            codec: Arc::new(NamespaceManifestJsonCodec),
         }
     }
 

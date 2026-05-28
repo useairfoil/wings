@@ -12,7 +12,7 @@ members = [
     "crates/common/resources",
     "crates/common/schema",
     "crates/common/secret-manager",
-    "crates/server/core",
+    "crates/server/cluster",
     "crates/storage/delta-log",
     "crates/storage/meta-db",
 ]
