@@ -33,6 +33,7 @@ pub struct ListNamespaceNamesResult {
 #[derive(Clone)]
 pub struct NamespaceStore {
     object_store: Arc<dyn ObjectStore>,
+    secret_manager: Arc<dyn SecretManager>,
     codec: Arc<dyn ObjectCodec<NamespaceManifest>>,
     clock: Arc<dyn Clock>,
     rng: Arc<ThreadRng>,
@@ -57,9 +58,14 @@ impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
 }
 
 impl NamespaceStore {
-    pub fn new(object_store: Arc<dyn ObjectStore>, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(
+        object_store: Arc<dyn ObjectStore>,
+        secret_manager: Arc<dyn SecretManager>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
             object_store,
+            secret_manager,
             codec: Arc::new(NamespaceManifestJsonCodec),
             clock,
             rng: Arc::new(ThreadRng::default()),
@@ -68,13 +74,13 @@ impl NamespaceStore {
 
     pub async fn create_namespace(
         &self,
-        secret_manager: Arc<dyn SecretManager>,
         name: NamespaceName,
         options: NamespaceOptions,
     ) -> Result<()> {
         let object_store_secrets =
-            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone());
-        let lake_secrets = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager);
+            TypedSecretManager::<ObjectStoreConfiguration>::new(self.secret_manager.clone());
+        let lake_secrets =
+            TypedSecretManager::<DataLakeConfiguration>::new(self.secret_manager.clone());
         let (object_store_secret_id, lake_secret_id) = {
             let mut rng = self.rng.rng();
             (
@@ -116,17 +122,13 @@ impl NamespaceStore {
         Ok(())
     }
 
-    pub async fn get_namespace(
-        &self,
-        secret_manager: Arc<dyn SecretManager>,
-        name: &NamespaceName,
-    ) -> Result<Namespace> {
+    pub async fn get_namespace(&self, name: &NamespaceName) -> Result<Namespace> {
         let manifest = self.read_manifest(name).await?;
         let object_store =
-            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone())
+            TypedSecretManager::<ObjectStoreConfiguration>::new(self.secret_manager.clone())
                 .get_secret(&manifest.object_store_secret_id)
                 .await?;
-        let lake = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager)
+        let lake = TypedSecretManager::<DataLakeConfiguration>::new(self.secret_manager.clone())
             .get_secret(&manifest.lake_secret_id)
             .await?;
 
@@ -253,6 +255,7 @@ mod tests {
     fn namespace_store(object_store: Arc<dyn ObjectStore>) -> NamespaceStore {
         NamespaceStore {
             object_store,
+            secret_manager: Arc::new(MemorySecretManager::new()),
             codec: Arc::new(NamespaceManifestJsonCodec),
             clock: Arc::new(MockClock::with_time(1_700_000_000_000)),
             rng: Arc::new(ThreadRng::new(42)),
@@ -287,12 +290,11 @@ mod tests {
     #[tokio::test]
     async fn create_namespace_stores_manifest_and_secrets() {
         let store = namespace_store(Arc::new(InMemory::new()));
-        let secret_manager = Arc::new(MemorySecretManager::new());
         let name = NamespaceName::new("test-namespace").unwrap();
         let options = test_options();
 
         store
-            .create_namespace(secret_manager.clone(), name.clone(), options.clone())
+            .create_namespace(name.clone(), options.clone())
             .await
             .unwrap();
 
@@ -309,16 +311,15 @@ mod tests {
     #[tokio::test]
     async fn get_namespace_reads_manifest_and_secrets() {
         let store = namespace_store(Arc::new(InMemory::new()));
-        let secret_manager = Arc::new(MemorySecretManager::new());
         let name = NamespaceName::new("test-namespace").unwrap();
         let options = test_options();
 
         store
-            .create_namespace(secret_manager.clone(), name.clone(), options.clone())
+            .create_namespace(name.clone(), options.clone())
             .await
             .unwrap();
 
-        let namespace = store.get_namespace(secret_manager, &name).await.unwrap();
+        let namespace = store.get_namespace(&name).await.unwrap();
 
         insta::assert_yaml_snapshot!(namespace, @r#"
         name: namespaces/test-namespace

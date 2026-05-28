@@ -21,7 +21,6 @@ wings-meta-db.workspace = true
 wings-observability.workspace = true
 wings-resources.workspace = true
 wings-schema.workspace = true
-wings-secret-manager.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true

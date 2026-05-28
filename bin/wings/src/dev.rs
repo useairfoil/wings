@@ -61,7 +61,8 @@ impl DevArgs {
                 .await
                 .context(SecretManagerSnafu {})?,
         );
-        let namespace_store = NamespaceStore::new(cluster_object_store.object_store(), clock);
+        let namespace_store =
+            NamespaceStore::new(cluster_object_store.object_store(), secret_manager, clock);
         let grpc_address = self
             .grpc_address
             .parse::<SocketAddr>()
@@ -69,7 +70,7 @@ impl DevArgs {
 
         info!(address = %grpc_address, "Starting gRPC server");
 
-        run_grpc_server(namespace_store, secret_manager, grpc_address, ct).await
+        run_grpc_server(namespace_store, grpc_address, ct).await
     }
 }
 
@@ -81,7 +82,6 @@ impl ClusterObjectStore {
 
 async fn run_grpc_server(
     namespace_store: NamespaceStore,
-    secret_manager: Arc<dyn SecretManager>,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
@@ -92,7 +92,7 @@ async fn run_grpc_server(
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let cluster_service = ClusterService::new(namespace_store, secret_manager).into_tonic_server();
+    let cluster_service = ClusterService::new(namespace_store).into_tonic_server();
 
     tonic::transport::Server::builder()
         .add_service(reflection_service)

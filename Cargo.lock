@@ -5616,7 +5616,6 @@ dependencies = [
  "wings-observability",
  "wings-resources",
  "wings-schema",
- "wings-secret-manager",
 ]
 
 [[package]]

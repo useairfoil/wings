@@ -42,7 +42,7 @@ pub use self::{
 };
 use crate::visitor::visit_field;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Schema {
     pub fields: Fields,
     pub metadata: HashMap<String, String>,

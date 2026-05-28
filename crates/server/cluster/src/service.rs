@@ -1,23 +1,16 @@
-use std::sync::Arc;
-
 use tonic::{Request, Response, Status};
 use wings_meta_db::NamespaceStore;
 use wings_resources::{Namespace, NamespaceName, NamespaceOptions};
-use wings_secret_manager::SecretManager;
 
 use crate::pb;
 
 pub struct ClusterService {
     namespace_store: NamespaceStore,
-    secret_manager: Arc<dyn SecretManager>,
 }
 
 impl ClusterService {
-    pub fn new(namespace_store: NamespaceStore, secret_manager: Arc<dyn SecretManager>) -> Self {
-        Self {
-            namespace_store,
-            secret_manager,
-        }
+    pub fn new(namespace_store: NamespaceStore) -> Self {
+        Self { namespace_store }
     }
 
     pub fn into_tonic_server(self) -> pb::cluster_service_server::ClusterServiceServer<Self> {
@@ -46,7 +39,7 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
         };
 
         self.namespace_store
-            .create_namespace(self.secret_manager.clone(), name, options)
+            .create_namespace(name, options)
             .await
             .map_err(meta_db_status)?;
 
@@ -67,7 +60,7 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
         let name = NamespaceName::parse(&request.into_inner().name).map_err(invalid_request)?;
         let namespace = self
             .namespace_store
-            .get_namespace(self.secret_manager.clone(), &name)
+            .get_namespace(&name)
             .await
             .map_err(meta_db_status)?;
 
