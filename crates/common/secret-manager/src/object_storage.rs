@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use object_store::{
-    ObjectStore as DynObjectStore, PutMode, PutOptions, PutPayload, UpdateVersion, path::Path,
+    ObjectStore as DynObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, UpdateVersion,
+    path::Path,
 };
 use tokio::sync::Mutex;
 use tracing::warn;

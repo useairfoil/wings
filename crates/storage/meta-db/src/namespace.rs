@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use object_store::{ObjectStore, PutMode, PutOptions, PutPayload, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, path::Path};
 use serde::{Deserialize, Serialize};
-use slatedb_txn_obj::ObjectCodec;
 use time::OffsetDateTime;
 use wings_dst_base::{Clock, IdGenerator, ThreadRng};
 use wings_resources::{
     DataLakeConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
 };
 use wings_secret_manager::{SecretId, SecretManager, TypedSecretManager};
+use wings_txn_obj::ObjectCodec;
 
 use crate::error::{AlreadyExistsSnafu, DecodeSnafu, NotFoundSnafu, Result};
 
