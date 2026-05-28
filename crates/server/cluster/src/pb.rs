@@ -4,6 +4,12 @@ mod inner {
     tonic::include_proto!("wings.cluster");
 }
 
+const CLUSTER_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("wings_cluster");
+
+pub fn cluster_file_descriptor_set() -> &'static [u8] {
+    CLUSTER_DESCRIPTOR_SET
+}
+
 #[derive(Debug, Snafu)]
 pub enum WireError {
     #[snafu(display("missing field: {field_name}"))]

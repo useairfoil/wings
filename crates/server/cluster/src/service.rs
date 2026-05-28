@@ -19,6 +19,10 @@ impl ClusterService {
             secret_manager,
         }
     }
+
+    pub fn into_tonic_server(self) -> pb::cluster_service_server::ClusterServiceServer<Self> {
+        pb::cluster_service_server::ClusterServiceServer::new(self)
+    }
 }
 
 #[tonic::async_trait]

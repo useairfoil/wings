@@ -8,6 +8,7 @@ license = "Apache-2.0"
 resolver = "2"
 # default-members = ["bin/wings"]
 members = [
+    "bin/wings",
     "crates/common/observability",
     "crates/common/resources",
     "crates/common/schema",
@@ -111,3 +112,4 @@ wings-query = { path = "crates/common/query" }
 wings-resources = { path = "crates/common/resources" }
 wings-schema = { path = "crates/common/schema" }
 wings-secret-manager = { path = "crates/common/secret-manager" }
+wings-server-cluster = { path = "crates/server/cluster" }

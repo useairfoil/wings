@@ -1,465 +1,151 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
-use axum::Router;
-use clap::{Args, ValueEnum};
-use sea_orm::ConnectOptions;
+use clap::Args;
+use object_store::{
+    ObjectStore as DynObjectStore, aws::AmazonS3Builder, azure::MicrosoftAzureBuilder,
+    gcp::GoogleCloudStorageBuilder,
+};
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use wings_control_plane_core::{
-    cluster_metadata::{
-        ClusterMetadata,
-        cache::{NamespaceCache, TableCache},
-        tonic::ClusterMetadataServer,
-    },
-    table_metadata::tonic::TableMetadataServer,
-};
-use wings_control_plane_sql::{Database, SqlControlPlane};
-use wings_flight::WingsFlightSqlServer;
-use wings_ingestor_core::{Ingestor, IngestorClient};
-use wings_ingestor_http::HttpIngestor;
-use wings_object_store::{
-    CloudObjectStoreFactory, LocalFileSystemFactory, ObjectStoreFactory, TemporaryFileSystemFactory,
-};
-use wings_observability::MetricsExporter;
-use wings_resources::{
-    DataLakeConfiguration, DataLakeName, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
-    ObjectStoreName, S3CompatibleConfiguration, TenantName,
-};
-use wings_server_core::query::NamespaceProviderFactory;
-use wings_worker::{WorkerPool, WorkerPoolOptions, run_worker_pool};
+use wings_meta_db::NamespaceStore;
+use wings_secret_manager::{SecretManager, UnsecureObjectStorageSecretManager};
+use wings_server_cluster::ClusterService;
 
 use crate::error::{
-    InvalidServerUrlSnafu, IoSnafu, Result, TonicReflectionSnafu, TonicServerSnafu,
+    InvalidGrpcAddressSnafu, ObjectStoreSnafu, Result, SecretManagerSnafu, TonicReflectionSnafu,
+    TonicServerSnafu,
 };
+
+const AWS_ACCESS_KEY_ID_ENV: &str = "AWS_ACCESS_KEY_ID";
+const AWS_SECRET_ACCESS_KEY_ENV: &str = "AWS_SECRET_ACCESS_KEY";
+const SEAWEEDFS_ENDPOINT: &str = "http://localhost:8333";
+const SEAWEEDFS_BUCKET: &str = "default-bucket";
+const SEAWEEDFS_REGION: &str = "us-east-1";
+const SEAWEEDFS_ACCESS_KEY_ID: &str = "wingsdevaccesskey";
+const SEAWEEDFS_SECRET_ACCESS_KEY: &str = "wingsdevsecretkey";
 
 #[derive(Debug, Args)]
 pub struct DevArgs {
-    /// The address of the gRPC metadata server.
-    #[arg(
-        long("metadata.address"),
-        default_value = "127.0.0.1:7777",
-        env = "WINGS_METADATA_ADDRESS"
-    )]
-    metadata_address: String,
-    /// The address of the HTTP ingestor server.
-    #[arg(
-        long("http.address"),
-        default_value = "127.0.0.1:7780",
-        env = "WINGS_HTTP_ADDRESS"
-    )]
-    http_address: String,
-    /// Connection string for the metadata database.
-    #[arg(
-        long("db.connection-string"),
-        default_value = "sqlite::memory:",
-        env = "WINGS_DB_CONNECTION_STRING"
-    )]
-    db_connection_string: String,
-    /// Log SQL statements executed by the database.
-    #[arg(
-        long("db.log-statement"),
-        default_value = "false",
-        env = "WINGS_DB_LOG_STATEMENT"
-    )]
-    db_log_statement: bool,
-    /// The type of object store to use.
-    #[arg(long, default_value = "temp", env = "WINGS_OBJECT_STORE")]
-    object_store: ObjectStoreType,
-    /// The root path to use for local object storage.
-    #[arg(
-        long("object-store.local-path"),
-        required_if_eq("object_store", "local"),
-        env = "WINGS_OBJECT_STORE_LOCAL_PATH"
-    )]
-    object_store_local_path: Option<String>,
-    /// The S3 bucket to use for cloud object storage.
-    ///
-    /// This value is used to create the object store for the default tenant.
-    #[arg(
-        long("default.object-store.cloud-bucket"),
-        required_if_eq("object_store", "cloud"),
-        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_BUCKET"
-    )]
-    default_object_store_cloud_bucket: Option<String>,
-    /// The S3 access key ID to use for cloud object storage.
-    ///
-    /// This value is used to create the object store for the default tenant.
-    #[arg(
-        long("default.object-store.cloud-access-key-id"),
-        required_if_eq("object_store", "cloud"),
-        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_ACCESS_KEY_ID"
-    )]
-    default_object_store_cloud_access_key_id: Option<String>,
-    /// The S3 secret access key ID to use for cloud object storage.
-    ///
-    /// This value is used to create the object store for the default tenant.
-    #[arg(
-        long("default.object-store.cloud-secret-access-key-id"),
-        required_if_eq("object_store", "cloud"),
-        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_SECRET_ACCESS_KEY_ID"
-    )]
-    default_object_store_cloud_secret_access_key_id: Option<String>,
-    /// The S3 endpoint to use for cloud object storage.
-    ///
-    /// This value is used to create the object store for the default tenant.
-    #[arg(
-        long("default.object-store.cloud-endpoint"),
-        default_value = "http://localhost:9000",
-        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_ENDPOINT"
-    )]
-    default_object_store_cloud_endpoint: String,
-    /// The S3 prefix to use for the default object store.
-    #[arg(
-        long("default.object-store.cloud-prefix"),
-        env = "WINGS_DEFAULT_OBJECT_STORE_CLOUD_PREFIX"
-    )]
-    default_object_store_cloud_prefix: Option<String>,
-    /// The data lake for the default namespace.
-    #[arg(long, default_value = "parquet", env = "WINGS_DEFAULT_DATA_LAKE")]
-    default_data_lake: DataLakeType,
+    /// The address of the gRPC server.
+    #[arg(long = "grpc.address", default_value = "127.0.0.1:7253")]
+    grpc_address: String,
+    #[command(flatten)]
+    object_store: ObjectStoreArgs,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub enum ObjectStoreType {
-    /// Use a temporary directory for object storage.
-    #[default]
-    #[clap(name = "temp")]
-    Temporary,
-    /// Use a local directory for object storage.
-    #[clap(name = "local")]
-    Local,
-    /// Use a cloud object store for object storage.
-    ///
-    /// By default, the endpoint is set to `http://localhost:9000` for use with RustFS and MinIO.
-    #[clap(name = "cloud")]
-    Cloud,
+#[derive(Debug, Args)]
+struct ObjectStoreArgs {
+    /// The type of object store to use for cluster metadata.
+    #[arg(long = "object-store.type", default_value = "aws")]
+    object_store_type: ObjectStoreType,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub enum DataLakeType {
-    /// Store files as plain Parquet files.
-    #[default]
-    #[clap(name = "parquet")]
-    Parquet,
-    /// Store files in an Iceberg table.
-    #[clap(name = "iceberg")]
-    Iceberg,
-    /// Store files in a Delta table.
-    #[clap(name = "delta")]
-    Delta,
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum ObjectStoreType {
+    Aws,
+    Gcp,
+    Azure,
+}
+
+struct ClusterObjectStore {
+    object_store: Arc<dyn DynObjectStore>,
 }
 
 impl DevArgs {
-    pub async fn run(self, metrics_exporter: MetricsExporter, ct: CancellationToken) -> Result<()> {
-        let (control_plane, default_tenant) =
-            new_sql_control_plane(&self.db_connection_string, self.db_log_statement).await;
-
-        let (object_store_factory, default_object_store) = self
-            .new_object_store_factory(control_plane.clone(), &default_tenant)
-            .await;
-
-        let default_data_lake = self
-            .new_data_lake(control_plane.as_ref(), &default_tenant)
-            .await;
-        let default_namespace = self
-            .new_namespace(
-                control_plane.as_ref(),
-                &default_tenant,
-                &default_object_store,
-                &default_data_lake,
-            )
-            .await;
-
-        let metadata_address = self
-            .metadata_address
+    pub async fn run(self, ct: CancellationToken) -> Result<()> {
+        let cluster_object_store = self.object_store.create_object_store()?;
+        let secret_manager: Arc<dyn SecretManager> = Arc::new(
+            UnsecureObjectStorageSecretManager::new(cluster_object_store.object_store())
+                .await
+                .context(SecretManagerSnafu {})?,
+        );
+        let namespace_store = NamespaceStore::new(cluster_object_store.object_store());
+        let grpc_address = self
+            .grpc_address
             .parse::<SocketAddr>()
-            .context(InvalidServerUrlSnafu {})?;
+            .context(InvalidGrpcAddressSnafu {})?;
 
-        let http_address = self
-            .http_address
-            .parse::<SocketAddr>()
-            .context(InvalidServerUrlSnafu {})?;
+        info!(address = %grpc_address, "Starting gRPC server");
 
-        info!("Starting Wings in development mode");
-        info!("gRPC server listening on {}", metadata_address);
-        info!("HTTP ingestor listening on {}", http_address);
-        info!("Default tenant: {}", default_tenant);
-        info!("Default namespace: {}", default_namespace);
-        info!("Default object store: {}", default_object_store);
-        info!("Default data lake: {}", default_data_lake);
-        info!(
-            "You can create new tenants, namespaces, object stores, data lakes, and tables using the CLI"
-        );
-
-        let _ct_guard = ct.child_token().drop_guard();
-
-        let namespace_provider_factory = NamespaceProviderFactory::new(
-            control_plane.clone(),
-            control_plane.clone(),
-            metrics_exporter.clone(),
-            object_store_factory.clone(),
-        );
-
-        let ingestor = Ingestor::new(object_store_factory.clone(), control_plane.clone());
-        let worker_pool = {
-            let table_cache = TableCache::new(control_plane.clone());
-            let namespace_cache = NamespaceCache::new(control_plane.clone());
-            WorkerPool::new(
-                table_cache,
-                namespace_cache,
-                control_plane.clone(),
-                control_plane.clone(),
-                object_store_factory.clone(),
-                namespace_provider_factory.clone(),
-                WorkerPoolOptions::default(),
-            )
-        };
-
-        let grpc_server_fut = run_grpc_server(
-            control_plane.clone(),
-            namespace_provider_factory,
-            ingestor.client(),
-            metadata_address,
-            ct.clone(),
-        );
-
-        let http_ingestor_fut =
-            run_http_server(control_plane, ingestor.client(), http_address, ct.clone());
-
-        let ingestor_fut = ingestor.run(ct.clone());
-        let worker_pool_fut = run_worker_pool(worker_pool, ct);
-
-        tokio::select! {
-            res = grpc_server_fut => {
-                info!("gRPC server exited with {:?}", res);
-            },
-            res = http_ingestor_fut => {
-                info!("HTTP ingestor server exited with {:?}", res);
-            },
-            res = ingestor_fut => {
-                info!("Background ingestor exited with {:?}", res);
-            },
-            res = worker_pool_fut => {
-                info!("Worker pool exited with {:?}", res);
-            },
-        }
-
-        Ok(())
-    }
-
-    async fn new_object_store_factory<C: ClusterMetadata + 'static>(
-        &self,
-        control_plane: Arc<C>,
-        tenant: &TenantName,
-    ) -> (Arc<dyn ObjectStoreFactory>, ObjectStoreName) {
-        let object_store_name = ObjectStoreName::new_unchecked("default", tenant.clone());
-
-        let backend: Arc<dyn ObjectStoreFactory> = match self.object_store {
-            ObjectStoreType::Temporary => {
-                let factory = TemporaryFileSystemFactory::new(control_plane.clone())
-                    .expect("TemporaryFileSystemFactory");
-                info!(
-                    "Using temporary directory for object store: {:?}",
-                    factory.root_path()
-                );
-                Arc::new(factory)
-            }
-            ObjectStoreType::Local => {
-                let path = self
-                    .object_store_local_path
-                    .clone()
-                    .expect("object-store.local-path");
-                let path: PathBuf = path.parse().expect("failed to parse path");
-                let factory = LocalFileSystemFactory::new(path, control_plane.clone())
-                    .expect("LocalFileSystemFactory");
-                info!(
-                    "Using directory for object store: {:?}",
-                    factory.root_path()
-                );
-                Arc::new(factory)
-            }
-            ObjectStoreType::Cloud => {
-                let factory = CloudObjectStoreFactory::new(control_plane.clone());
-                info!("Using cloud object store",);
-                Arc::new(factory)
-            }
-        };
-
-        let aws_config = S3CompatibleConfiguration {
-            bucket_name: self
-                .default_object_store_cloud_bucket
-                .clone()
-                .unwrap_or_else(|| "wings-root".to_string()),
-            access_key_id: self
-                .default_object_store_cloud_access_key_id
-                .clone()
-                .unwrap_or_default(),
-            secret_access_key: self
-                .default_object_store_cloud_secret_access_key_id
-                .clone()
-                .unwrap_or_default(),
-            endpoint: self.default_object_store_cloud_endpoint.clone(),
-            prefix: self.default_object_store_cloud_prefix.clone(),
-            allow_http: true,
-            region: None,
-        };
-
-        control_plane
-            .create_object_store(
-                object_store_name.clone(),
-                ObjectStoreConfiguration::S3Compatible(aws_config),
-            )
-            .await
-            .expect("failed to create default aws s3 object store");
-
-        (backend, object_store_name)
-    }
-
-    async fn new_data_lake<C: ClusterMetadata>(
-        &self,
-        control_plane: C,
-        tenant: &TenantName,
-    ) -> DataLakeName {
-        info!(
-            "Creating default data lake of type {}",
-            self.default_data_lake
-        );
-        let data_lake_name = DataLakeName::new_unchecked("default", tenant.clone());
-        let data_lake_options = match self.default_data_lake {
-            DataLakeType::Parquet => DataLakeConfiguration::Parquet(Default::default()),
-            DataLakeType::Iceberg => todo!(),
-            DataLakeType::Delta => DataLakeConfiguration::Delta(Default::default()),
-        };
-
-        control_plane
-            .create_data_lake(data_lake_name.clone(), data_lake_options)
-            .await
-            .expect("failed to create default data lake");
-
-        data_lake_name
-    }
-
-    async fn new_namespace<C: ClusterMetadata>(
-        &self,
-        control_plane: C,
-        tenant: &TenantName,
-        object_store: &ObjectStoreName,
-        data_lake: &DataLakeName,
-    ) -> NamespaceName {
-        let namespace_name = NamespaceName::new_unchecked("default", tenant.clone());
-        let default_namespace_options =
-            NamespaceOptions::new(object_store.clone(), data_lake.clone());
-
-        control_plane
-            .create_namespace(namespace_name.clone(), default_namespace_options)
-            .await
-            .expect("failed to create default namespace");
-
-        namespace_name
+        run_grpc_server(namespace_store, secret_manager, grpc_address, ct).await
     }
 }
 
-async fn new_sql_control_plane(
-    connection_string: &str,
-    log_statement: bool,
-) -> (Arc<SqlControlPlane>, TenantName) {
-    let mut options = ConnectOptions::new(connection_string);
-    options.sqlx_logging(log_statement);
-
-    let pool = Database::new(options)
-        .await
-        .expect("failed to create SQLite database");
-
-    wings_control_plane_sql::migrate(&pool)
-        .await
-        .expect("failed to migrate database");
-
-    let control_plane = Arc::new(SqlControlPlane::new(pool));
-
-    let default_tenant = TenantName::new_unchecked("default");
-    control_plane
-        .create_tenant(default_tenant.clone())
-        .await
-        .expect("failed to create default tenant");
-
-    (control_plane, default_tenant)
+impl ClusterObjectStore {
+    fn object_store(&self) -> Arc<dyn DynObjectStore> {
+        Arc::clone(&self.object_store)
+    }
 }
 
 async fn run_grpc_server(
-    control_plane: Arc<SqlControlPlane>,
-    namespace_provider_factory: NamespaceProviderFactory,
-    batch_ingestor: IngestorClient,
+    namespace_store: NamespaceStore,
+    secret_manager: Arc<dyn SecretManager>,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
-            wings_control_plane_core::pb::cluster_metadata_file_descriptor_set(),
+            wings_server_cluster::pb::cluster_file_descriptor_set(),
         )
-        .register_encoded_file_descriptor_set(
-            wings_control_plane_core::pb::table_metadata_file_descriptor_set(),
-        )
-        .register_encoded_file_descriptor_set(WingsFlightSqlServer::file_descriptor_set())
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let table_cache = TableCache::new(control_plane.clone());
-    let namespace_cache = NamespaceCache::new(control_plane.clone());
+    let cluster_service = ClusterService::new(namespace_store, secret_manager).into_tonic_server();
 
-    let admin_service = ClusterMetadataServer::new(control_plane.clone()).into_tonic_server();
-    let table_meta_service = TableMetadataServer::new(control_plane).into_tonic_server();
-
-    let sql_service = WingsFlightSqlServer::new(
-        namespace_cache,
-        table_cache,
-        batch_ingestor,
-        namespace_provider_factory,
-    )
-    .into_tonic_server();
-
-    let server = tonic::transport::Server::builder()
+    tonic::transport::Server::builder()
         .add_service(reflection_service)
-        .add_service(admin_service)
-        .add_service(table_meta_service)
-        .add_service(sql_service)
+        .add_service(cluster_service)
         .serve_with_shutdown(address, async move {
             ct.cancelled().await;
-        });
-
-    server.await.context(TonicServerSnafu {})
-}
-
-async fn run_http_server(
-    cluster_meta: Arc<dyn ClusterMetadata>,
-    batch_ingestor: IngestorClient,
-    address: SocketAddr,
-    ct: CancellationToken,
-) -> Result<()> {
-    let table_cache = TableCache::new(cluster_meta.clone());
-    let namespace_cache = NamespaceCache::new(cluster_meta.clone());
-
-    let ingestor = HttpIngestor::new(table_cache, namespace_cache, batch_ingestor);
-
-    let app = Router::new().merge(ingestor.into_router());
-
-    let listener = tokio::net::TcpListener::bind(&address)
+        })
         .await
-        .context(IoSnafu {})?;
-
-    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
-        ct.cancelled().await;
-    });
-
-    server.await.context(IoSnafu {})
+        .context(TonicServerSnafu {})
 }
 
-impl std::fmt::Display for DataLakeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DataLakeType::Parquet => write!(f, "parquet"),
-            DataLakeType::Iceberg => write!(f, "iceberg"),
-            DataLakeType::Delta => write!(f, "delta"),
-        }
+impl ObjectStoreArgs {
+    fn create_object_store(&self) -> Result<ClusterObjectStore> {
+        let object_store: Arc<dyn DynObjectStore> = match self.object_store_type {
+            ObjectStoreType::Aws => Arc::new(self.create_aws_object_store()?),
+            ObjectStoreType::Gcp => Arc::new(
+                GoogleCloudStorageBuilder::from_env()
+                    .build()
+                    .context(ObjectStoreSnafu {})?,
+            ),
+            ObjectStoreType::Azure => Arc::new(
+                MicrosoftAzureBuilder::from_env()
+                    .build()
+                    .context(ObjectStoreSnafu {})?,
+            ),
+        };
+
+        Ok(ClusterObjectStore { object_store })
     }
+
+    fn create_aws_object_store(&self) -> Result<impl DynObjectStore> {
+        let mut builder = AmazonS3Builder::from_env();
+
+        if aws_credentials_env_missing() {
+            info!(
+                endpoint = SEAWEEDFS_ENDPOINT,
+                bucket = SEAWEEDFS_BUCKET,
+                "Using SeaweedFS object store defaults"
+            );
+
+            builder = builder
+                .with_endpoint(SEAWEEDFS_ENDPOINT)
+                .with_bucket_name(SEAWEEDFS_BUCKET)
+                .with_region(SEAWEEDFS_REGION)
+                .with_access_key_id(SEAWEEDFS_ACCESS_KEY_ID)
+                .with_secret_access_key(SEAWEEDFS_SECRET_ACCESS_KEY)
+                .with_allow_http(true);
+        }
+
+        builder.build().context(ObjectStoreSnafu {})
+    }
+}
+
+fn aws_credentials_env_missing() -> bool {
+    std::env::var_os(AWS_ACCESS_KEY_ID_ENV).is_none()
+        && std::env::var_os(AWS_SECRET_ACCESS_KEY_ENV).is_none()
 }
