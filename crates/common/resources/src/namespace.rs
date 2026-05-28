@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{DataLakeConfiguration, ObjectStoreConfiguration, resource_type};
 
 resource_type!(Namespace, "namespaces");
@@ -7,7 +9,7 @@ resource_type!(Namespace, "namespaces");
 /// A root namespace.
 ///
 /// A namespace is used to group related tables together.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Namespace {
     /// The namespace name.
     pub name: NamespaceName,

@@ -14,8 +14,13 @@ path = "src/lib.rs"
 test-util = ["tokio/test-util"]
 
 [dependencies]
+rand.workspace = true
+rand_xoshiro = "0.8.1"
+thread_local = "1.1.9"
 time.workspace = true
 tokio.workspace = true
+ulid.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

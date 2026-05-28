@@ -19,7 +19,6 @@ serde_json.workspace = true
 slatedb-txn-obj.workspace = true
 snafu.workspace = true
 time.workspace = true
-ulid.workspace = true
 wings-dst-base.workspace = true
 wings-resources.workspace = true
 wings-secret-manager.workspace = true

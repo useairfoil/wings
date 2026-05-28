@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use object_store::{ObjectStore as DynObjectStore, PutMode, PutOptions, PutPayload, path::Path};
+use object_store::{ObjectStore, PutMode, PutOptions, PutPayload, path::Path};
 use serde::{Deserialize, Serialize};
 use slatedb_txn_obj::ObjectCodec;
 use time::OffsetDateTime;
-use ulid::Ulid;
-use wings_dst_base::Clock;
+use wings_dst_base::{Clock, IdGenerator, ThreadRng};
 use wings_resources::{
     DataLakeConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
 };
@@ -33,9 +32,10 @@ pub struct ListNamespaceNamesResult {
 
 #[derive(Clone)]
 pub struct NamespaceStore {
-    object_store: Arc<dyn DynObjectStore>,
+    object_store: Arc<dyn ObjectStore>,
     codec: Arc<dyn ObjectCodec<NamespaceManifest>>,
     clock: Arc<dyn Clock>,
+    rng: Arc<ThreadRng>,
 }
 
 struct NamespaceManifestJsonCodec;
@@ -57,11 +57,12 @@ impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
 }
 
 impl NamespaceStore {
-    pub fn new(object_store: Arc<dyn DynObjectStore>, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(object_store: Arc<dyn ObjectStore>, clock: Arc<dyn Clock>) -> Self {
         Self {
             object_store,
             codec: Arc::new(NamespaceManifestJsonCodec),
             clock,
+            rng: Arc::new(ThreadRng::default()),
         }
     }
 
@@ -74,8 +75,13 @@ impl NamespaceStore {
         let object_store_secrets =
             TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone());
         let lake_secrets = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager);
-        let object_store_secret_id = namespace_secret_id("object-store");
-        let lake_secret_id = namespace_secret_id("lake");
+        let (object_store_secret_id, lake_secret_id) = {
+            let mut rng = self.rng.rng();
+            (
+                namespace_secret_id("object-store", &mut *rng),
+                namespace_secret_id("lake", &mut *rng),
+            )
+        };
 
         object_store_secrets
             .create_secret(&object_store_secret_id, &options.object_store)
@@ -228,8 +234,8 @@ fn manifest_path(name: &NamespaceName) -> Path {
     Path::from(format!("{name}/manifest.json"))
 }
 
-fn namespace_secret_id(kind: &str) -> SecretId {
-    SecretId::parse(format!("namespace-{kind}-{}", Ulid::new()))
+fn namespace_secret_id(kind: &str, rng: &mut impl IdGenerator) -> SecretId {
+    SecretId::parse(format!("{kind}-{}", rng.gen_uuid()))
         .expect("generated namespace secret id must not be empty")
 }
 
@@ -237,18 +243,20 @@ fn namespace_secret_id(kind: &str) -> SecretId {
 mod tests {
     use std::sync::Arc;
 
-    use object_store::{ObjectStore as DynObjectStore, PutPayload, memory::InMemory};
+    use object_store::{ObjectStore, PutPayload, memory::InMemory};
     use wings_dst_base::MockClock;
     use wings_resources::{ParquetConfiguration, S3CompatibleConfiguration};
     use wings_secret_manager::memory::MemorySecretManager;
 
     use super::*;
 
-    fn namespace_store(object_store: Arc<dyn DynObjectStore>) -> NamespaceStore {
-        NamespaceStore::new(
+    fn namespace_store(object_store: Arc<dyn ObjectStore>) -> NamespaceStore {
+        NamespaceStore {
             object_store,
-            Arc::new(MockClock::with_time(1_700_000_000_000)),
-        )
+            codec: Arc::new(NamespaceManifestJsonCodec),
+            clock: Arc::new(MockClock::with_time(1_700_000_000_000)),
+            rng: Arc::new(ThreadRng::new(42)),
+        }
     }
 
     fn test_manifest(namespace: &str) -> NamespaceManifest {
@@ -289,21 +297,13 @@ mod tests {
             .unwrap();
 
         let manifest = store.read_manifest(&name).await.unwrap();
-        assert_eq!(manifest.name, name);
-        assert_eq!(manifest.created_at, manifest.updated_at);
-
-        let object_store =
-            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone())
-                .get_secret(&manifest.object_store_secret_id)
-                .await
-                .unwrap();
-        let lake = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager)
-            .get_secret(&manifest.lake_secret_id)
-            .await
-            .unwrap();
-
-        assert_eq!(object_store, options.object_store);
-        assert_eq!(lake, options.lake);
+        insta::assert_yaml_snapshot!(manifest, @r#"
+        name: namespaces/test-namespace
+        object_store_secret_id: object-store-233c1def-caf6-4ae8-b149-a5a5b203a354
+        lake_secret_id: lake-456364cd-2c81-40f3-b5bb-9a3fc6395834
+        created_at: "+002023-11-14T22:13:20.000000000Z"
+        updated_at: "+002023-11-14T22:13:20.000000000Z"
+        "#);
     }
 
     #[tokio::test]
@@ -320,9 +320,20 @@ mod tests {
 
         let namespace = store.get_namespace(secret_manager, &name).await.unwrap();
 
-        assert_eq!(namespace.name, name);
-        assert_eq!(namespace.object_store, options.object_store);
-        assert_eq!(namespace.lake, options.lake);
+        insta::assert_yaml_snapshot!(namespace, @r#"
+        name: namespaces/test-namespace
+        object_store:
+          S3Compatible:
+            bucket_name: test-bucket
+            prefix: test-prefix
+            access_key_id: access-key-id
+            secret_access_key: secret-access-key
+            endpoint: "http://localhost:9000"
+            region: test-region
+            allow_http: true
+        lake:
+          Parquet: {}
+        "#);
     }
 
     #[tokio::test]
