@@ -5470,6 +5470,7 @@ dependencies = [
  "tonic",
  "tonic-reflection",
  "tracing",
+ "wings-dst-base",
  "wings-meta-db",
  "wings-observability",
  "wings-secret-manager",
@@ -5491,6 +5492,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wings-dst-base"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "wings-meta-db"
 version = "0.1.0"
 dependencies = [
@@ -5505,6 +5515,7 @@ dependencies = [
  "time",
  "tokio",
  "ulid",
+ "wings-dst-base",
  "wings-resources",
  "wings-secret-manager",
 ]
@@ -5524,6 +5535,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "wings-dst-base",
 ]
 
 [[package]]

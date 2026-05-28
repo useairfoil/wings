@@ -8,6 +8,7 @@ use object_store::{
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use wings_dst_base::Clock;
 use wings_meta_db::NamespaceStore;
 use wings_secret_manager::{SecretManager, UnsecureObjectStorageSecretManager};
 use wings_server_cluster::ClusterService;
@@ -53,14 +54,14 @@ struct ClusterObjectStore {
 }
 
 impl DevArgs {
-    pub async fn run(self, ct: CancellationToken) -> Result<()> {
+    pub async fn run(self, ct: CancellationToken, clock: Arc<dyn Clock>) -> Result<()> {
         let cluster_object_store = self.object_store.create_object_store()?;
         let secret_manager: Arc<dyn SecretManager> = Arc::new(
             UnsecureObjectStorageSecretManager::new(cluster_object_store.object_store())
                 .await
                 .context(SecretManagerSnafu {})?,
         );
-        let namespace_store = NamespaceStore::new(cluster_object_store.object_store());
+        let namespace_store = NamespaceStore::new(cluster_object_store.object_store(), clock);
         let grpc_address = self
             .grpc_address
             .parse::<SocketAddr>()

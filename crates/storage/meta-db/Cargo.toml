@@ -20,9 +20,11 @@ slatedb-txn-obj.workspace = true
 snafu.workspace = true
 time.workspace = true
 ulid.workspace = true
+wings-dst-base.workspace = true
 wings-resources.workspace = true
 wings-secret-manager.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
 tokio.workspace = true
+wings-dst-base = { workspace = true, features = ["test-util"] }

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use slatedb_txn_obj::ObjectCodec;
 use time::OffsetDateTime;
 use ulid::Ulid;
+use wings_dst_base::Clock;
 use wings_resources::{
     Lake, Namespace, NamespaceName, NamespaceOptions, ObjectStore as ResourceObjectStore,
 };
@@ -34,6 +35,7 @@ pub struct ListNamespaceNamesResult {
 pub struct NamespaceStore {
     object_store: Arc<dyn DynObjectStore>,
     codec: Arc<dyn ObjectCodec<NamespaceManifest>>,
+    clock: Arc<dyn Clock>,
 }
 
 struct NamespaceManifestJsonCodec;
@@ -55,10 +57,11 @@ impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
 }
 
 impl NamespaceStore {
-    pub fn new(object_store: Arc<dyn DynObjectStore>) -> Self {
+    pub fn new(object_store: Arc<dyn DynObjectStore>, clock: Arc<dyn Clock>) -> Self {
         Self {
             object_store,
             codec: Arc::new(NamespaceManifestJsonCodec),
+            clock,
         }
     }
 
@@ -87,7 +90,7 @@ impl NamespaceStore {
             return Err(err.into());
         }
 
-        let now = OffsetDateTime::now_utc();
+        let now = self.clock.now();
         let manifest = NamespaceManifest {
             name,
             object_store_secret_id: object_store_secret_id.clone(),
@@ -234,13 +237,14 @@ mod tests {
     use std::sync::Arc;
 
     use object_store::{ObjectStore as DynObjectStore, PutPayload, memory::InMemory};
+    use wings_dst_base::MockClock;
     use wings_resources::{ParquetConfiguration, S3CompatibleConfiguration};
     use wings_secret_manager::memory::MemorySecretManager;
 
     use super::*;
 
     fn namespace_store(object_store: Arc<dyn DynObjectStore>) -> NamespaceStore {
-        NamespaceStore::new(object_store)
+        NamespaceStore::new(object_store, Arc::new(MockClock::with_time(1_700_000_000_000)))
     }
 
     fn test_manifest(namespace: &str) -> NamespaceManifest {

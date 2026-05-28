@@ -9,6 +9,7 @@ resolver = "2"
 # default-members = ["bin/wings"]
 members = [
     "bin/wings",
+    "crates/common/dst-base",
     "crates/common/observability",
     "crates/common/resources",
     "crates/common/schema",
@@ -105,6 +106,7 @@ url = "2.5.4"
 uuid = "1.19.0"
 wings-client = { path = "crates/client" }
 wings-data-lake = { path = "crates/common/data-lake" }
+wings-dst-base = { path = "crates/common/dst-base" }
 wings-meta-db = { path = "crates/storage/meta-db" }
 wings-object-store = { path = "crates/common/object-store" }
 wings-observability = { path = "crates/common/observability" }

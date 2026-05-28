@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use opentelemetry::{global, trace::TracerProvider as _, InstrumentationScope};
 pub use opentelemetry::{
@@ -15,6 +15,7 @@ use snafu::{ResultExt, Snafu};
 use tracing::Subscriber;
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::{prelude::*, registry::LookupSpan, EnvFilter, Layer};
+use wings_dst_base::Clock;
 
 use crate::format::WingsFormat;
 pub use crate::{
@@ -44,6 +45,7 @@ pub fn init_observability(
     package_name: impl Into<Cow<'static, str>>,
     package_version: impl Into<Cow<'static, str>>,
     metrics_exporter: MetricsExporter,
+    clock: Arc<dyn Clock>,
 ) -> Result<(), ObservabilityError> {
     // The otel sdk doesn't follow the disabled env variable flag.
     // so we manually implement it to disable otel exports.
@@ -65,14 +67,14 @@ pub fn init_observability(
         !sdk_disabled,
     )?;
 
-    let layers = vec![stdout(), otel_layer];
+    let layers = vec![stdout(clock), otel_layer];
 
     tracing_subscriber::registry().with(layers).init();
 
     Ok(())
 }
 
-fn stdout<S>() -> BoxedLayer<S>
+fn stdout<S>(clock: Arc<dyn Clock>) -> BoxedLayer<S>
 where
     S: Subscriber,
     for<'a> S: LookupSpan<'a>,
@@ -94,8 +96,8 @@ where
     } else {
         tracing_subscriber::fmt::layer()
             .with_ansi(true)
-            .event_format(WingsFormat::default())
-            .fmt_fields(WingsFormat::default())
+            .event_format(WingsFormat::new(Arc::clone(&clock)))
+            .fmt_fields(WingsFormat::new(clock))
             .with_filter(log_env_filter)
             .boxed()
     }

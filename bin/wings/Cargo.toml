@@ -19,6 +19,7 @@ tokio-util.workspace = true
 tonic.workspace = true
 tonic-reflection.workspace = true
 tracing.workspace = true
+wings-dst-base.workspace = true
 wings-meta-db.workspace = true
 wings-observability.workspace = true
 wings-secret-manager.workspace = true

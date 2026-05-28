@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
 use error::ObservabilitySnafu;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
+use wings_dst_base::{Clock, DefaultClock};
 use wings_observability::{MetricsExporter, init_observability};
 
 use crate::{dev::DevArgs, error::Result};
@@ -30,10 +33,13 @@ enum Commands {
 #[tokio::main]
 #[snafu::report]
 async fn main() -> Result<()> {
+    let clock: Arc<dyn Clock> = Arc::new(DefaultClock::new());
+
     init_observability(
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         MetricsExporter::default(),
+        Arc::clone(&clock),
     )
     .context(ObservabilitySnafu {})?;
 
@@ -50,6 +56,6 @@ async fn main() -> Result<()> {
     });
 
     match cli.command {
-        Commands::Dev { inner } => inner.run(ct).await,
+        Commands::Dev { inner } => inner.run(ct, clock).await,
     }
 }

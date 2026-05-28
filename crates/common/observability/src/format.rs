@@ -1,4 +1,4 @@
-use std::{fmt, io};
+use std::{fmt, io, sync::Arc};
 
 use nu_ansi_term::{Color, Style};
 use tracing::{field, span, Event, Level, Subscriber};
@@ -7,9 +7,11 @@ use tracing_subscriber::{
     fmt::{format::Writer, FmtContext, FormatEvent, FormatFields},
     registry::LookupSpan,
 };
+use wings_dst_base::{Clock, DefaultClock};
 
 pub struct WingsFormat {
     time_format: time::format_description::OwnedFormatItem,
+    clock: Arc<dyn Clock>,
 }
 
 impl<S, N> FormatEvent<S, N> for WingsFormat
@@ -151,11 +153,20 @@ impl VisitFmt for WingsFormatVisitor<'_> {
 
 impl WingsFormat {
     pub fn format_time(&self, writer: &mut Writer<'_>) -> std::fmt::Result {
-        let now = time::OffsetDateTime::from(std::time::SystemTime::now());
+        let now = self.clock.now();
         let mut w = WriteAdaptor { fmt_writer: writer };
         now.format_into(&mut w, &self.time_format)
             .map_err(|_| std::fmt::Error)?;
         Ok(())
+    }
+
+    pub fn new(clock: Arc<dyn Clock>) -> Self {
+        let time_format = time::format_description::parse_owned::<2>(
+            r#"\[[month]-[day]|[hour]:[minute]:[second].[subsecond digits:3]\]"#,
+        )
+        .expect("failed to parse time format");
+
+        Self { time_format, clock }
     }
 }
 
@@ -213,11 +224,6 @@ impl io::Write for WriteAdaptor<'_> {
 
 impl Default for WingsFormat {
     fn default() -> Self {
-        let time_format = time::format_description::parse_owned::<2>(
-            r#"\[[month]-[day]|[hour]:[minute]:[second].[subsecond digits:3]\]"#,
-        )
-        .expect("failed to parse time format");
-
-        Self { time_format }
+        Self::new(Arc::new(DefaultClock::new()))
     }
 }
