@@ -5438,9 +5438,11 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "wings-meta-db",
  "wings-observability",
  "wings-resources",
  "wings-schema",
+ "wings-secret-manager",
 ]
 
 [[package]]

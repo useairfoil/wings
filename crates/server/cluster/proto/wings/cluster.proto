@@ -74,7 +74,7 @@ message ListNamespacesResponse {
   repeated Namespace namespaces = 1;
 
   // The continuation token.
-  string next_page_token = 2;
+  optional string next_page_token = 2;
 }
 
 message DeleteNamespaceRequest {

@@ -104,6 +104,7 @@ url = "2.5.4"
 uuid = "1.19.0"
 wings-client = { path = "crates/client" }
 wings-data-lake = { path = "crates/common/data-lake" }
+wings-meta-db = { path = "crates/storage/meta-db" }
 wings-object-store = { path = "crates/common/object-store" }
 wings-observability = { path = "crates/common/observability" }
 wings-query = { path = "crates/common/query" }
