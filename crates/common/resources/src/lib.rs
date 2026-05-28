@@ -7,11 +7,11 @@ mod redacted;
 mod table;
 
 pub use self::{
-    lake::{DeltaConfiguration, IcebergConfiguration, Lake, ParquetConfiguration},
+    lake::{DataLakeConfiguration, DeltaConfiguration, IcebergConfiguration, ParquetConfiguration},
     name::{ResourceError, ResourceResult, validate_resource_id},
     namespace::{Namespace, NamespaceName, NamespaceOptions, NamespaceRef},
     object_store::{
-        AwsConfiguration, AzureConfiguration, GoogleConfiguration, ObjectStore,
+        AwsConfiguration, AzureConfiguration, GoogleConfiguration, ObjectStoreConfiguration,
         S3CompatibleConfiguration,
     },
     partition::{PartitionValue, PartitionValueError, PartitionValueParseError},

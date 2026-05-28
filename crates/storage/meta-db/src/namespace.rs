@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use ulid::Ulid;
 use wings_dst_base::Clock;
 use wings_resources::{
-    Lake, Namespace, NamespaceName, NamespaceOptions, ObjectStore as ResourceObjectStore,
+    DataLakeConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
 };
 use wings_secret_manager::{SecretId, SecretManager, TypedSecretManager};
 
@@ -72,8 +72,8 @@ impl NamespaceStore {
         options: NamespaceOptions,
     ) -> Result<()> {
         let object_store_secrets =
-            TypedSecretManager::<ResourceObjectStore>::new(secret_manager.clone());
-        let lake_secrets = TypedSecretManager::<Lake>::new(secret_manager);
+            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone());
+        let lake_secrets = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager);
         let object_store_secret_id = namespace_secret_id("object-store");
         let lake_secret_id = namespace_secret_id("lake");
 
@@ -116,10 +116,11 @@ impl NamespaceStore {
         name: &NamespaceName,
     ) -> Result<Namespace> {
         let manifest = self.read_manifest(name).await?;
-        let object_store = TypedSecretManager::<ResourceObjectStore>::new(secret_manager.clone())
-            .get_secret(&manifest.object_store_secret_id)
-            .await?;
-        let lake = TypedSecretManager::<Lake>::new(secret_manager)
+        let object_store =
+            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone())
+                .get_secret(&manifest.object_store_secret_id)
+                .await?;
+        let lake = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager)
             .get_secret(&manifest.lake_secret_id)
             .await?;
 
@@ -244,7 +245,10 @@ mod tests {
     use super::*;
 
     fn namespace_store(object_store: Arc<dyn DynObjectStore>) -> NamespaceStore {
-        NamespaceStore::new(object_store, Arc::new(MockClock::with_time(1_700_000_000_000)))
+        NamespaceStore::new(
+            object_store,
+            Arc::new(MockClock::with_time(1_700_000_000_000)),
+        )
     }
 
     fn test_manifest(namespace: &str) -> NamespaceManifest {
@@ -259,7 +263,7 @@ mod tests {
 
     fn test_options() -> NamespaceOptions {
         NamespaceOptions {
-            object_store: ResourceObjectStore::S3Compatible(S3CompatibleConfiguration {
+            object_store: ObjectStoreConfiguration::S3Compatible(S3CompatibleConfiguration {
                 bucket_name: "test-bucket".to_string(),
                 prefix: Some("test-prefix".to_string()),
                 access_key_id: "access-key-id".to_string(),
@@ -268,7 +272,7 @@ mod tests {
                 region: Some("test-region".to_string()),
                 allow_http: true,
             }),
-            lake: Lake::Parquet(ParquetConfiguration::default()),
+            lake: DataLakeConfiguration::Parquet(ParquetConfiguration::default()),
         }
     }
 
@@ -288,11 +292,12 @@ mod tests {
         assert_eq!(manifest.name, name);
         assert_eq!(manifest.created_at, manifest.updated_at);
 
-        let object_store = TypedSecretManager::<ResourceObjectStore>::new(secret_manager.clone())
-            .get_secret(&manifest.object_store_secret_id)
-            .await
-            .unwrap();
-        let lake = TypedSecretManager::<Lake>::new(secret_manager)
+        let object_store =
+            TypedSecretManager::<ObjectStoreConfiguration>::new(secret_manager.clone())
+                .get_secret(&manifest.object_store_secret_id)
+                .await
+                .unwrap();
+        let lake = TypedSecretManager::<DataLakeConfiguration>::new(secret_manager)
             .get_secret(&manifest.lake_secret_id)
             .await
             .unwrap();

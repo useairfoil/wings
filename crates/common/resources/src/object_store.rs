@@ -7,7 +7,7 @@ use crate::redacted::REDACTED_FIELD_VALUE;
 /// Different cloud providers require different object store configurations.
 /// This enum represents the various supported object store types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ObjectStore {
+pub enum ObjectStoreConfiguration {
     /// AWS S3 object store configuration.
     Aws(AwsConfiguration),
     /// Azure Blob Storage object store configuration.
@@ -78,13 +78,13 @@ pub struct S3CompatibleConfiguration {
     pub allow_http: bool,
 }
 
-impl ObjectStore {
+impl ObjectStoreConfiguration {
     pub fn into_redacted(self) -> Self {
         match self {
-            ObjectStore::Aws(c) => c.into_redacted().into(),
-            ObjectStore::Azure(c) => c.into_redacted().into(),
-            ObjectStore::Google(c) => c.into_redacted().into(),
-            ObjectStore::S3Compatible(c) => c.into_redacted().into(),
+            ObjectStoreConfiguration::Aws(c) => c.into_redacted().into(),
+            ObjectStoreConfiguration::Azure(c) => c.into_redacted().into(),
+            ObjectStoreConfiguration::Google(c) => c.into_redacted().into(),
+            ObjectStoreConfiguration::S3Compatible(c) => c.into_redacted().into(),
         }
     }
 }
@@ -137,26 +137,26 @@ impl S3CompatibleConfiguration {
     }
 }
 
-impl From<AwsConfiguration> for ObjectStore {
+impl From<AwsConfiguration> for ObjectStoreConfiguration {
     fn from(c: AwsConfiguration) -> Self {
-        ObjectStore::Aws(c)
+        ObjectStoreConfiguration::Aws(c)
     }
 }
 
-impl From<AzureConfiguration> for ObjectStore {
+impl From<AzureConfiguration> for ObjectStoreConfiguration {
     fn from(c: AzureConfiguration) -> Self {
-        ObjectStore::Azure(c)
+        ObjectStoreConfiguration::Azure(c)
     }
 }
 
-impl From<GoogleConfiguration> for ObjectStore {
+impl From<GoogleConfiguration> for ObjectStoreConfiguration {
     fn from(c: GoogleConfiguration) -> Self {
-        ObjectStore::Google(c)
+        ObjectStoreConfiguration::Google(c)
     }
 }
 
-impl From<S3CompatibleConfiguration> for ObjectStore {
+impl From<S3CompatibleConfiguration> for ObjectStoreConfiguration {
     fn from(c: S3CompatibleConfiguration) -> Self {
-        ObjectStore::S3Compatible(c)
+        ObjectStoreConfiguration::S3Compatible(c)
     }
 }

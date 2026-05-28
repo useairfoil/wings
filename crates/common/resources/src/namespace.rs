@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{Lake, ObjectStore, resource_type};
+use crate::{DataLakeConfiguration, ObjectStoreConfiguration, resource_type};
 
 resource_type!(Namespace, "namespaces");
 
@@ -12,9 +12,9 @@ pub struct Namespace {
     /// The namespace name.
     pub name: NamespaceName,
     /// The object store configuration.
-    pub object_store: ObjectStore,
+    pub object_store: ObjectStoreConfiguration,
     /// The data lake configuration.
-    pub lake: Lake,
+    pub lake: DataLakeConfiguration,
 }
 
 pub type NamespaceRef = Arc<Namespace>;
@@ -23,9 +23,9 @@ pub type NamespaceRef = Arc<Namespace>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamespaceOptions {
     /// The object store configuration.
-    pub object_store: ObjectStore,
+    pub object_store: ObjectStoreConfiguration,
     /// The data lake configuration.
-    pub lake: Lake,
+    pub lake: DataLakeConfiguration,
 }
 
 impl Namespace {

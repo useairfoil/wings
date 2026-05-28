@@ -27,11 +27,11 @@ pub use self::inner::*;
 mod conversion {
     use wings_resources::{
         AwsConfiguration as ResourceAwsConfiguration,
-        AzureConfiguration as ResourceAzureConfiguration,
+        AzureConfiguration as ResourceAzureConfiguration, DataLakeConfiguration as ResourceLake,
         DeltaConfiguration as ResourceDeltaConfiguration,
         GoogleConfiguration as ResourceGoogleConfiguration,
-        IcebergConfiguration as ResourceIcebergConfiguration, Lake as ResourceLake,
-        Namespace as ResourceNamespace, NamespaceOptions, ObjectStore as ResourceObjectStore,
+        IcebergConfiguration as ResourceIcebergConfiguration, Namespace as ResourceNamespace,
+        NamespaceOptions, ObjectStoreConfiguration as ResourceObjectStore,
         ParquetConfiguration as ResourceParquetConfiguration,
         S3CompatibleConfiguration as ResourceS3CompatibleConfiguration,
     };
