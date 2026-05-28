@@ -74,17 +74,16 @@
 pub mod object_store;
 pub mod singleton;
 
-use crate::TransactionalObjectError::CallbackError;
+use std::{ops::Bound, sync::Arc, time::Duration};
+
 use ::object_store::path::Path;
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
 use log::warn;
-use slatedb_common::clock::SystemClock;
-use slatedb_common::utils;
-use std::ops::Bound;
-use std::sync::Arc;
-use std::time::Duration;
+use slatedb_common::{clock::SystemClock, utils};
+
+use crate::TransactionalObjectError::CallbackError;
 
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
@@ -714,22 +713,26 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::TransactionalObjectError;
-    use crate::object_store::ObjectStoreSequencedStorageProtocol;
+    use std::{
+        collections::VecDeque,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
+
+    use bytes::Bytes;
+    use object_store::{memory::InMemory, path::Path};
+    use parking_lot::Mutex;
+    use slatedb_common::clock::DefaultSystemClock;
+    use tokio::time::Duration as TokioDuration;
+
     use crate::{
         BoundaryObject, FenceableTransactionalObject, GenericObjectMetadata, MonotonicId,
         ObjectCodec, SequencedStorageProtocol, SimpleTransactionalObject, TransactionalObject,
-        TransactionalStorageProtocol,
+        TransactionalObjectError, TransactionalStorageProtocol,
+        object_store::ObjectStoreSequencedStorageProtocol,
     };
-    use bytes::Bytes;
-    use object_store::memory::InMemory;
-    use object_store::path::Path;
-    use parking_lot::Mutex;
-    use slatedb_common::clock::DefaultSystemClock;
-    use std::collections::VecDeque;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use tokio::time::Duration as TokioDuration;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub(crate) struct TestVal {

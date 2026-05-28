@@ -1,29 +1,45 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
-use object_store::{
-    ObjectStore as DynObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, UpdateVersion,
-    path::Path,
-};
+use bytes::Bytes;
+use object_store::{ObjectStore as DynObjectStore, UpdateVersion, path::Path};
 use tokio::sync::Mutex;
 use tracing::warn;
+use wings_txn_obj::{
+    ObjectCodec, SimpleTransactionalObject, TransactionalObject, TransactionalObjectError,
+    TransactionalStorageProtocol, singleton::ObjectStoreSingletonStorageProtocol,
+};
 
 use crate::{GetResult, Result, SecretId, SecretManager};
 
 const MANAGER: &str = "UnsecureObjectStorageSecretManager";
 const DEFAULT_SECRETS_PATH: &str = "secrets.json";
 
+type Secrets = BTreeMap<String, String>;
+type SecretsObject = SimpleTransactionalObject<Secrets, UpdateVersion>;
+
 /// Stores secrets as plaintext JSON on object storage.
 pub struct UnsecureObjectStorageSecretManager {
-    object_store: Arc<dyn DynObjectStore>,
     path: Path,
-    state: Mutex<State>,
+    secrets: Mutex<SecretsObject>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct State {
-    secrets: BTreeMap<String, String>,
-    update_version: Option<UpdateVersion>,
+struct SecretsJsonCodec;
+
+impl ObjectCodec<Secrets> for SecretsJsonCodec {
+    fn encode(&self, value: &Secrets) -> Bytes {
+        serde_json::to_vec(value)
+            .expect("SecretsJsonCodec failed to serialize secrets")
+            .into()
+    }
+
+    fn decode(
+        &self,
+        bytes: &Bytes,
+    ) -> std::result::Result<Secrets, Box<dyn std::error::Error + Send + Sync>> {
+        serde_json::from_slice(bytes)
+            .map_err(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync>)
+    }
 }
 
 impl UnsecureObjectStorageSecretManager {
@@ -33,61 +49,78 @@ impl UnsecureObjectStorageSecretManager {
 
     pub async fn new_with_path(object_store: Arc<dyn DynObjectStore>, path: Path) -> Result<Self> {
         warn!("Storing secrets in secrets.json. DO NOT USE WITH PRODUCTION SECRETS");
-        let state = load_state(&object_store, &path).await?;
+        let store: Arc<dyn TransactionalStorageProtocol<Secrets, UpdateVersion>> =
+            Arc::new(ObjectStoreSingletonStorageProtocol::new(
+                object_store,
+                path.clone(),
+                Box::new(SecretsJsonCodec),
+            ));
+
+        let secrets = load_or_init(store).await?;
 
         Ok(Self {
-            object_store,
             path,
-            state: Mutex::new(state),
+            secrets: Mutex::new(secrets),
         })
     }
 
-    async fn update<F>(&self, mut change: F) -> Result<()>
+    async fn update<F>(&self, change: F) -> Result<()>
     where
-        F: FnMut(&mut BTreeMap<String, String>) -> Result<()>,
+        F: Fn(&mut Secrets) -> Result<()> + Send + Sync,
     {
-        loop {
-            let (secrets, update_version) = {
-                let state = self.state.lock().await;
-                let mut secrets = state.secrets.clone();
-                change(&mut secrets)?;
+        self.secrets
+            .lock()
+            .await
+            .maybe_apply_update(|secrets| {
+                let mut dirty = secrets
+                    .prepare_dirty()
+                    .map_err(transactional_object_error)?;
+                change(&mut dirty.value)?;
 
-                if secrets == state.secrets {
-                    return Ok(());
+                if &dirty.value == secrets.object() {
+                    Ok::<_, crate::Error>(None)
+                } else {
+                    Ok(Some(dirty))
                 }
+            })
+            .await
+            .map_err(transactional_object_error)
+    }
+}
 
-                (secrets, state.update_version.clone())
-            };
-
-            let payload = serialize_secrets(&self.path, &secrets)?;
-            let mode = match update_version {
-                Some(update_version) => PutMode::Update(update_version),
-                None => PutMode::Create,
-            };
-
-            match self
-                .object_store
-                .put_opts(
-                    &self.path,
-                    PutPayload::from(payload),
-                    PutOptions::from(mode),
-                )
-                .await
-            {
-                Ok(put_result) => {
-                    let mut state = self.state.lock().await;
-                    state.secrets = secrets;
-                    state.update_version = Some(put_result.into());
-                    return Ok(());
-                }
-                Err(err) if is_conditional_write_failure(&err) => {
-                    let reloaded = load_state(&self.object_store, &self.path).await?;
-                    let mut state = self.state.lock().await;
-                    *state = reloaded;
-                }
-                Err(err) => return Err(object_store_error(err)),
-            }
+async fn load_or_init(
+    store: Arc<dyn TransactionalStorageProtocol<Secrets, UpdateVersion>>,
+) -> Result<SecretsObject> {
+    loop {
+        if let Some(secrets) = SecretsObject::try_load(store.clone())
+            .await
+            .map_err(transactional_object_error)?
+        {
+            return Ok(secrets);
         }
+
+        match SecretsObject::init(store.clone(), Secrets::default()).await {
+            Ok(secrets) => return Ok(secrets),
+            Err(err) if err.is_sequenced_write_conflict() => continue,
+            Err(err) => return Err(transactional_object_error(err)),
+        }
+    }
+}
+
+fn transactional_object_error(err: TransactionalObjectError) -> crate::Error {
+    crate::Error::Generic {
+        manager: MANAGER,
+        source: Box::new(err),
+    }
+}
+
+fn not_found(secret_id: &SecretId) -> crate::Error {
+    crate::Error::NotFound {
+        secret_id: secret_id.to_string(),
+        source: Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "secret not found",
+        )),
     }
 }
 
@@ -95,10 +128,10 @@ impl UnsecureObjectStorageSecretManager {
 impl SecretManager for UnsecureObjectStorageSecretManager {
     async fn get_secret(&self, id: &SecretId) -> Result<GetResult> {
         let value = self
-            .state
+            .secrets
             .lock()
             .await
-            .secrets
+            .object()
             .get(id.as_ref())
             .cloned()
             .ok_or_else(|| not_found(id))?;
@@ -139,63 +172,9 @@ impl std::fmt::Debug for UnsecureObjectStorageSecretManager {
     }
 }
 
-async fn load_state(object_store: &Arc<dyn DynObjectStore>, path: &Path) -> Result<State> {
-    let result = match object_store.get(path).await {
-        Ok(result) => result,
-        Err(object_store::Error::NotFound { .. }) => return Ok(State::default()),
-        Err(err) => return Err(object_store_error(err)),
-    };
-
-    let update_version = UpdateVersion {
-        e_tag: result.meta.e_tag.clone(),
-        version: result.meta.version.clone(),
-    };
-    let bytes = result.bytes().await.map_err(object_store_error)?;
-    let secrets = serde_json::from_slice(&bytes).map_err(|source| crate::Error::Deserialize {
-        secret_id: path.to_string(),
-        source,
-    })?;
-
-    Ok(State {
-        secrets,
-        update_version: Some(update_version),
-    })
-}
-
-fn serialize_secrets(path: &Path, secrets: &BTreeMap<String, String>) -> Result<Vec<u8>> {
-    serde_json::to_vec(secrets).map_err(|source| crate::Error::Serialize {
-        secret_id: path.to_string(),
-        source,
-    })
-}
-
-fn is_conditional_write_failure(err: &object_store::Error) -> bool {
-    matches!(
-        err,
-        object_store::Error::AlreadyExists { .. } | object_store::Error::Precondition { .. }
-    )
-}
-
-fn object_store_error(err: object_store::Error) -> crate::Error {
-    crate::Error::Generic {
-        manager: MANAGER,
-        source: Box::new(err),
-    }
-}
-
-fn not_found(secret_id: &SecretId) -> crate::Error {
-    crate::Error::NotFound {
-        secret_id: secret_id.to_string(),
-        source: Box::new(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "secret not found",
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use object_store::memory::InMemory;
+    use object_store::{ObjectStoreExt, memory::InMemory};
 
     use super::*;
 

@@ -54,12 +54,12 @@ impl<T: Send + Sync> TransactionalStorageProtocol<T, UpdateVersion>
                 PutOptions::from(mode),
             )
             .await
-            .map_err(|err| {
-                if let ::object_store::Error::AlreadyExists { path: _, source: _ } = err {
+            .map_err(|err| match err {
+                ::object_store::Error::AlreadyExists { .. }
+                | ::object_store::Error::Precondition { .. } => {
                     TransactionalObjectError::ObjectVersionExists
-                } else {
-                    TransactionalObjectError::ObjectStoreError(err)
                 }
+                err => TransactionalObjectError::ObjectStoreError(err),
             })?;
 
         Ok(UpdateVersion::from(result))

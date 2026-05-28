@@ -5603,6 +5603,7 @@ dependencies = [
  "azure_core",
  "azure_identity",
  "azure_security_keyvault_secrets",
+ "bytes",
  "dashmap",
  "insta",
  "object_store 0.13.2",
@@ -5612,6 +5613,7 @@ dependencies = [
  "snafu",
  "tokio",
  "tracing",
+ "wings-txn-obj",
 ]
 
 [[package]]

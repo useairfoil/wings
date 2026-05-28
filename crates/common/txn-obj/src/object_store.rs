@@ -1,21 +1,22 @@
-use crate::TransactionalObjectError::CallbackError;
-use crate::{
-    BoundaryObject, GenericObjectMetadata, MonotonicId, ObjectCodec, SequencedStorageProtocol,
-    TransactionalObjectError,
+use std::{
+    collections::{Bound, Bound::Unbounded},
+    ops::RangeBounds,
+    sync::Arc,
 };
+
 use async_trait::async_trait;
 use futures::StreamExt;
 use log::{debug, error, warn};
-use object_store::Error::AlreadyExists;
-use object_store::path::Path;
 use object_store::{
-    Error, GetOptions, ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, UpdateVersion,
+    Error, Error::AlreadyExists, GetOptions, ObjectStore, ObjectStoreExt, PutMode, PutOptions,
+    PutPayload, UpdateVersion, path::Path,
 };
 use parking_lot::Mutex;
-use std::collections::Bound;
-use std::collections::Bound::Unbounded;
-use std::ops::RangeBounds;
-use std::sync::Arc;
+
+use crate::{
+    BoundaryObject, GenericObjectMetadata, MonotonicId, ObjectCodec, SequencedStorageProtocol,
+    TransactionalObjectError, TransactionalObjectError::CallbackError,
+};
 
 /// Implements `SequencedStorageProtocol<T>` on object storage.
 ///
@@ -432,28 +433,34 @@ impl<T: Send + Sync> SequencedStorageProtocol<T> for ObjectStoreSequencedStorage
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::Bound::{Excluded, Included, Unbounded},
+        fmt,
+        sync::{
+            Arc, Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use chrono::Utc;
+    use futures::{
+        StreamExt,
+        stream::{self, BoxStream},
+    };
+    use object_store::{
+        CopyOptions, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartUpload,
+        ObjectMeta, ObjectStore, ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload,
+        PutResult, Result as ObjectStoreResult, UpdateVersion, memory::InMemory, path::Path,
+    };
+    use tokio::sync::Notify;
+
     use super::{ObjectStoreBoundaryObject, ObjectStoreSequencedStorageProtocol};
-    use crate::tests::{TestVal, TestValCodec, new_store};
     use crate::{
         BoundaryObject, MonotonicId, ObjectCodec, SequencedStorageProtocol,
         SimpleTransactionalObject, TransactionalObject, TransactionalObjectError,
         TransactionalStorageProtocol,
+        tests::{TestVal, TestValCodec, new_store},
     };
-    use chrono::Utc;
-    use futures::StreamExt;
-    use futures::stream::{self, BoxStream};
-    use object_store::memory::InMemory;
-    use object_store::path::Path;
-    use object_store::{
-        CopyOptions, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartUpload,
-        ObjectMeta, ObjectStore, ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload,
-        PutResult, Result as ObjectStoreResult, UpdateVersion,
-    };
-    use std::collections::Bound::{Excluded, Included, Unbounded};
-    use std::fmt;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex as StdMutex};
-    use tokio::sync::Notify;
 
     /// A flaky object store that simulates a missing file on the first list() call.
     /// On the first call to list(), it returns a file with `missing_id`. On subsequent
