@@ -11,6 +11,7 @@ name = "wings_server_cluster"
 path = "src/lib.rs"
 
 [dependencies]
+futures-util.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 serde.workspace = true

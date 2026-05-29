@@ -30,3 +30,4 @@ wings-txn-obj.workspace = true
 insta.workspace = true
 tokio.workspace = true
 wings-dst-base = { workspace = true, features = ["test-util"] }
+wings-schema.workspace = true

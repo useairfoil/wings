@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::common::arrow::datatypes::SchemaRef as ArrowSchemaRef;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use wings_schema::{DataType, Field, Schema};
 
@@ -19,7 +20,7 @@ pub enum Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A table belonging to a namespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Table {
     /// The table name.
     pub name: TableName,

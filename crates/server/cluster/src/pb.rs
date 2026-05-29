@@ -18,6 +18,8 @@ pub enum WireError {
     Resource {
         source: wings_resources::ResourceError,
     },
+    #[snafu(transparent)]
+    Schema { source: wings_schema::pb::WireError },
 }
 
 type Result<T, E = WireError> = ::std::result::Result<T, E>;
@@ -33,7 +35,8 @@ mod conversion {
         IcebergConfiguration as ResourceIcebergConfiguration, Namespace as ResourceNamespace,
         NamespaceOptions, ObjectStoreConfiguration as ResourceObjectStore,
         ParquetConfiguration as ResourceParquetConfiguration,
-        S3CompatibleConfiguration as ResourceS3CompatibleConfiguration,
+        S3CompatibleConfiguration as ResourceS3CompatibleConfiguration, Table as ResourceTable,
+        TableOptions,
     };
 
     use super::{Result, WireError, inner};
@@ -59,6 +62,34 @@ mod conversion {
                     .required("object_store")?
                     .try_into()?,
                 lake: value.lake.as_ref().required("lake")?.try_into()?,
+            })
+        }
+    }
+
+    impl From<&ResourceTable> for inner::Table {
+        fn from(value: &ResourceTable) -> Self {
+            Self {
+                name: value.name.to_string(),
+                schema: Some((&value.schema).into()),
+                description: value.description.clone(),
+                key_field_id: value.key_field_id,
+                version_field_id: value.version_field_id,
+                partition_field_id: value.partition_field_id,
+                target_freshness_seconds: 0,
+            }
+        }
+    }
+
+    impl TryFrom<&inner::Table> for TableOptions {
+        type Error = WireError;
+
+        fn try_from(value: &inner::Table) -> Result<Self> {
+            Ok(Self {
+                schema: value.schema.as_ref().required("schema")?.try_into()?,
+                description: value.description.clone(),
+                key_field_id: value.key_field_id,
+                version_field_id: value.version_field_id,
+                partition_field_id: value.partition_field_id,
             })
         }
     }

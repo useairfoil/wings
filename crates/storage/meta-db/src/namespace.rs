@@ -7,16 +7,18 @@ use time::OffsetDateTime;
 use wings_dst_base::IdGenerator;
 use wings_resources::{
     DataLakeConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
+    TableName,
 };
 use wings_secret_manager::{SecretId, TypedSecretManager};
 use wings_txn_obj::{
-    ObjectCodec, SimpleTransactionalObject, TransactionalObject, TransactionalObjectError,
-    TransactionalStorageProtocol, singleton::ObjectStoreSingletonStorageProtocol,
+    ObjectCodec, SimpleTransactionalObject, TransactionalObject, TransactionalStorageProtocol,
+    singleton::ObjectStoreSingletonStorageProtocol,
 };
 
 use crate::{
     cluster::ClusterStore,
-    error::{DecodeSnafu, Error, NotFoundSnafu, Result},
+    error::{Error, NotFoundSnafu, Result, txn_error},
+    table::TableStore,
 };
 
 /// Access namespace metadata.
@@ -60,6 +62,18 @@ impl NamespaceStore {
             store,
             name,
         }
+    }
+
+    pub fn table(&self, name: TableName) -> Result<TableStore> {
+        if name.parent() != &self.name {
+            return Err(Error::InvalidResourceParent {
+                name: name.to_string(),
+                expected_parent: self.name.to_string(),
+                actual_parent: name.parent().to_string(),
+            });
+        }
+
+        Ok(self.cluster.table(name))
     }
 
     pub async fn init(&self, options: NamespaceOptions) -> Result<StoredNamespace> {
@@ -191,33 +205,6 @@ fn namespace_secret_id(kind: &str, rng: &mut impl IdGenerator) -> SecretId {
         .expect("generated namespace secret id must not be empty")
 }
 
-fn txn_error(path: Path, err: TransactionalObjectError) -> Error {
-    match err {
-        TransactionalObjectError::ObjectVersionExists => Error::AlreadyExists {
-            path: path.to_string(),
-        },
-        TransactionalObjectError::LatestRecordMissing => Error::NotFound {
-            path: path.to_string(),
-        },
-        TransactionalObjectError::ObjectStoreError(source) => Error::ObjectStore { source },
-        TransactionalObjectError::CallbackError(_)
-        | TransactionalObjectError::InvalidObjectState => DecodeSnafu {
-            path: path.to_string(),
-        }
-        .build(),
-        TransactionalObjectError::IoError(_)
-        | TransactionalObjectError::ObjectUpdateTimeout { .. }
-        | TransactionalObjectError::Fenced => DecodeSnafu {
-            path: path.to_string(),
-        }
-        .build(),
-        _ => DecodeSnafu {
-            path: path.to_string(),
-        }
-        .build(),
-    }
-}
-
 impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
     fn encode(&self, value: &NamespaceManifest) -> Bytes {
         serde_json::to_vec(value)
@@ -246,6 +233,7 @@ impl std::fmt::Debug for StoredNamespace {
 mod tests {
     use std::sync::Arc;
 
+    use bytes::Bytes;
     use object_store::{ObjectStoreExt, PutPayload, memory::InMemory};
 
     use super::*;

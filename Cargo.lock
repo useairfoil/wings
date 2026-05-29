@@ -5543,6 +5543,7 @@ dependencies = [
  "tokio",
  "wings-dst-base",
  "wings-resources",
+ "wings-schema",
  "wings-secret-manager",
  "wings-txn-obj",
 ]
@@ -5621,6 +5622,7 @@ dependencies = [
 name = "wings-server-cluster"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "prost",
  "prost-types",
  "serde",

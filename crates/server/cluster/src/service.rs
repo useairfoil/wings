@@ -1,8 +1,11 @@
+use futures_util::{StreamExt as _, stream};
 use tonic::{Request, Response, Status};
 use wings_meta_db::ClusterStore;
-use wings_resources::{NamespaceName, NamespaceOptions};
+use wings_resources::{NamespaceName, NamespaceOptions, TableName, TableOptions};
 
 use crate::pb;
+
+const LIST_TABLES_LOAD_CONCURRENCY: usize = 16;
 
 pub struct ClusterService {
     cluster_store: ClusterStore,
@@ -117,30 +120,94 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
 
     async fn create_table(
         &self,
-        _request: Request<pb::CreateTableRequest>,
+        request: Request<pb::CreateTableRequest>,
     ) -> Result<Response<pb::Table>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let namespace = NamespaceName::parse(&request.parent).map_err(invalid_request)?;
+        let name = TableName::new(request.table_id, namespace.clone()).map_err(invalid_request)?;
+        let options: TableOptions = request
+            .table
+            .as_ref()
+            .ok_or_else(|| Status::invalid_argument("missing field: table"))?
+            .try_into()
+            .map_err(invalid_request)?;
+
+        let table_store = self
+            .cluster_store
+            .namespace(namespace)
+            .table(name)
+            .map_err(meta_db_status)?;
+        let table = table_store.init(options).await.map_err(meta_db_status)?;
+
+        Ok(Response::new((&table.table()).into()))
     }
 
     async fn get_table(
         &self,
-        _request: Request<pb::GetTableRequest>,
+        request: Request<pb::GetTableRequest>,
     ) -> Result<Response<pb::Table>, Status> {
-        todo!()
+        let name = TableName::parse(&request.into_inner().name).map_err(invalid_request)?;
+        let table = self
+            .cluster_store
+            .table(name)
+            .load()
+            .await
+            .map_err(meta_db_status)?;
+
+        Ok(Response::new((&table.table()).into()))
     }
 
     async fn list_tables(
         &self,
-        _request: Request<pb::ListTablesRequest>,
+        request: Request<pb::ListTablesRequest>,
     ) -> Result<Response<pb::ListTablesResponse>, Status> {
-        todo!()
+        let request = request.into_inner();
+        let namespace = NamespaceName::parse(&request.parent).map_err(invalid_request)?;
+        let page_size = request
+            .page_size
+            .map(usize::try_from)
+            .transpose()
+            .map_err(invalid_request)?;
+        let page = self
+            .cluster_store
+            .list_tables(namespace, page_size, request.page_token)
+            .await
+            .map_err(meta_db_status)?;
+
+        let tables = stream::iter(page.tables)
+            .map(|name| {
+                let cluster_store = self.cluster_store.clone();
+                async move {
+                    cluster_store
+                        .table(name)
+                        .load()
+                        .await
+                        .map(|table| (&table.table()).into())
+                }
+            })
+            .buffered(LIST_TABLES_LOAD_CONCURRENCY)
+            .filter_map(|table| async { table.ok() })
+            .collect()
+            .await;
+
+        Ok(Response::new(pb::ListTablesResponse {
+            tables,
+            next_page_token: page.next_page_token.unwrap_or_default(),
+        }))
     }
 
     async fn delete_table(
         &self,
-        _request: Request<pb::DeleteTableRequest>,
+        request: Request<pb::DeleteTableRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        let name = TableName::parse(&request.into_inner().name).map_err(invalid_request)?;
+        self.cluster_store
+            .table(name)
+            .delete()
+            .await
+            .map_err(meta_db_status)?;
+
+        Ok(Response::new(()))
     }
 }
 
@@ -154,6 +221,8 @@ fn meta_db_status(err: wings_meta_db::Error) -> Status {
         wings_meta_db::Error::AlreadyExists { .. } => Status::already_exists(message),
         wings_meta_db::Error::NotFound { .. } => Status::not_found(message),
         wings_meta_db::Error::Decode { .. } => Status::internal(message),
+        wings_meta_db::Error::InvalidResourceParent { .. }
+        | wings_meta_db::Error::InvalidTable { .. } => Status::invalid_argument(message),
         wings_meta_db::Error::SecretManager { .. } | wings_meta_db::Error::ObjectStore { .. } => {
             Status::unknown(message)
         }
