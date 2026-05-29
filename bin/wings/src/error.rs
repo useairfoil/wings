@@ -1,5 +1,6 @@
 use std::net::AddrParseError;
 
+use http::uri::InvalidUri;
 use snafu::Snafu;
 use wings_observability::ObservabilityError;
 
@@ -21,6 +22,16 @@ pub enum CliError {
     TonicServer { source: tonic::transport::Error },
     #[snafu(display("Failed to initialize observability"))]
     Observability { source: ObservabilityError },
+    #[snafu(display("Invalid remote URL"))]
+    InvalidRemoteUrl { source: InvalidUri },
+    #[snafu(display("Connection error"))]
+    Connection { source: tonic::transport::Error },
+    #[snafu(display("Arrow error"))]
+    Arrow { source: arrow::error::ArrowError },
+    #[snafu(display("Flight error"))]
+    Flight {
+        source: arrow_flight::error::FlightError,
+    },
 }
 
 pub type Result<T, E = CliError> = std::result::Result<T, E>;

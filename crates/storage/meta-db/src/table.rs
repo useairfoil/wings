@@ -24,6 +24,7 @@ pub struct TableStore {
 }
 
 /// A table stored on object storage.
+#[derive(Clone)]
 pub struct StoredTable {
     manifest: SimpleTransactionalObject<TableManifest, UpdateVersion>,
 }

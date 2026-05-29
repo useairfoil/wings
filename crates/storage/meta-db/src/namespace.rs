@@ -30,6 +30,7 @@ pub struct NamespaceStore {
 }
 
 /// A namespace stored on object storage.
+#[derive(Clone)]
 pub struct StoredNamespace {
     manifest: SimpleTransactionalObject<NamespaceManifest, UpdateVersion>,
     object_store: ObjectStoreConfiguration,
@@ -175,6 +176,10 @@ impl NamespaceStore {
 }
 
 impl StoredNamespace {
+    pub fn name(&self) -> &NamespaceName {
+        &self.manifest().name
+    }
+
     pub fn manifest(&self) -> &NamespaceManifest {
         self.manifest.object()
     }

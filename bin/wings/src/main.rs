@@ -7,10 +7,12 @@ use tokio_util::sync::CancellationToken;
 use wings_dst_base::{Clock, DefaultClock, ThreadRng};
 use wings_observability::{MetricsExporter, init_observability};
 
-use crate::{dev::DevArgs, error::Result};
+use crate::{dev::DevArgs, error::Result, sql::SqlArgs};
 
 mod dev;
 mod error;
+mod remote;
+mod sql;
 
 #[derive(Parser)]
 #[command(name = "wings")]
@@ -18,15 +20,19 @@ mod error;
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Command,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+enum Command {
     /// Start the Wings service in development mode
     Dev {
         #[clap(flatten)]
         inner: DevArgs,
+    },
+    Sql {
+        #[clap(flatten)]
+        inner: SqlArgs,
     },
 }
 
@@ -57,6 +63,7 @@ async fn main() -> Result<()> {
     });
 
     match cli.command {
-        Commands::Dev { inner } => inner.run(ct, clock, rng).await,
+        Command::Dev { inner } => inner.run(ct, clock, rng).await,
+        Command::Sql { inner } => inner.run(ct).await,
     }
 }

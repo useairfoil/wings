@@ -246,6 +246,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-flight"
+version = "57.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63654f21676be802d446c6c4bc54f6a47e18d55f9ae6f7195a6f6faf2ecdbeb"
+dependencies = [
+ "arrow-arith",
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-cast",
+ "arrow-data",
+ "arrow-ipc",
+ "arrow-ord",
+ "arrow-row",
+ "arrow-schema",
+ "arrow-select",
+ "arrow-string",
+ "base64",
+ "bytes",
+ "futures",
+ "once_cell",
+ "paste",
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-prost",
+]
+
+[[package]]
 name = "arrow-ipc"
 version = "57.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5484,7 +5512,11 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 name = "wings"
 version = "0.1.0"
 dependencies = [
+ "arrow",
+ "arrow-flight",
  "clap",
+ "futures",
+ "http",
  "object_store 0.13.2",
  "rand 0.10.1",
  "snafu",
@@ -5498,6 +5530,7 @@ dependencies = [
  "wings-observability",
  "wings-secret-manager",
  "wings-server-cluster",
+ "wings-server-flight",
 ]
 
 [[package]]
@@ -5630,6 +5663,31 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "wings-meta-db",
+ "wings-observability",
+ "wings-resources",
+ "wings-schema",
+]
+
+[[package]]
+name = "wings-server-flight"
+version = "0.1.0"
+dependencies = [
+ "arrow-flight",
+ "async-trait",
+ "bytes",
+ "datafusion",
+ "futures",
+ "futures-util",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
  "wings-meta-db",
  "wings-observability",
  "wings-resources",

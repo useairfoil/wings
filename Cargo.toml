@@ -16,6 +16,7 @@ members = [
     "crates/common/secret-manager",
     "crates/common/txn-obj",
     "crates/server/cluster",
+    "crates/server/flight",
     "crates/storage/delta-log",
     "crates/storage/meta-db",
 ]
@@ -116,3 +117,4 @@ wings-schema = { path = "crates/common/schema" }
 wings-secret-manager = { path = "crates/common/secret-manager" }
 wings-txn-obj = { path = "crates/common/txn-obj" }
 wings-server-cluster = { path = "crates/server/cluster" }
+wings-server-flight = { path = "crates/server/flight" }

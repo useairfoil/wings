@@ -6,6 +6,7 @@ use tracing::warn;
 /// Different data lake types require different configurations.
 /// This enum represents the various supported data lake types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum DataLakeConfiguration {
     /// Parquet data lake configuration.
     Parquet(ParquetConfiguration),

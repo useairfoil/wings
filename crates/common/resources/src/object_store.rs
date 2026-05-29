@@ -7,6 +7,7 @@ use crate::redacted::REDACTED_FIELD_VALUE;
 /// Different cloud providers require different object store configurations.
 /// This enum represents the various supported object store types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ObjectStoreConfiguration {
     /// AWS S3 object store configuration.
     Aws(AwsConfiguration),

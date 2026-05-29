@@ -12,6 +12,7 @@ use wings_dst_base::{Clock, ThreadRng};
 use wings_meta_db::ClusterStore;
 use wings_secret_manager::{SecretManager, UnsecureObjectStorageSecretManager};
 use wings_server_cluster::ClusterService;
+use wings_server_flight::ClusterFlightService;
 
 use crate::error::{
     InvalidGrpcAddressSnafu, ObjectStoreSnafu, Result, SecretManagerSnafu, TonicReflectionSnafu,
@@ -98,14 +99,17 @@ async fn run_grpc_server(
         .register_encoded_file_descriptor_set(
             wings_server_cluster::pb::cluster_file_descriptor_set(),
         )
+        .register_encoded_file_descriptor_set(wings_server_flight::pb::flight_file_descriptor_set())
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let cluster_service = ClusterService::new(cluster_store).into_tonic_server();
+    let cluster_service = ClusterService::new(cluster_store.clone()).into_tonic_server();
+    let flight_service = ClusterFlightService::new(cluster_store).into_tonic_server();
 
     tonic::transport::Server::builder()
         .add_service(reflection_service)
         .add_service(cluster_service)
+        .add_service(flight_service)
         .serve_with_shutdown(address, async move {
             ct.cancelled().await;
         })
