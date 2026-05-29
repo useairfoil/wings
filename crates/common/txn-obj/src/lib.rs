@@ -186,7 +186,7 @@ impl From<MonotonicId> for u64 {
 
 /// Generic file metadata for versioned objects
 #[derive(Debug)]
-pub struct GenericObjectMetadata<Id: Copy = MonotonicId> {
+pub struct GenericObjectMetadata<Id = MonotonicId> {
     pub id: Id,
     pub location: Path,
     pub last_modified: chrono::DateTime<Utc>,

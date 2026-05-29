@@ -10,7 +10,7 @@ use crate::{ObjectCodec, TransactionalObjectError, TransactionalStorageProtocol}
 /// Implements `TransactionStorageProtocol<T>` on object storage.
 ///
 /// ## File layout and naming
-/// - We rely on `put_if_not_exists` to enforce CAS at the storage layer. If a file with
+/// - We rely on `put_if_matches` to enforce CAS at the storage layer. If a file with
 ///   the same id already exists, the write fails with `ObjectVersionExists`.
 pub struct ObjectStoreSingletonStorageProtocol<T> {
     object_store: Arc<dyn ObjectStore>,
