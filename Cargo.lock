@@ -5486,6 +5486,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "object_store 0.13.2",
+ "rand 0.10.1",
  "snafu",
  "tokio",
  "tokio-util",

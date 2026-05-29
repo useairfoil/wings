@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use error::ObservabilitySnafu;
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
-use wings_dst_base::{Clock, DefaultClock};
+use wings_dst_base::{Clock, DefaultClock, ThreadRng};
 use wings_observability::{MetricsExporter, init_observability};
 
 use crate::{dev::DevArgs, error::Result};
@@ -34,6 +34,7 @@ enum Commands {
 #[snafu::report]
 async fn main() -> Result<()> {
     let clock: Arc<dyn Clock> = Arc::new(DefaultClock::new());
+    let rng = Arc::new(ThreadRng::new(rand::random()));
 
     init_observability(
         env!("CARGO_PKG_NAME"),
@@ -56,6 +57,6 @@ async fn main() -> Result<()> {
     });
 
     match cli.command {
-        Commands::Dev { inner } => inner.run(ct, clock).await,
+        Commands::Dev { inner } => inner.run(ct, clock, rng).await,
     }
 }

@@ -1,17 +1,38 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use object_store::{ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, path::Path};
+use object_store::{ObjectStoreExt as _, UpdateVersion, path::Path};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use wings_dst_base::{Clock, IdGenerator, ThreadRng};
+use wings_dst_base::IdGenerator;
 use wings_resources::{
     DataLakeConfiguration, Namespace, NamespaceName, NamespaceOptions, ObjectStoreConfiguration,
 };
-use wings_secret_manager::{SecretId, SecretManager, TypedSecretManager};
-use wings_txn_obj::ObjectCodec;
+use wings_secret_manager::{SecretId, TypedSecretManager};
+use wings_txn_obj::{
+    ObjectCodec, SimpleTransactionalObject, TransactionalObject, TransactionalObjectError,
+    TransactionalStorageProtocol, singleton::ObjectStoreSingletonStorageProtocol,
+};
 
-use crate::error::{AlreadyExistsSnafu, DecodeSnafu, NotFoundSnafu, Result};
+use crate::{
+    cluster::ClusterStore,
+    error::{DecodeSnafu, Error, NotFoundSnafu, Result},
+};
+
+/// Access namespace metadata.
+#[derive(Clone)]
+pub struct NamespaceStore {
+    cluster: ClusterStore,
+    store: Arc<dyn TransactionalStorageProtocol<NamespaceManifest, UpdateVersion>>,
+    name: NamespaceName,
+}
+
+/// A namespace stored on object storage.
+pub struct StoredNamespace {
+    manifest: SimpleTransactionalObject<NamespaceManifest, UpdateVersion>,
+    object_store: ObjectStoreConfiguration,
+    lake: DataLakeConfiguration,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NamespaceManifest {
@@ -24,65 +45,33 @@ pub struct NamespaceManifest {
     pub updated_at: OffsetDateTime,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ListNamespaceNamesResult {
-    pub names: Vec<NamespaceName>,
-    pub next_page_token: Option<String>,
-}
-
-#[derive(Clone)]
-pub struct NamespaceStore {
-    object_store: Arc<dyn ObjectStore>,
-    secret_manager: Arc<dyn SecretManager>,
-    codec: Arc<dyn ObjectCodec<NamespaceManifest>>,
-    clock: Arc<dyn Clock>,
-    rng: Arc<ThreadRng>,
-}
-
-struct NamespaceManifestJsonCodec;
-
-impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
-    fn encode(&self, value: &NamespaceManifest) -> Bytes {
-        serde_json::to_vec(value)
-            .expect("NamespaceManifestJsonCodec failed")
-            .into()
-    }
-
-    fn decode(
-        &self,
-        bytes: &Bytes,
-    ) -> Result<NamespaceManifest, Box<dyn std::error::Error + Send + Sync>> {
-        serde_json::from_slice(bytes)
-            .map_err(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync + 'static>)
-    }
-}
+pub struct NamespaceManifestJsonCodec;
 
 impl NamespaceStore {
-    pub fn new(
-        object_store: Arc<dyn ObjectStore>,
-        secret_manager: Arc<dyn SecretManager>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
+    pub(crate) fn new(cluster: ClusterStore, name: NamespaceName) -> Self {
+        let store = Arc::new(ObjectStoreSingletonStorageProtocol::new(
+            cluster.object_store.clone(),
+            manifest_path(&name),
+            Box::new(NamespaceManifestJsonCodec),
+        ));
+
         Self {
-            object_store,
-            secret_manager,
-            codec: Arc::new(NamespaceManifestJsonCodec),
-            clock,
-            rng: Arc::new(ThreadRng::default()),
+            cluster,
+            store,
+            name,
         }
     }
 
-    pub async fn create_namespace(
-        &self,
-        name: NamespaceName,
-        options: NamespaceOptions,
-    ) -> Result<()> {
-        let object_store_secrets =
-            TypedSecretManager::<ObjectStoreConfiguration>::new(self.secret_manager.clone());
+    pub async fn init(&self, options: NamespaceOptions) -> Result<StoredNamespace> {
+        let name = self.name.clone();
+
+        let object_store_secrets = TypedSecretManager::<ObjectStoreConfiguration>::new(
+            self.cluster.secret_manager.clone(),
+        );
         let lake_secrets =
-            TypedSecretManager::<DataLakeConfiguration>::new(self.secret_manager.clone());
+            TypedSecretManager::<DataLakeConfiguration>::new(self.cluster.secret_manager.clone());
         let (object_store_secret_id, lake_secret_id) = {
-            let mut rng = self.rng.rng();
+            let mut rng = self.cluster.rng.rng();
             (
                 namespace_secret_id("object-store", &mut *rng),
                 namespace_secret_id("lake", &mut *rng),
@@ -102,7 +91,7 @@ impl NamespaceStore {
             return Err(err.into());
         }
 
-        let now = self.clock.now();
+        let now = self.cluster.clock.now();
         let manifest = NamespaceManifest {
             name,
             object_store_secret_id: object_store_secret_id.clone(),
@@ -111,128 +100,89 @@ impl NamespaceStore {
             updated_at: now,
         };
 
-        if let Err(err) = self.write_manifest(&manifest).await {
-            let _ = object_store_secrets
-                .delete_secret(&object_store_secret_id)
-                .await;
-            let _ = lake_secrets.delete_secret(&lake_secret_id).await;
-            return Err(err);
+        match SimpleTransactionalObject::init(self.store.clone(), manifest)
+            .await
+            .map_err(|err| txn_error(manifest_path(&self.name), err))
+        {
+            Ok(manifest) => Ok(StoredNamespace {
+                manifest,
+                object_store: options.object_store,
+                lake: options.lake,
+            }),
+            Err(err) => {
+                let _ = object_store_secrets
+                    .delete_secret(&object_store_secret_id)
+                    .await;
+                let _ = lake_secrets.delete_secret(&lake_secret_id).await;
+                Err(err)
+            }
         }
-
-        Ok(())
     }
 
-    pub async fn get_namespace(&self, name: &NamespaceName) -> Result<Namespace> {
-        let manifest = self.read_manifest(name).await?;
-        let object_store =
-            TypedSecretManager::<ObjectStoreConfiguration>::new(self.secret_manager.clone())
-                .get_secret(&manifest.object_store_secret_id)
+    pub async fn load(&self) -> Result<StoredNamespace> {
+        let manifest = SimpleTransactionalObject::load(self.store.clone())
+            .await
+            .map_err(|err| txn_error(manifest_path(&self.name), err))?;
+        let object_store = TypedSecretManager::<ObjectStoreConfiguration>::new(
+            self.cluster.secret_manager.clone(),
+        )
+        .get_secret(&manifest.object().object_store_secret_id)
+        .await?;
+        let lake =
+            TypedSecretManager::<DataLakeConfiguration>::new(self.cluster.secret_manager.clone())
+                .get_secret(&manifest.object().lake_secret_id)
                 .await?;
-        let lake = TypedSecretManager::<DataLakeConfiguration>::new(self.secret_manager.clone())
-            .get_secret(&manifest.lake_secret_id)
-            .await?;
 
-        Ok(Namespace {
-            name: manifest.name,
+        Ok(StoredNamespace {
+            manifest,
             object_store,
             lake,
         })
     }
 
-    pub async fn delete_namespace(&self, name: &NamespaceName) -> Result<()> {
-        self.delete_manifest(name).await
-    }
-
-    pub async fn list_namespace_names(
-        &self,
-        page_size: Option<usize>,
-        page_token: Option<String>,
-    ) -> Result<ListNamespaceNamesResult> {
-        let prefix = Path::from("namespaces");
-        let page_size = page_size.unwrap_or(100).clamp(1, 1000);
-        let mut namespace_names = self
-            .object_store
-            .list_with_delimiter(Some(&prefix))
-            .await?
-            .common_prefixes
-            .into_iter()
-            .filter_map(|path| NamespaceName::parse(path.as_ref()).ok())
-            .collect::<Vec<_>>();
-
-        namespace_names.sort_by_key(|name| name.to_string());
-
-        let mut names: Vec<NamespaceName> = Vec::new();
-        let mut next_page_token = None;
-        for name in namespace_names {
-            let token = name.to_string();
-            if page_token.as_ref().is_some_and(|offset| token <= *offset) {
-                continue;
-            }
-
-            if names.len() == page_size {
-                next_page_token = names.last().map(|name| name.to_string());
-                break;
-            }
-
-            names.push(name);
+    pub async fn try_load(&self) -> Result<Option<StoredNamespace>> {
+        match self.load().await {
+            Ok(namespace) => Ok(Some(namespace)),
+            Err(Error::NotFound { .. }) => Ok(None),
+            Err(err) => Err(err),
         }
-
-        Ok(ListNamespaceNamesResult {
-            names,
-            next_page_token,
-        })
     }
 
-    pub async fn write_manifest(&self, manifest: &NamespaceManifest) -> Result<()> {
-        let payload = PutPayload::from(self.codec.encode(&manifest));
-        self.object_store
-            .put_opts(
-                &manifest_path(&manifest.name),
-                payload,
-                PutOptions::from(PutMode::Create),
-            )
-            .await
-            .map_err(|err| match err {
-                object_store::Error::AlreadyExists { path, .. } => {
-                    AlreadyExistsSnafu { path }.build()
-                }
-                _ => err.into(),
-            })?;
-
-        Ok(())
-    }
-
-    pub async fn read_manifest(&self, name: &NamespaceName) -> Result<NamespaceManifest> {
-        let path = manifest_path(name);
-        let result =
-            self.object_store
-                .get(&manifest_path(name))
-                .await
-                .map_err(|err| match err {
-                    object_store::Error::NotFound { path, .. } => NotFoundSnafu { path }.build(),
-                    _ => err.into(),
-                })?;
-
-        let bytes = result.bytes().await?;
-        self.codec
-            .decode(&bytes)
-            .map_err(|_| DecodeSnafu { path }.build())
-    }
-
-    pub async fn delete_manifest(&self, name: &NamespaceName) -> Result<()> {
-        self.object_store
-            .delete(&manifest_path(name))
+    pub async fn delete(&self) -> Result<()> {
+        self.cluster
+            .object_store
+            .delete(&manifest_path(&self.name))
             .await
             .map_err(|err| match err {
                 object_store::Error::NotFound { path, .. } => NotFoundSnafu { path }.build(),
                 _ => err.into(),
-            })?;
-
-        Ok(())
+            })
     }
 }
 
-fn manifest_path(name: &NamespaceName) -> Path {
+impl StoredNamespace {
+    pub fn manifest(&self) -> &NamespaceManifest {
+        self.manifest.object()
+    }
+
+    pub fn object_store(&self) -> &ObjectStoreConfiguration {
+        &self.object_store
+    }
+
+    pub fn lake(&self) -> &DataLakeConfiguration {
+        &self.lake
+    }
+
+    pub fn namespace(&self) -> Namespace {
+        Namespace {
+            name: self.manifest().name.clone(),
+            object_store: self.object_store.clone(),
+            lake: self.lake.clone(),
+        }
+    }
+}
+
+pub(crate) fn manifest_path(name: &NamespaceName) -> Path {
     Path::from(format!("{name}/manifest.json"))
 }
 
@@ -241,65 +191,79 @@ fn namespace_secret_id(kind: &str, rng: &mut impl IdGenerator) -> SecretId {
         .expect("generated namespace secret id must not be empty")
 }
 
+fn txn_error(path: Path, err: TransactionalObjectError) -> Error {
+    match err {
+        TransactionalObjectError::ObjectVersionExists => Error::AlreadyExists {
+            path: path.to_string(),
+        },
+        TransactionalObjectError::LatestRecordMissing => Error::NotFound {
+            path: path.to_string(),
+        },
+        TransactionalObjectError::ObjectStoreError(source) => Error::ObjectStore { source },
+        TransactionalObjectError::CallbackError(_)
+        | TransactionalObjectError::InvalidObjectState => DecodeSnafu {
+            path: path.to_string(),
+        }
+        .build(),
+        TransactionalObjectError::IoError(_)
+        | TransactionalObjectError::ObjectUpdateTimeout { .. }
+        | TransactionalObjectError::Fenced => DecodeSnafu {
+            path: path.to_string(),
+        }
+        .build(),
+        _ => DecodeSnafu {
+            path: path.to_string(),
+        }
+        .build(),
+    }
+}
+
+impl ObjectCodec<NamespaceManifest> for NamespaceManifestJsonCodec {
+    fn encode(&self, value: &NamespaceManifest) -> Bytes {
+        serde_json::to_vec(value)
+            .expect("NamespaceManifestJsonCodec failed")
+            .into()
+    }
+
+    fn decode(
+        &self,
+        bytes: &Bytes,
+    ) -> Result<NamespaceManifest, Box<dyn std::error::Error + Send + Sync>> {
+        serde_json::from_slice(bytes)
+            .map_err(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync + 'static>)
+    }
+}
+
+impl std::fmt::Debug for StoredNamespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredNamespace")
+            .field("name", &self.manifest().name)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use object_store::{ObjectStore, PutPayload, memory::InMemory};
-    use wings_dst_base::MockClock;
-    use wings_resources::{ParquetConfiguration, S3CompatibleConfiguration};
-    use wings_secret_manager::memory::MemorySecretManager;
+    use object_store::{ObjectStoreExt, PutPayload, memory::InMemory};
 
     use super::*;
-
-    fn namespace_store(object_store: Arc<dyn ObjectStore>) -> NamespaceStore {
-        NamespaceStore {
-            object_store,
-            secret_manager: Arc::new(MemorySecretManager::new()),
-            codec: Arc::new(NamespaceManifestJsonCodec),
-            clock: Arc::new(MockClock::with_time(1_700_000_000_000)),
-            rng: Arc::new(ThreadRng::new(42)),
-        }
-    }
-
-    fn test_manifest(namespace: &str) -> NamespaceManifest {
-        NamespaceManifest {
-            name: NamespaceName::new(namespace).unwrap(),
-            object_store_secret_id: SecretId::parse("object-store-secret").unwrap(),
-            lake_secret_id: SecretId::parse("lake-secret").unwrap(),
-            created_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
-            updated_at: OffsetDateTime::from_unix_timestamp(1_700_000_001).unwrap(),
-        }
-    }
-
-    fn test_options() -> NamespaceOptions {
-        NamespaceOptions {
-            object_store: ObjectStoreConfiguration::S3Compatible(S3CompatibleConfiguration {
-                bucket_name: "test-bucket".to_string(),
-                prefix: Some("test-prefix".to_string()),
-                access_key_id: "access-key-id".to_string(),
-                secret_access_key: "secret-access-key".to_string(),
-                endpoint: "http://localhost:9000".to_string(),
-                region: Some("test-region".to_string()),
-                allow_http: true,
-            }),
-            lake: DataLakeConfiguration::Parquet(ParquetConfiguration::default()),
-        }
-    }
+    use crate::test_util::{new_test_cluster_store, new_test_namespace_options};
 
     #[tokio::test]
-    async fn create_namespace_stores_manifest_and_secrets() {
-        let store = namespace_store(Arc::new(InMemory::new()));
+    async fn init_stores_manifest_and_secrets() {
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
         let name = NamespaceName::new("test-namespace").unwrap();
-        let options = test_options();
+        let options = new_test_namespace_options();
 
-        store
-            .create_namespace(name.clone(), options.clone())
+        let manifest = store
+            .namespace(name.clone())
+            .init(options.clone())
             .await
             .unwrap();
 
-        let manifest = store.read_manifest(&name).await.unwrap();
-        insta::assert_yaml_snapshot!(manifest, @r#"
+        insta::assert_yaml_snapshot!(manifest.manifest(), @r#"
         name: namespaces/test-namespace
         object_store_secret_id: object-store-233c1def-caf6-4ae8-b149-a5a5b203a354
         lake_secret_id: lake-456364cd-2c81-40f3-b5bb-9a3fc6395834
@@ -309,17 +273,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_namespace_reads_manifest_and_secrets() {
-        let store = namespace_store(Arc::new(InMemory::new()));
+    async fn load_reads_manifest_and_secrets() {
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
         let name = NamespaceName::new("test-namespace").unwrap();
-        let options = test_options();
+        let options = new_test_namespace_options();
+        let namespace_store = store.namespace(name.clone());
 
-        store
-            .create_namespace(name.clone(), options.clone())
-            .await
-            .unwrap();
+        namespace_store.init(options.clone()).await.unwrap();
 
-        let namespace = store.get_namespace(&name).await.unwrap();
+        let namespace = namespace_store.load().await.unwrap().namespace();
 
         insta::assert_yaml_snapshot!(namespace, @r#"
         name: namespaces/test-namespace
@@ -339,103 +301,51 @@ mod tests {
 
     #[tokio::test]
     async fn delete_namespace_deletes_manifest() {
-        let store = namespace_store(Arc::new(InMemory::new()));
-        let manifest = test_manifest("test-namespace");
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
+        let name = NamespaceName::new("test-namespace").unwrap();
+        let options = new_test_namespace_options();
+        store.namespace(name.clone()).init(options).await.unwrap();
 
-        store.write_manifest(&manifest).await.unwrap();
-        store.delete_namespace(&manifest.name).await.unwrap();
-        let err = store.read_manifest(&manifest.name).await.unwrap_err();
+        let _stored = store.namespace(name.clone()).load().await.unwrap();
+
+        store.namespace(name.clone()).delete().await.unwrap();
+
+        let err = store.namespace(name).load().await.unwrap_err();
 
         insta::assert_compact_debug_snapshot!(err, @r#"NotFound { path: "namespaces/test-namespace/manifest.json" }"#);
     }
 
     #[tokio::test]
-    async fn list_namespace_names_returns_namespace_folders_in_path_order() {
-        let object_store = Arc::new(InMemory::new());
-        let store = namespace_store(object_store.clone());
-
-        store
-            .write_manifest(&test_manifest("charlie"))
-            .await
-            .unwrap();
-        store.write_manifest(&test_manifest("alpha")).await.unwrap();
-        store.write_manifest(&test_manifest("bravo")).await.unwrap();
-        object_store
-            .put(
-                &Path::from("namespaces/not-a-namespace.json"),
-                PutPayload::from(Bytes::from_static(b"not a folder")),
-            )
-            .await
-            .unwrap();
-
-        let result = store.list_namespace_names(None, None).await.unwrap();
-        insta::assert_yaml_snapshot!(result, @r"
-        names:
-          - namespaces/alpha
-          - namespaces/bravo
-          - namespaces/charlie
-        next_page_token: ~
-        ");
-    }
-
-    #[tokio::test]
-    async fn list_namespace_names_paginates_with_next_page_token() {
-        let store = namespace_store(Arc::new(InMemory::new()));
-
-        store
-            .write_manifest(&test_manifest("charlie"))
-            .await
-            .unwrap();
-        store.write_manifest(&test_manifest("alpha")).await.unwrap();
-        store.write_manifest(&test_manifest("bravo")).await.unwrap();
-
-        let first_page = store.list_namespace_names(Some(2), None).await.unwrap();
-        insta::assert_yaml_snapshot!(first_page, @r"
-        names:
-          - namespaces/alpha
-          - namespaces/bravo
-        next_page_token: namespaces/bravo
-        ");
-
-        let second_page = store
-            .list_namespace_names(Some(2), first_page.next_page_token)
-            .await
-            .unwrap();
-        insta::assert_yaml_snapshot!(second_page, @r"
-        names:
-          - namespaces/charlie
-        next_page_token: ~
-        ");
-    }
-
-    #[tokio::test]
-    async fn write_then_read_manifest_round_trips() {
-        let store = namespace_store(Arc::new(InMemory::new()));
-        let manifest = test_manifest("test-namespace");
-
-        store.write_manifest(&manifest).await.unwrap();
-        let actual = store.read_manifest(&manifest.name).await.unwrap();
-
-        assert_eq!(actual, manifest);
-    }
-
-    #[tokio::test]
     async fn write_manifest_fails_when_manifest_already_exists() {
-        let store = namespace_store(Arc::new(InMemory::new()));
-        let manifest = test_manifest("test-namespace");
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
+        let name = NamespaceName::new("test-namespace").unwrap();
+        let options = new_test_namespace_options();
 
-        store.write_manifest(&manifest).await.unwrap();
-        let err = store.write_manifest(&manifest).await.unwrap_err();
+        store
+            .namespace(name.clone())
+            .init(options.clone())
+            .await
+            .unwrap();
+
+        let err = store.namespace(name).init(options).await.unwrap_err();
 
         insta::assert_compact_debug_snapshot!(err, @r#"AlreadyExists { path: "namespaces/test-namespace/manifest.json" }"#);
     }
 
     #[tokio::test]
-    async fn read_manifest_fails_when_manifest_does_not_exist() {
-        let store = namespace_store(Arc::new(InMemory::new()));
+    async fn try_read_manifest_returns_none_when_manifest_does_not_exist() {
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
         let name = NamespaceName::new("missing-namespace").unwrap();
 
-        let err = store.read_manifest(&name).await.unwrap_err();
+        assert!(store.namespace(name).try_load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn read_manifest_fails_when_manifest_does_not_exist() {
+        let store = new_test_cluster_store(Arc::new(InMemory::new()));
+        let name = NamespaceName::new("missing-namespace").unwrap();
+
+        let err = store.namespace(name).load().await.unwrap_err();
 
         insta::assert_compact_debug_snapshot!(err, @r#"NotFound { path: "namespaces/missing-namespace/manifest.json" }"#);
     }
@@ -443,7 +353,7 @@ mod tests {
     #[tokio::test]
     async fn read_manifest_fails_when_manifest_is_invalid_json() {
         let object_store = Arc::new(InMemory::new());
-        let store = namespace_store(object_store.clone());
+        let store = new_test_cluster_store(object_store.clone());
         let name = NamespaceName::new("test-namespace").unwrap();
 
         object_store
@@ -454,20 +364,8 @@ mod tests {
             .await
             .unwrap();
 
-        let err = store.read_manifest(&name).await.unwrap_err();
+        let err = store.namespace(name).load().await.unwrap_err();
 
         insta::assert_compact_debug_snapshot!(err, @r#"Decode { path: "namespaces/test-namespace/manifest.json" }"#);
-    }
-
-    #[tokio::test]
-    async fn delete_manifest_removes_existing_manifest() {
-        let store = namespace_store(Arc::new(InMemory::new()));
-        let manifest = test_manifest("test-namespace");
-
-        store.write_manifest(&manifest).await.unwrap();
-        store.delete_manifest(&manifest.name).await.unwrap();
-        let err = store.read_manifest(&manifest.name).await.unwrap_err();
-
-        insta::assert_compact_debug_snapshot!(err, @r#"NotFound { path: "namespaces/test-namespace/manifest.json" }"#);
     }
 }

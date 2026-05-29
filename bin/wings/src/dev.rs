@@ -8,8 +8,8 @@ use object_store::{
 use snafu::ResultExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use wings_dst_base::Clock;
-use wings_meta_db::NamespaceStore;
+use wings_dst_base::{Clock, ThreadRng};
+use wings_meta_db::ClusterStore;
 use wings_secret_manager::{SecretManager, UnsecureObjectStorageSecretManager};
 use wings_server_cluster::ClusterService;
 
@@ -54,15 +54,24 @@ struct ClusterObjectStore {
 }
 
 impl DevArgs {
-    pub async fn run(self, ct: CancellationToken, clock: Arc<dyn Clock>) -> Result<()> {
+    pub async fn run(
+        self,
+        ct: CancellationToken,
+        clock: Arc<dyn Clock>,
+        rng: Arc<ThreadRng>,
+    ) -> Result<()> {
         let cluster_object_store = self.object_store.create_object_store()?;
         let secret_manager: Arc<dyn SecretManager> = Arc::new(
             UnsecureObjectStorageSecretManager::new(cluster_object_store.object_store())
                 .await
                 .context(SecretManagerSnafu {})?,
         );
-        let namespace_store =
-            NamespaceStore::new(cluster_object_store.object_store(), secret_manager, clock);
+        let cluster_store = ClusterStore::new(
+            cluster_object_store.object_store(),
+            secret_manager,
+            clock,
+            rng,
+        );
         let grpc_address = self
             .grpc_address
             .parse::<SocketAddr>()
@@ -70,7 +79,7 @@ impl DevArgs {
 
         info!(address = %grpc_address, "Starting gRPC server");
 
-        run_grpc_server(namespace_store, grpc_address, ct).await
+        run_grpc_server(cluster_store, grpc_address, ct).await
     }
 }
 
@@ -81,7 +90,7 @@ impl ClusterObjectStore {
 }
 
 async fn run_grpc_server(
-    namespace_store: NamespaceStore,
+    cluster_store: ClusterStore,
     address: SocketAddr,
     ct: CancellationToken,
 ) -> Result<()> {
@@ -92,7 +101,7 @@ async fn run_grpc_server(
         .build_v1()
         .context(TonicReflectionSnafu {})?;
 
-    let cluster_service = ClusterService::new(namespace_store).into_tonic_server();
+    let cluster_service = ClusterService::new(cluster_store).into_tonic_server();
 
     tonic::transport::Server::builder()
         .add_service(reflection_service)

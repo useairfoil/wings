@@ -43,14 +43,14 @@ impl Table {
         options
             .schema
             .root_field_by_id(options.key_field_id)
-            .ok_or_else(|| Error::MissingKeyField {
+            .ok_or(Error::MissingKeyField {
                 field_id: options.key_field_id,
             })?;
 
         options
             .schema
             .root_field_by_id(options.version_field_id)
-            .ok_or_else(|| Error::MissingVersionField {
+            .ok_or(Error::MissingVersionField {
                 field_id: options.version_field_id,
             })?;
 

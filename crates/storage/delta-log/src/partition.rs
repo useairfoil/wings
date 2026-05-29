@@ -20,8 +20,8 @@ pub enum Error {
     #[snafu(display("invalid {operation} schema: expected {expected:?}, got {actual:?}"))]
     InvalidSchema {
         operation: &'static str,
-        expected: ArrowSchema,
-        actual: ArrowSchema,
+        expected: Box<ArrowSchema>,
+        actual: Box<ArrowSchema>,
     },
     #[snafu(display("empty {operation} log"))]
     EmptyLog { operation: &'static str },

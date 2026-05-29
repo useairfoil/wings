@@ -1,16 +1,16 @@
 use tonic::{Request, Response, Status};
-use wings_meta_db::NamespaceStore;
-use wings_resources::{Namespace, NamespaceName, NamespaceOptions};
+use wings_meta_db::ClusterStore;
+use wings_resources::{NamespaceName, NamespaceOptions};
 
 use crate::pb;
 
 pub struct ClusterService {
-    namespace_store: NamespaceStore,
+    cluster_store: ClusterStore,
 }
 
 impl ClusterService {
-    pub fn new(namespace_store: NamespaceStore) -> Self {
-        Self { namespace_store }
+    pub fn new(cluster_store: ClusterStore) -> Self {
+        Self { cluster_store }
     }
 
     pub fn into_tonic_server(self) -> pb::cluster_service_server::ClusterServiceServer<Self> {
@@ -32,18 +32,17 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
             .ok_or_else(|| Status::invalid_argument("missing field: namespace"))?
             .try_into()
             .map_err(invalid_request)?;
-        let namespace = Namespace {
-            name: name.clone(),
-            object_store: options.object_store.clone(),
-            lake: options.lake.clone(),
-        };
 
-        self.namespace_store
-            .create_namespace(name, options)
+        let namespace = self
+            .cluster_store
+            .namespace(name)
+            .init(options)
             .await
             .map_err(meta_db_status)?;
 
-        Ok(Response::new((&namespace.into_redacted()).into()))
+        Ok(Response::new(
+            (&namespace.namespace().into_redacted()).into(),
+        ))
     }
 
     async fn update_namespace(
@@ -59,12 +58,15 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
     ) -> Result<Response<pb::Namespace>, Status> {
         let name = NamespaceName::parse(&request.into_inner().name).map_err(invalid_request)?;
         let namespace = self
-            .namespace_store
-            .get_namespace(&name)
+            .cluster_store
+            .namespace(name)
+            .load()
             .await
             .map_err(meta_db_status)?;
 
-        Ok(Response::new((&namespace.into_redacted()).into()))
+        Ok(Response::new(
+            (&namespace.namespace().into_redacted()).into(),
+        ))
     }
 
     async fn list_namespaces(
@@ -77,13 +79,14 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
             .map(usize::try_from)
             .transpose()
             .map_err(invalid_request)?;
-        let result = self
-            .namespace_store
-            .list_namespace_names(page_size, request.page_token)
+        let page = self
+            .cluster_store
+            .list_namespaces(page_size, request.page_token)
             .await
             .map_err(meta_db_status)?;
-        let namespaces = result
-            .names
+
+        let namespaces = page
+            .namespaces
             .into_iter()
             .map(|name| pb::Namespace {
                 name: name.to_string(),
@@ -94,7 +97,7 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
 
         Ok(Response::new(pb::ListNamespacesResponse {
             namespaces,
-            next_page_token: result.next_page_token,
+            next_page_token: page.next_page_token,
         }))
     }
 
@@ -103,8 +106,9 @@ impl pb::cluster_service_server::ClusterService for ClusterService {
         request: Request<pb::DeleteNamespaceRequest>,
     ) -> Result<Response<()>, Status> {
         let name = NamespaceName::parse(&request.into_inner().name).map_err(invalid_request)?;
-        self.namespace_store
-            .delete_namespace(&name)
+        self.cluster_store
+            .namespace(name)
+            .delete()
             .await
             .map_err(meta_db_status)?;
 

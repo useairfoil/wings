@@ -10,6 +10,9 @@ license.workspace = true
 name = "wings_meta_db"
 path = "src/lib.rs"
 
+[features]
+test-util = []
+
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
