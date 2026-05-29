@@ -117,18 +117,18 @@
                 patchelf --set-interpreter ${interpreter} $out/wings
                 shasum -b -a 256 $out/wings > $out/wings-hash.txt
 
-                cp --no-preserve=mode ${binaries}/bin/wings-stress $out/wings-stress
-                chmod +x $out/wings-stress
-                patchelf --set-interpreter ${interpreter} $out/wings-stress
-                shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
+                # cp --no-preserve=mode ${binaries}/bin/wings-stress $out/wings-stress
+                # chmod +x $out/wings-stress
+                # patchelf --set-interpreter ${interpreter} $out/wings-stress
+                # shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
               ''
             else
               ''
                 mkdir -p $out
                 cp ${binaries}/bin/wings $out/wings
                 shasum -b -a 256 $out/wings > $out/wings-hash.txt
-                cp ${binaries}/bin/wings-stress $out/wings-stress
-                shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
+                # cp ${binaries}/bin/wings-stress $out/wings-stress
+                # shasum -b -a 256 $out/wings-stress > $out/wings-stress-hash.txt
               '';
         };
 

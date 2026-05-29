@@ -106,20 +106,20 @@ jobs:
           cp /tmp/bin/x86_64-linux/wings /tmp/artifacts/wings-x86_64-linux
           cp /tmp/bin/x86_64-linux/wings-hash.txt /tmp/artifacts/wings-x86_64-linux-hash.txt
 
-          cp /tmp/bin/x86_64-linux/wings-stress /tmp/artifacts/wings-stress-x86_64-linux
-          cp /tmp/bin/x86_64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-x86_64-linux-hash.txt
+          # cp /tmp/bin/x86_64-linux/wings-stress /tmp/artifacts/wings-stress-x86_64-linux
+          # cp /tmp/bin/x86_64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-x86_64-linux-hash.txt
 
           cp /tmp/bin/aarch64-linux/wings /tmp/artifacts/wings-aarch64-linux
           cp /tmp/bin/aarch64-linux/wings-hash.txt /tmp/artifacts/wings-aarch64-linux-hash.txt
 
-          cp /tmp/bin/aarch64-linux/wings-stress /tmp/artifacts/wings-stress-aarch64-linux
-          cp /tmp/bin/aarch64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-linux-hash.txt
+          # cp /tmp/bin/aarch64-linux/wings-stress /tmp/artifacts/wings-stress-aarch64-linux
+          # cp /tmp/bin/aarch64-linux/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-linux-hash.txt
 
           cp /tmp/bin/aarch64-macos/wings /tmp/artifacts/wings-aarch64-macos
           cp /tmp/bin/aarch64-macos/wings-hash.txt /tmp/artifacts/wings-aarch64-macos-hash.txt
 
-          cp /tmp/bin/aarch64-macos/wings-stress /tmp/artifacts/wings-stress-aarch64-macos
-          cp /tmp/bin/aarch64-macos/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-macos-hash.txt
+          # cp /tmp/bin/aarch64-macos/wings-stress /tmp/artifacts/wings-stress-aarch64-macos
+          # cp /tmp/bin/aarch64-macos/wings-stress-hash.txt /tmp/artifacts/wings-stress-aarch64-macos-hash.txt
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
