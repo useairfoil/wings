@@ -3,6 +3,7 @@ pub mod name;
 mod namespace;
 mod object_store;
 mod partition;
+pub mod pb;
 mod redacted;
 mod table;
 

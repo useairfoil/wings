@@ -15,6 +15,7 @@ base64.workspace = true
 bytesize.workspace = true
 datafusion.workspace = true
 paste.workspace = true
+prost.workspace = true
 serde.workspace = true
 snafu.workspace = true
 tracing.workspace = true
