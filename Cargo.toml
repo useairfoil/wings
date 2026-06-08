@@ -1,0 +1,21 @@
+[workspace.package]
+edition = "2024"
+authors = ["Francesco Ceccon", "The Wings contributors"]
+version = "0.2.0"
+license = "Apache-2.0"
+repository = "https://github.com/useairfoil/wings"
+
+[workspace]
+resolver = "2"
+default-members = ["wings"]
+members = [
+    "wings",
+]
+
+[profile.maxperf]
+inherits = "release"
+codegen-units = 1
+lto = "fat"
+incremental = false
+
+[workspace.dependencies]

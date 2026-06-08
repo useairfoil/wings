@@ -1,0 +1,14 @@
+[package]
+name = "wings"
+edition.workspace = true
+authors.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "wings"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wings"
+path = "src/main.rs"
