@@ -99,7 +99,7 @@ impl ManifestStore {
 
         let put_mode = PutMode::Update(version);
 
-        let version = do_put(&self.store, &self.path, manifest.clone(), put_mode).await?;
+        let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
 
         let writer = ManifestWriter {
             store: Arc::clone(&self.store),
@@ -113,12 +113,12 @@ impl ManifestStore {
     async fn init_new(&self, header: &Header) -> Result<(Manifest, ManifestWriter)> {
         let manifest = Manifest {
             header: header.clone(),
-            entries: Vec::new(),
+            data: Vec::new().into(),
         };
 
         let put_mode = PutMode::Create;
 
-        let version = do_put(&self.store, &self.path, manifest.clone(), put_mode).await?;
+        let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
 
         let writer = ManifestWriter {
             store: Arc::clone(&self.store),
@@ -131,10 +131,10 @@ impl ManifestStore {
 }
 
 impl ManifestWriter {
-    pub async fn update(&mut self, manifest: Manifest) -> Result<()> {
+    pub async fn update(&mut self, manifest: &Manifest) -> Result<()> {
         let put_mode = PutMode::Update(self.version.clone());
 
-        let version = do_put(&self.store, &self.path, manifest, put_mode).await?;
+        let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
 
         self.version = version;
 
@@ -145,10 +145,11 @@ impl ManifestWriter {
 async fn do_put(
     store: &Arc<dyn ObjectStore>,
     path: &Path,
-    manifest: Manifest,
+    manifest: &Manifest,
     put_mode: PutMode,
 ) -> Result<UpdateVersion> {
-    let payload = PutPayload::from(manifest.into_bytes()?);
+    let data = manifest.to_bytes()?;
+    let payload = PutPayload::from(data);
     match store.put_opts(path, payload, put_mode.into()).await {
         Ok(response) => {
             let version = UpdateVersion {
@@ -206,7 +207,9 @@ mod tests {
                 epoch: 0,
                 compression: None,
             },
-            entries: [],
+            data: TaskData {
+                entries: [],
+            },
         }
         ");
 
@@ -236,9 +239,9 @@ mod tests {
             .expect("manifest should initialize");
 
         writer
-            .update(Manifest {
+            .update(&Manifest {
                 header: first_header,
-                entries: vec![],
+                data: vec![].into(),
             })
             .await
             .expect("manifest update should succeed");
@@ -257,7 +260,9 @@ mod tests {
                 epoch: 42,
                 compression: None,
             },
-            entries: [],
+            data: TaskData {
+                entries: [],
+            },
         }
         ");
     }
@@ -271,12 +276,12 @@ mod tests {
             .expect("manifest should initialize");
 
         writer
-            .update(manifest.clone())
+            .update(&manifest)
             .await
             .expect("first update should succeed");
 
         writer
-            .update(manifest.clone())
+            .update(&manifest)
             .await
             .expect("second update should use refreshed version");
     }
@@ -296,9 +301,9 @@ mod tests {
             .expect("fast broker should reload and update manifest");
 
         let err = slow_writer
-            .update(Manifest {
+            .update(&Manifest {
                 header: new_header(8080, 0),
-                entries: Vec::new(),
+                data: Vec::new().into(),
             })
             .await
             .expect_err("stale update should conflict");

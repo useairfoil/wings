@@ -42,7 +42,7 @@ pub enum CompressionType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
     pub header: Header,
-    pub entries: Vec<Task>,
+    pub data: TaskData,
 }
 
 /// Manifest header.
@@ -66,29 +66,16 @@ pub struct Header {
     pub compression: CompressionType,
 }
 
-/// Internal struct used to read/write task data.
+/// Contains the task entries.
 #[binrw::binrw]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[brw(little, magic = b"TASK")]
-struct TaskData {
+pub struct TaskData {
     #[bw(try_calc(u32::try_from(entries.len())))]
     entries_count: u32,
     #[br(count = entries_count)]
     #[bw(align_after = 0x8)]
     pub entries: Vec<Task>,
-}
-
-impl TaskData {
-    pub(crate) fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
-        let mut buf = Cursor::new(Vec::new());
-        self.write(&mut buf)?;
-
-        Ok(Bytes::from(buf.into_inner()))
-    }
-
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, binrw::Error> {
-        let mut cursor = Cursor::new(bytes);
-        Self::read(&mut cursor)
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, BinRead, BinWrite)]
@@ -157,22 +144,6 @@ pub struct Task {
     pub payload: Any,
 }
 
-impl Task {
-    #[allow(unused)]
-    pub(crate) fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
-        let mut buf = Cursor::new(Vec::new());
-        self.write(&mut buf)?;
-
-        Ok(Bytes::from(buf.into_inner()))
-    }
-
-    #[allow(unused)]
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, binrw::Error> {
-        let mut cursor = Cursor::new(bytes);
-        Self::read(&mut cursor)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
 pub struct Worker {
@@ -188,13 +159,9 @@ pub struct Worker {
 }
 
 impl Manifest {
-    pub fn into_bytes(self) -> Result<Bytes, binrw::Error> {
+    pub fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
         let header = self.header.to_bytes()?;
-
-        let data = TaskData {
-            entries: self.entries,
-        }
-        .to_bytes()?;
+        let data = self.data.to_bytes()?;
 
         let data = match self.header.compression {
             CompressionType::None => data,
@@ -231,10 +198,7 @@ impl Manifest {
 
         let data = TaskData::from_bytes(&data)?;
 
-        Ok(Self {
-            entries: data.entries,
-            header,
-        })
+        Ok(Self { header, data })
     }
 }
 
@@ -251,6 +215,42 @@ impl Header {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, binrw::Error> {
         let mut cursor = Cursor::new(bytes);
         Self::read(&mut cursor)
+    }
+}
+
+impl TaskData {
+    pub(crate) fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
+        let mut buf = Cursor::new(Vec::new());
+        self.write(&mut buf)?;
+
+        Ok(Bytes::from(buf.into_inner()))
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, binrw::Error> {
+        let mut cursor = Cursor::new(bytes);
+        Self::read(&mut cursor)
+    }
+}
+
+impl Task {
+    #[allow(unused)]
+    pub(crate) fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
+        let mut buf = Cursor::new(Vec::new());
+        self.write(&mut buf)?;
+
+        Ok(Bytes::from(buf.into_inner()))
+    }
+
+    #[allow(unused)]
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, binrw::Error> {
+        let mut cursor = Cursor::new(bytes);
+        Self::read(&mut cursor)
+    }
+}
+
+impl From<Vec<Task>> for TaskData {
+    fn from(entries: Vec<Task>) -> Self {
+        Self { entries }
     }
 }
 
@@ -393,8 +393,8 @@ mod tests {
         second.status = new_running_status();
 
         Manifest {
-            entries: vec![first, second],
             header: new_header(compression),
+            data: vec![first, second].into(),
         }
     }
 
@@ -493,7 +493,7 @@ mod tests {
         let manifest = new_manifest(CompressionType::None);
         let expected = manifest.clone();
 
-        let bytes = manifest.into_bytes().expect("manifest should serialize");
+        let bytes = manifest.to_bytes().expect("manifest should serialize");
         let parsed = Manifest::from_bytes(&bytes).expect("manifest should parse");
 
         assert_eq!(parsed, expected);
@@ -519,7 +519,7 @@ mod tests {
         let manifest = new_manifest(CompressionType::Zstd);
         let expected = manifest.clone();
 
-        let bytes = manifest.into_bytes().expect("manifest should serialize");
+        let bytes = manifest.to_bytes().expect("manifest should serialize");
         let parsed = Manifest::from_bytes(&bytes).expect("manifest should parse");
 
         assert_eq!(parsed, expected);
