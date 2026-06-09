@@ -10,6 +10,9 @@ resolver = "2"
 default-members = ["wings"]
 members = [
     "wings",
+    "wings_common",
+    "wings_observability",
+    "wings_queue"
 ]
 
 [profile.maxperf]
@@ -19,3 +22,32 @@ lto = "fat"
 incremental = false
 
 [workspace.dependencies]
+async-trait = "0.1.89"
+backon = { version = "1.6.0", default-features = false }
+binrw = "0.15.1"
+bytes = "1.11.1"
+chrono = "0.4.45"
+insta = { version = "1.47.2", features = ["yaml"] }
+nu-ansi-term = "0.50.3"
+object_store = { version = "0.13.2", features = ["cloud", "aws", "gcp", "azure"] }
+opentelemetry = "0.32.0"
+opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
+opentelemetry_sdk = "0.32.1"
+pretty-hex = "0.4.2"
+prost = "0.14.4"
+prost-types = { version = "0.14.4", features = ["chrono"] }
+reqwest = { version = "0.13.4", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }
+slatedb-common = "0.13.1"
+thiserror = "2.0.18"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+tokio = { version = "1.52.3", features = ["full"] }
+tracing = "0.1.44"
+tracing-opentelemetry = "0.33.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+# local crates
+wings-common = { path = "./wings_common" }
+wings-observability = { path = "./wings_observability" }
+wings-queue = { path = "./wings_queue" }
