@@ -9,4 +9,5 @@ pub use self::{
     client::QueueClient,
     manifest::{Header, MANIFEST_VERSION, Manifest, Task, TaskStatus, Worker},
     manifest_store::{ManifestStore, ManifestWriter},
+    service::QueueBrokerService,
 };

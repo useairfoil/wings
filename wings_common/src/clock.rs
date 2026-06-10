@@ -120,6 +120,7 @@ impl<'a: 'static> Sleeper for &'a MockSystemClock {
     }
 }
 
+#[cfg(feature = "test-util")]
 impl Default for MockSystemClock {
     fn default() -> Self {
         Self::new()

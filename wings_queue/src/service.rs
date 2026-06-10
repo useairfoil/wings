@@ -5,6 +5,10 @@ use crate::pb;
 pub struct QueueBrokerService {}
 
 impl QueueBrokerService {
+    pub fn new() -> Self {
+        Self {}
+    }
+
     pub fn into_service(self) -> pb::broker_server::BrokerServer<Self> {
         pb::broker_server::BrokerServer::new(self)
     }

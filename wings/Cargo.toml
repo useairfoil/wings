@@ -12,3 +12,18 @@ path = "src/lib.rs"
 [[bin]]
 name = "wings"
 path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+object_store.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tracing.workspace = true
+
+wings-common.workspace = true
+wings-observability.workspace = true
+wings-queue.workspace = true
