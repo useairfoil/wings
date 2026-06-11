@@ -12,7 +12,8 @@ members = [
     "wings",
     "wings_common",
     "wings_observability",
-    "wings_queue"
+    "wings_queue",
+    "wings_stress"
 ]
 
 [profile.maxperf]
@@ -52,6 +53,7 @@ tracing = "0.1.44"
 tracing-opentelemetry = "0.33.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 # local crates
+wings = { path = "./wings" }
 wings-common = { path = "./wings_common" }
 wings-observability = { path = "./wings_observability" }
 wings-queue = { path = "./wings_queue" }

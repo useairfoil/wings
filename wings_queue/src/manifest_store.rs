@@ -4,6 +4,7 @@ use object_store::{
     GetOptions, GetRange, ObjectStore, ObjectStoreExt, PutMode, PutPayload, UpdateVersion,
     path::Path,
 };
+use tracing::{debug, info};
 
 use crate::{Header, Manifest};
 
@@ -21,6 +22,7 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+#[derive(Debug, Clone)]
 pub struct ManifestStore {
     store: Arc<dyn ObjectStore>,
     path: Path,
@@ -59,9 +61,11 @@ impl ManifestStore {
             .await?;
 
         let bytes = response.bytes().await?;
-        let footer = Header::from_bytes(bytes.as_ref())?;
+        let header = Header::from_bytes(bytes.as_ref())?;
 
-        Ok(footer)
+        debug!(?header, "loaded queue.bin header");
+
+        Ok(header)
     }
 
     pub async fn load_or_init(&self, header: Header) -> Result<(Manifest, ManifestWriter)> {
@@ -78,7 +82,7 @@ impl ManifestStore {
         let response = match self.store.get(&self.path).await {
             Ok(response) => response,
             Err(object_store::Error::NotFound { .. }) => {
-                return self.init_new(&header).await;
+                return self.init_new(header).await;
             }
             Err(e) => {
                 return Err(e.into());
@@ -101,6 +105,8 @@ impl ManifestStore {
 
         let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
 
+        info!(epoch = manifest.header.epoch, "replaced existing queue.bin");
+
         let writer = ManifestWriter {
             store: Arc::clone(&self.store),
             path: self.path.clone(),
@@ -120,6 +126,8 @@ impl ManifestStore {
 
         let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
 
+        info!(epoch = manifest.header.epoch, "initialized new queue.bin");
+
         let writer = ManifestWriter {
             store: Arc::clone(&self.store),
             path: self.path.clone(),
@@ -134,7 +142,7 @@ impl ManifestWriter {
     pub async fn update(&mut self, manifest: &Manifest) -> Result<()> {
         let put_mode = PutMode::Update(self.version.clone());
 
-        let version = do_put(&self.store, &self.path, &manifest, put_mode).await?;
+        let version = do_put(&self.store, &self.path, manifest, put_mode).await?;
 
         self.version = version;
 

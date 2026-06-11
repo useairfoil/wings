@@ -23,21 +23,33 @@ pub struct ObjectStoreArgs {
         env = "WINGS_OBJECT_STORE_TYPE"
     )]
     pub object_store_type: ObjectStoreType,
+    #[arg(
+        long = "object-store.bucket-name",
+        default_value = "aws",
+        env = "WINGS_OBJECT_STORE_BUCKET_NAME"
+    )]
+    pub object_store_bucket_name: String,
 }
 
 impl ObjectStoreArgs {
     pub fn create_object_store(&self) -> Result<Arc<dyn ObjectStore>, object_store::Error> {
         match self.object_store_type {
             ObjectStoreType::Aws => {
-                let store = AmazonS3Builder::from_env().build()?;
+                let store = AmazonS3Builder::from_env()
+                    .with_bucket_name(&self.object_store_bucket_name)
+                    .build()?;
                 Ok(Arc::new(store))
             }
             ObjectStoreType::Gcp => {
-                let store = GoogleCloudStorageBuilder::from_env().build()?;
+                let store = GoogleCloudStorageBuilder::from_env()
+                    .with_bucket_name(&self.object_store_bucket_name)
+                    .build()?;
                 Ok(Arc::new(store))
             }
             ObjectStoreType::Azure => {
-                let store = MicrosoftAzureBuilder::from_env().build()?;
+                let store = MicrosoftAzureBuilder::from_env()
+                    .with_container_name(&self.object_store_bucket_name)
+                    .build()?;
                 Ok(Arc::new(store))
             }
         }

@@ -17,9 +17,11 @@ service Broker {
 }
 
 message ScheduleTaskRequest {
-  google.protobuf.Any payload = 1;
+  string unique_id = 1;
 
-  google.protobuf.Timestamp run_at = 2;
+  google.protobuf.Any payload = 2;
+
+  google.protobuf.Timestamp run_at = 3;
 }
 
 message ScheduleTaskResponse {
@@ -38,10 +40,11 @@ message RequestTasksResponse {
 
 message LeasedTask {
   string task_id = 1;
-  google.protobuf.Any payload = 2;
-  uint32 attempt = 3;
-  google.protobuf.Timestamp scheduled_at = 4;
-  google.protobuf.Timestamp lease_expires_at = 5;
+  string unique_id = 2;
+  google.protobuf.Any payload = 3;
+  uint32 attempt = 4;
+  google.protobuf.Timestamp scheduled_at = 5;
+  google.protobuf.Timestamp lease_expires_at = 6;
 }
 
 message AcknowledgeTaskRequest {

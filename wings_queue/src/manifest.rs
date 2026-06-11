@@ -191,9 +191,7 @@ impl Manifest {
 
         let data = match header.compression {
             CompressionType::None => data.to_vec(),
-            CompressionType::Zstd => {
-                zstd::stream::decode_all(data.as_ref()).map_err(binrw::Error::Io)?
-            }
+            CompressionType::Zstd => zstd::stream::decode_all(data).map_err(binrw::Error::Io)?,
         };
 
         let data = TaskData::from_bytes(&data)?;
@@ -204,6 +202,11 @@ impl Manifest {
 
 impl Header {
     pub const SIZE: usize = 16;
+
+    pub fn broker_url(&self) -> String {
+        // TODO: we should also add a flag for SSL/TLS support
+        format!("http://{}:{}", self.address, self.port)
+    }
 
     pub fn to_bytes(&self) -> Result<Bytes, binrw::Error> {
         let mut buf = Cursor::new(Vec::with_capacity(Self::SIZE));

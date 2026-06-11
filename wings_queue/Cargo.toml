@@ -14,6 +14,7 @@ backon.workspace = true
 binrw.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+http = "1.4.2"
 object_store.workspace = true
 opentelemetry.workspace = true
 pretty-hex.workspace = true
@@ -22,6 +23,7 @@ prost-types = { workspace = true, features = ["chrono"] }
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true
 tracing.workspace = true
@@ -34,7 +36,6 @@ zstd = "0.13.3"
 [dev-dependencies]
 insta.workspace = true
 pretty-hex.workspace = true
-tokio.workspace = true
 wings-common = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]

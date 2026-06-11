@@ -2211,6 +2211,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "throttled-tracing"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c8ec74140dfae112d4da4003f2cabdfd9b5efc84e8a4d610d87fc681280b642"
+dependencies = [
+ "fastrand",
+ "parking_lot",
+ "tracing",
+]
+
+[[package]]
 name = "tinystr"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3097,6 +3108,7 @@ dependencies = [
  "binrw",
  "bytes",
  "chrono",
+ "http",
  "insta",
  "object_store",
  "opentelemetry",
@@ -3115,6 +3127,25 @@ dependencies = [
  "wings-common",
  "wings-observability",
  "zstd",
+]
+
+[[package]]
+name = "wings-stress"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "fastrand",
+ "prost",
+ "prost-types",
+ "throttled-tracing",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "wings",
+ "wings-common",
+ "wings-observability",
+ "wings-queue",
 ]
 
 [[package]]
