@@ -1,24 +1,18 @@
-# Show available recipes.
 default:
     @just --list
 
-# Check every workspace crate.
-check:
-    cargo check --workspace --all-targets --all-features
+check *ARGS="--all-targets":
+    cargo check --workspace --all-features {{ ARGS }}
 
-# Build every workspace crate.
-build:
-    cargo build --workspace --all-targets --all-features
+build *ARGS="--all-targets":
+    cargo build --workspace --all-features {{ ARGS }}
 
-# Test every workspace crate.
-test:
-    cargo test --workspace --all-targets --all-features
+test *ARGS="--all-targets":
+    cargo test --workspace --all-features {{ ARGS }}
 
-# Run Clippy for every workspace crate, target, and feature.
-clippy:
-    cargo clippy --workspace --all-targets --all-features
+clippy *ARGS="--all-targets":
+    cargo clippy --workspace  --all-features {{ ARGS }}
 
-# Format the workspace using the nightly toolchain from the Nix shell.
 format:
     nix develop .#nightly -c cargo fmt
 
