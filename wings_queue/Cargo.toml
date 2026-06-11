@@ -14,12 +14,11 @@ backon.workspace = true
 binrw.workspace = true
 bytes.workspace = true
 chrono.workspace = true
-http = "1.4.2"
+http.workspace = true
 object_store.workspace = true
 opentelemetry.workspace = true
-pretty-hex.workspace = true
 prost.workspace = true
-prost-types = { workspace = true, features = ["chrono"] }
+prost-types.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
@@ -27,11 +26,11 @@ tokio.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true
 tracing.workspace = true
-uuid = { version = "1.23.3", features = ["v7"] }
+uuid.workspace = true
+zstd.workspace = true
 
 wings-common.workspace = true
 wings-observability.workspace = true
-zstd = "0.13.3"
 
 [dev-dependencies]
 insta.workspace = true

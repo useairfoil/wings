@@ -2,13 +2,13 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 use clap::Args;
 use prost::Message;
+use rand::RngExt;
 use throttled_tracing::info_every;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use uuid::Uuid;
 use wings::object_store::ObjectStoreArgs;
-use wings_common::clock::SystemClock;
+use wings_common::{clock::SystemClock, id::IdGenerator};
 use wings_queue::{QueueClient, pb};
 
 type StressResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -114,11 +114,10 @@ async fn run_worker(
 
     let interval = Duration::from_nanos((1_000_000_000 / worker_rate).max(1));
     let max_in_flight = usize::try_from(worker_rate).unwrap_or(usize::MAX).max(1);
-    let worker_id = Uuid::now_v7().to_string();
+    let worker_id = rand::rng().gen_uuid().to_string();
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    let mut rng = fastrand::Rng::new();
     let mut tasks = Vec::new();
     let mut in_flight = JoinSet::new();
     let mut handled = 0_u64;
@@ -183,7 +182,7 @@ async fn run_worker(
         }
 
         let task = tasks.pop().expect("tasks is not empty");
-        let failed = rng.f64() < args.worker_error_rate;
+        let failed = rand::random::<f64>() < args.worker_error_rate;
         let request = new_acknowledge_task_request(worker_id.clone(), task.task_id, failed);
         let client = client.clone();
 
@@ -209,7 +208,6 @@ async fn run_producer(
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    let mut rng = fastrand::Rng::new();
     let mut in_flight = JoinSet::new();
     let mut produced = 0;
 
@@ -249,8 +247,7 @@ async fn run_producer(
             }
         }
 
-        let request =
-            new_schedule_task_request(&mut rng, args.producer_task_size, args.producer_num_unique)?;
+        let request = new_schedule_task_request(args.producer_task_size, args.producer_num_unique)?;
         let client = client.clone();
 
         in_flight.spawn(async move {
@@ -291,10 +288,10 @@ fn new_acknowledge_task_request(
 }
 
 fn new_schedule_task_request(
-    rng: &mut fastrand::Rng,
     task_size: usize,
     num_unique: u64,
 ) -> StressResult<pb::ScheduleTaskRequest> {
+    let mut rng = rand::rng();
     let mut data = vec![0; task_size];
     rng.fill(&mut data);
 
@@ -303,7 +300,7 @@ fn new_schedule_task_request(
     payload.encode(&mut value)?;
 
     Ok(pb::ScheduleTaskRequest {
-        unique_id: rng.u64(0..num_unique).to_string(),
+        unique_id: rng.random_range(0..num_unique).to_string(),
         payload: Some(prost_types::Any {
             type_url: PRODUCER_PAYLOAD_TYPE_URL.to_string(),
             value,
