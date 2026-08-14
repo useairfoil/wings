@@ -1,6 +1,6 @@
 # XXXX: Template
 
-*Status**: idea
+**Status**: idea
 
 **Discussion**: [#1234](https://github.com/useairfoil/wings/pull/1234)
 

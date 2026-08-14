@@ -1,0 +1,77 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+default:
+    @just --list
+
+# Run every non-exhaustive check.
+check: check-object-storage check-ingestion check-queue
+
+# Run non-exhaustive checks followed by bounded model verification.
+all: check verify
+
+typecheck: typecheck-object-storage typecheck-ingestion typecheck-queue
+
+test: test-object-storage test-ingestion test-queue
+
+simulate: simulate-ingestion simulate-queue
+
+verify: verify-ingestion verify-queue
+
+check-object-storage: typecheck-object-storage test-object-storage
+
+check-ingestion: typecheck-ingestion test-ingestion simulate-ingestion
+
+check-queue: typecheck-queue test-queue simulate-queue
+
+typecheck-object-storage:
+    quint typecheck object_storage.qnt
+    quint typecheck object_storage_tests.qnt
+
+typecheck-ingestion:
+    quint typecheck ingestion.qnt
+
+typecheck-queue:
+    quint typecheck queue.qnt
+
+test-object-storage:
+    quint test object_storage_tests.qnt --main object_storage_tests
+
+test-ingestion:
+    quint test ingestion.qnt --main ingestion_tests
+
+test-queue:
+    quint test queue.qnt --main queue_tests
+
+simulate-ingestion SAMPLES="10000" STEPS="30":
+    quint run ingestion.qnt \
+        --main ingestion \
+        --max-samples {{ SAMPLES }} \
+        --max-steps {{ STEPS }} \
+        --invariants invariants \
+        --verbosity 2
+
+simulate-queue SAMPLES="10000" STEPS="30":
+    quint run queue.qnt \
+        --main queue_verification \
+        --init verificationInit \
+        --step verificationStep \
+        --max-samples {{ SAMPLES }} \
+        --max-steps {{ STEPS }} \
+        --invariants verificationInvariants \
+        --verbosity 2
+
+verify-ingestion STEPS="6":
+    quint verify ingestion.qnt \
+        --main ingestion \
+        --max-steps {{ STEPS }} \
+        --invariant invariants \
+        --verbosity 2
+
+verify-queue STEPS="4":
+    quint verify queue.qnt \
+        --main queue_verification \
+        --init verificationInit \
+        --step verificationStep \
+        --max-steps {{ STEPS }} \
+        --invariant verificationInvariants \
+        --verbosity 2
