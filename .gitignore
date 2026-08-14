@@ -4,6 +4,8 @@
 /result-bin
 /.devcontainer/.profile
 .pre-commit-config.yaml
+_apalache-out/
 .direnv
 perf.data
 perf.data.old
+tmp
