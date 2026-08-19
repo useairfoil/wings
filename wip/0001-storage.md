@@ -39,6 +39,8 @@ In this section we describe the data model for a single Apache Iceberg table. Th
  - All tables are merge-on-read.
  - All tables must have a primary key (possibly composite) and a version column.
    + The version column is used to merge rows for the same primary key. The row is always updated with the latest version.
+ - Wings supports partial updates, in this case only non-null values are updated.
+ - Deletions are not supported. Users should rely on soft deletes instead.
  - Data files are stored under the table's base location. The location comes from the Iceberg's table metadata.
  - Metadata files are stored in a separate object store (the metadata store), shared among all catalogs tracked by Wings.
  - Wings follows any partitioning scheme defined by the Iceberg table. Partitions data is stored separately, under different prefixes.
@@ -138,7 +140,7 @@ Base files store the most recent snapshot of the partition's data in the Parquet
 Rows in the base file are sorted and deduplicated by the primary key.
 As we will see later, all files described in this section belong to a partition's shard. For the remainder of this section, we consider the trivial single-shard case.
 
-The files described in this section (with the exception of tombstones) are published to the table's store, under the table's location prefix.
+The files described in this section are published to the table's store, under the table's location prefix.
 These files are shared with Apache Iceberg and are referenced by Iceberg manifests. This WIP does not describe how the Iceberg manifests are published or updated.
 
 Rewriting the base file every time a row is updated is not efficient. Instead, Wings uses additional data files and deletion vectors to track changes.
@@ -147,9 +149,7 @@ Rewriting the base file every time a row is updated is not efficient. Instead, W
  - The Puffin file contains zero or one deletion vectors per data file, including the base file.
  - There is always only one (or zero) Puffin file.
    + Each shard revision references at most one Puffin file. Iceberg permits at most one deletion vector for each data file, Wings additionally stores all deletion vectors for a shard revision in one Puffin container to simplify publishing. A revision without deletion vectors has no Puffin file.
-   + Deletion vectors are used to implement "delete" row operations.
-   + To prevent resurrecting deleted rows, Wings stores their primary key and version in a tombstone file. Details about the tombstone file format are explained in the publishing WIP
- - Deletion vectors track rows that have been deleted or updated (in a more recent data file).
+ - Deletion vectors track rows that have been updated in a more recent data file.
  - Data is periodically compacted into new base files. Old files are not deleted immediately because they are needed by old Iceberg snapshots.
 
 For example, let's consider the following base file with primary key `id` and version column `ts`.
