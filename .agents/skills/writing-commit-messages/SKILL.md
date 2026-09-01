@@ -25,20 +25,12 @@ Write commit messages that follow commit style guidelines for the project.
 ### Subject line
 
 - **Subsystem prefix**: Use a short, lowercase identifier for the area of code
-  changed (more on this later). Determine this from the file paths in the diff. 
+  changed (more on this later). Determine this from the file paths in the diff.
+  Use the name of the crate without the `wings_` prefix. Use the hypenated `-`
+  name.
 - **Summary**: Lowercase start (not capitalized), imperative mood,
   no trailing period. Keep it concise—ideally under 60 characters
   total for the whole subject line.
-
-Well known areas:
-
- - `cp`: control plane related changes. Use `cp/core` and `cp/sql` for the core
-   and sql subsystems, respectively.
- - `ingestor`: the ingestor. Use `ingestor/core` and `ingestor/http` for the
-   core and http subsystems.
- - `build`: changes related to the build system, including nix.
- - all other crates: use the name of the crate without the `wings_` prefix. Use
-   the hypenated `-` name.
  
 ### References
 
