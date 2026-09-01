@@ -13,7 +13,8 @@ members = [
     "wings_common",
     "wings_observability",
     "wings_queue",
-    "wings_stress"
+    "wings_stress",
+    "wings_secret_store"
 ]
 
 [profile.maxperf]
@@ -25,10 +26,12 @@ incremental = false
 [workspace.dependencies]
 async-trait = "0.1.89"
 backon = { version = "1.6.0", default-features = false }
+base64 = "0.22.1"
 binrw = "0.15.1"
 bytes = "1.11.1"
 chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive", "env", "unicode"] }
+dashmap = "6.2.1"
 http = "1.4.2"
 insta = { version = "1.47.2", features = ["yaml"] }
 nu-ansi-term = "0.50.3"
@@ -42,6 +45,7 @@ prost-types = { version = "0.14.4", features = ["chrono"] }
 rand = "0.10.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
 slatedb-common = "0.13.1"
 thiserror = "2.0.18"
 tonic = "0.14.6"
@@ -50,6 +54,7 @@ tonic-reflection = "0.14.6"
 tonic-prost = "0.14.6"
 tonic-prost-build = "0.14.6"
 tokio = { version = "1.52.3", features = ["full"] }
+tokio-test = "0.4.5"
 tokio-util = "0.7.18"
 tracing = "0.1.44"
 tracing-opentelemetry = "0.33.0"
@@ -62,3 +67,4 @@ wings = { path = "./wings" }
 wings-common = { path = "./wings_common" }
 wings-observability = { path = "./wings_observability" }
 wings-queue = { path = "./wings_queue" }
+wings-secret-store = { path = "./wings_secret_store" }

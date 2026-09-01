@@ -12,3 +12,13 @@ The `format` command requires a nightly toolchain to run.
  - Use `thiserror` for error management.
  - Ask the user before adding a new dependency.
  - If creating a `Result` alias, use the `type Result<T, E = Error> = std::result::Result<T, E>;` pattern.
+
+Within a file, write definitions in the following order:
+
+ - Imports and submodules.
+ - Constants. Public first, then private.
+ - Public types, such as types, structs, enums.
+ - Private helper types.
+ - Public functions.
+ - Impl blocks for public types, including trait implementations.
+ - Private functions and impl blocks for private helper types.
