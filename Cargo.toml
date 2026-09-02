@@ -14,7 +14,8 @@ members = [
     "wings_observability",
     "wings_queue",
     "wings_stress",
-    "wings_secret_store"
+    "wings_secret_store",
+    "wings_meta_store"
 ]
 
 [profile.maxperf]
@@ -33,6 +34,8 @@ chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive", "env", "unicode"] }
 dashmap = "6.2.1"
 http = "1.4.2"
+iceberg = "0.10.1"
+iceberg-catalog-rest = "0.10.1"
 insta = { version = "1.47.2", features = ["yaml"] }
 nu-ansi-term = "0.50.3"
 object_store = { version = "0.13.2", features = ["cloud", "aws", "gcp", "azure"] }
@@ -68,3 +71,4 @@ wings-common = { path = "./wings_common" }
 wings-observability = { path = "./wings_observability" }
 wings-queue = { path = "./wings_queue" }
 wings-secret-store = { path = "./wings_secret_store" }
+wings-meta-store = { path = "./wings_meta_store" }

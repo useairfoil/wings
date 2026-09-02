@@ -37,6 +37,7 @@ TODO
 wings
 ├── wings: the main binary.
 ├── wings_common: common utilities shared across crates, e.g. DST.
+├── wings_grpc_server: gRPC server, including the Arrow Flight server for ingestion.
 ├── wings_meta_store: crate to interact with the metadata.
 ├── wings_observability: utilities to setup observability.
 ├── wings_secret_store: abstraction over secret stores (e.g. AWS Secrets Manager, HashiCorp Vault).
