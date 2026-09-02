@@ -38,7 +38,7 @@ iceberg = "0.10.1"
 iceberg-catalog-rest = "0.10.1"
 insta = { version = "1.47.2", features = ["yaml"] }
 nu-ansi-term = "0.50.3"
-object_store = { version = "0.13.2", features = ["cloud", "aws", "gcp", "azure"] }
+object_store = { version = "0.14.1", features = ["aws", "gcp", "azure"] }
 opentelemetry = "0.32.0"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "0.32.1"
@@ -49,7 +49,8 @@ rand = "0.10.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-slatedb-common = "0.13.1"
+slatedb-common = "0.16.0"
+slatedb-txn-obj = "0.16.0"
 thiserror = "2.0.18"
 tonic = "0.14.6"
 tonic-health = "0.14.6"

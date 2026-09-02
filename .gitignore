@@ -9,3 +9,4 @@ _apalache-out/
 perf.data
 perf.data.old
 tmp
+*.pending-snap

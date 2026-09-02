@@ -15,9 +15,12 @@ test-util = ["slatedb-common/test-util"]
 [dependencies]
 async-trait.workspace = true
 backon.workspace = true
+bytes.workspace = true
 chrono.workspace = true
+object_store.workspace = true
 rand.workspace = true
 slatedb-common.workspace = true
+slatedb-txn-obj.workspace = true
 tokio.workspace = true
 ulid.workspace = true
 uuid.workspace = true
