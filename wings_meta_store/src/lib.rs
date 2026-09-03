@@ -4,3 +4,4 @@
 //! catalog configurations.
 
 pub mod catalog;
+pub mod table;

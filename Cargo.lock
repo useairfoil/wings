@@ -4779,11 +4779,14 @@ dependencies = [
  "iceberg",
  "iceberg-catalog-rest",
  "insta",
+ "object_store",
  "serde",
  "serde_json",
+ "slatedb-txn-obj",
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+ "wings-common",
  "wings-secret-store",
 ]
 
