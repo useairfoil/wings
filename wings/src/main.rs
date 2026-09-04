@@ -2,7 +2,10 @@ use std::{error::Error, sync::Arc};
 
 use clap::{Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
-use wings::{cmd::BrokerArgs, handle_shutdown_signal};
+use wings::{
+    cmd::{BrokerArgs, DevArgs},
+    handle_shutdown_signal,
+};
 use wings_common::clock::DefaultSystemClock;
 
 #[derive(Parser)]
@@ -18,6 +21,8 @@ struct Cli {
 enum Command {
     /// Start the task queue broker.
     Broker(BrokerArgs),
+    /// Run the development server.
+    Dev(DevArgs),
 }
 
 #[tokio::main]
@@ -41,6 +46,7 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     match cli.command {
         Command::Broker(args) => args.run(clock, ct).await?,
+        Command::Dev(args) => args.run(ct).await?,
     };
 
     Ok(())

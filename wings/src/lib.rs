@@ -1,5 +1,6 @@
 pub mod cmd;
 pub mod object_store;
+pub mod secret_store;
 mod server;
 
 use tokio::signal::unix::SignalKind;

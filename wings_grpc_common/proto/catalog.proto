@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package wings.v1;
+
+service CatalogService {
+  rpc CreateCatalog(CreateCatalogRequest) returns (CreateCatalogResponse);
+
+  rpc GetCatalog(GetCatalogRequest) returns (GetCatalogResponse);
+
+  rpc DeleteCatalog(DeleteCatalogRequest) returns (DeleteCatalogResponse);
+}
+
+message CreateCatalogRequest {
+  string id = 1;
+
+  CatalogConfig config = 2;
+}
+
+message CreateCatalogResponse {}
+
+message GetCatalogRequest {
+  string id = 1;
+}
+
+message GetCatalogResponse {
+  Catalog catalog = 1;
+}
+
+message DeleteCatalogRequest {
+  string id = 1;
+}
+
+message DeleteCatalogResponse {}
+
+message Catalog {
+  string id = 1;
+
+  CatalogConfig config = 2;
+}
+
+message CatalogConfig {
+  oneof config {
+    RestCatalogConfig rest = 1;
+  }
+}
+
+message RestCatalogConfig {
+  string uri = 1;
+
+  optional string warehouse = 2;
+
+  map<string, string> properties = 3;
+}

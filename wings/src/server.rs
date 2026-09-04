@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 pub struct ServerArgs {
     #[arg(
         long = "server.address",
-        default_value = "127.0.0.1:0",
+        default_value = "127.0.0.1:7777",
         env = "WINGS_SERVER_ADDRESS"
     )]
     pub server_address: String,

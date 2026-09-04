@@ -4749,8 +4749,11 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "wings-common",
+ "wings-grpc-server",
+ "wings-meta-store",
  "wings-observability",
  "wings-queue",
+ "wings-secret-store",
 ]
 
 [[package]]
@@ -4769,6 +4772,32 @@ dependencies = [
  "tokio",
  "ulid",
  "uuid",
+]
+
+[[package]]
+name = "wings-grpc-common"
+version = "0.2.0"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
+name = "wings-grpc-server"
+version = "0.2.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tonic-health",
+ "tonic-reflection",
+ "tracing",
+ "uuid",
+ "wings-grpc-common",
+ "wings-meta-store",
 ]
 
 [[package]]

@@ -11,6 +11,8 @@ default-members = ["wings"]
 members = [
     "wings",
     "wings_common",
+    "wings_grpc_common",
+    "wings_grpc_server",
     "wings_observability",
     "wings_queue",
     "wings_stress",
@@ -69,6 +71,8 @@ zstd = "0.13.3"
 # local crates
 wings = { path = "./wings" }
 wings-common = { path = "./wings_common" }
+wings-grpc-common = { path = "./wings_grpc_common" }
+wings-grpc-server = { path = "./wings_grpc_server" }
 wings-observability = { path = "./wings_observability" }
 wings-queue = { path = "./wings_queue" }
 wings-secret-store = { path = "./wings_secret_store" }
