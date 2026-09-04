@@ -195,7 +195,7 @@ fn catalog_to_proto(catalog: &StoredCatalog) -> pb::Catalog {
 }
 
 /// Maps a catalog store error to a gRPC status.
-fn catalog_store_error_to_status(error: CatalogStoreError) -> Status {
+pub(crate) fn catalog_store_error_to_status(error: CatalogStoreError) -> Status {
     match &error {
         CatalogStoreError::AlreadyExists(name) => {
             Status::already_exists(format!("catalog already exists: {name}"))

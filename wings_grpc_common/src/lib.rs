@@ -9,3 +9,11 @@ const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("wings_gr
 pub fn file_descriptor_set() -> &'static [u8] {
     FILE_DESCRIPTOR_SET
 }
+
+pub mod flight {
+    const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("arrow_flight");
+
+    pub fn file_descriptor_set() -> &'static [u8] {
+        FILE_DESCRIPTOR_SET
+    }
+}

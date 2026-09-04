@@ -10,6 +10,10 @@ name = "wings_grpc_server"
 path = "src/lib.rs"
 
 [dependencies]
+arrow-flight.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
@@ -20,3 +24,6 @@ tracing.workspace = true
 uuid.workspace = true
 wings-grpc-common.workspace = true
 wings-meta-store.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
