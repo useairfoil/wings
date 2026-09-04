@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use iceberg::{Catalog, CatalogBuilder, TableIdent};
+use iceberg::{Catalog, CatalogBuilder};
+pub use iceberg::{NamespaceIdent, TableIdent};
 use iceberg_catalog_rest::{
     REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE, RestCatalogBuilder,
 };
