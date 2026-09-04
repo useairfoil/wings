@@ -11,7 +11,12 @@ service CatalogService {
 }
 
 message CreateCatalogRequest {
-  string id = 1;
+  // The ID to use for the catalog, which will become the final component
+  // of the catalog's resource name.
+  //
+  // This value should be 1-63 characters, and valid characters
+  // are /[a-z][a-z0-9_-]*/.
+  string catalog_id = 1;
 
   CatalogConfig config = 2;
 }
@@ -19,7 +24,7 @@ message CreateCatalogRequest {
 message CreateCatalogResponse {}
 
 message GetCatalogRequest {
-  string id = 1;
+  string name = 1;
 }
 
 message GetCatalogResponse {
@@ -27,13 +32,13 @@ message GetCatalogResponse {
 }
 
 message DeleteCatalogRequest {
-  string id = 1;
+  string name = 1;
 }
 
 message DeleteCatalogResponse {}
 
 message Catalog {
-  string id = 1;
+  string name = 1;
 
   CatalogConfig config = 2;
 }

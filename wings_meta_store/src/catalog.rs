@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use iceberg::{Catalog, CatalogBuilder, TableIdent};
 use iceberg_catalog_rest::{
@@ -11,9 +11,7 @@ use wings_secret_store::{SecretName, SecretStore};
 
 use crate::table::{StoredTable, TableMetadata, TableStore};
 
-/// A unique identifier of a catalog.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CatalogId(Uuid);
+wings_common::resource_type!(Catalog, "catalogs");
 
 /// Configuration of an Iceberg catalog.
 ///
@@ -42,7 +40,7 @@ pub struct RestCatalogConfig {
 #[derive(Debug, Clone)]
 pub struct StoredCatalog {
     object_store: Arc<dyn ObjectStore>,
-    id: CatalogId,
+    name: CatalogName,
     config: CatalogConfig,
 }
 
@@ -51,7 +49,7 @@ pub struct StoredCatalog {
 pub enum Error {
     /// Catalog already exists.
     #[error("catalog already exists: {0}")]
-    AlreadyExists(CatalogId),
+    AlreadyExists(CatalogName),
     /// Table link already exists.
     #[error("table link already exists: {0}")]
     TableLinkAlreadyExists(TableIdent),
@@ -118,44 +116,26 @@ struct TableLink {
     table_uuid: Uuid,
 }
 
-impl CatalogId {
-    /// Creates a new catalog id from a UUID.
-    pub fn new(id: Uuid) -> Self {
-        Self(id)
-    }
-
-    /// Returns the underlying UUID.
-    pub fn as_uuid(&self) -> Uuid {
-        self.0
-    }
-}
-
-impl fmt::Display for CatalogId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 impl StoredCatalog {
-    /// Creates a new stored catalog with the given id and configuration.
+    /// Creates a new stored catalog with the given name and configuration.
     pub fn new(
         parent_object_store: Arc<dyn ObjectStore>,
-        id: CatalogId,
+        name: CatalogName,
         config: CatalogConfig,
     ) -> Self {
         use object_store::prefix::PrefixStore;
-        let object_store = Arc::new(PrefixStore::new(parent_object_store, id.to_string()));
+        let object_store = Arc::new(PrefixStore::new(parent_object_store, name.to_string()));
 
         Self {
             object_store,
-            id,
+            name,
             config,
         }
     }
 
-    /// Returns the id of the catalog.
-    pub fn id(&self) -> CatalogId {
-        self.id
+    /// Returns the name of the catalog.
+    pub fn name(&self) -> &CatalogName {
+        &self.name
     }
 
     /// Returns the configuration of the catalog.
@@ -174,7 +154,7 @@ impl StoredCatalog {
                 }
 
                 let catalog = RestCatalogBuilder::default()
-                    .load(self.id.to_string(), props)
+                    .load(self.name.to_string(), props)
                     .await?;
                 Ok(Arc::new(catalog))
             }
@@ -249,16 +229,16 @@ impl CatalogStore {
         }
     }
 
-    /// Returns the catalog with the given id, or `None` if it does not exist.
-    pub async fn get(&self, id: CatalogId) -> Result<Option<StoredCatalog>> {
-        let name = secret_name(id);
-        match self.secret_store.get(&name).await {
+    /// Returns the catalog with the given name, or `None` if it does not exist.
+    pub async fn get(&self, name: CatalogName) -> Result<Option<StoredCatalog>> {
+        let secret_name = secret_name(&name);
+        match self.secret_store.get(&secret_name).await {
             Ok(secret) => {
                 let config = serde_json::from_slice::<CatalogConfig>(secret.value().as_ref())
                     .map_err(|source| Error::Deserialize { source })?;
                 Ok(Some(StoredCatalog::new(
                     self.object_store.clone(),
-                    id,
+                    name,
                     config,
                 )))
             }
@@ -267,23 +247,23 @@ impl CatalogStore {
         }
     }
 
-    /// Creates a catalog with the given id and configuration.
+    /// Creates a catalog with the given name and configuration.
     ///
-    /// Returns an error if a catalog with the given id already exists.
-    pub async fn create(&self, id: CatalogId, config: CatalogConfig) -> Result<()> {
-        let name = secret_name(id);
-        if self.secret_store.get(&name).await.is_ok() {
-            return Err(Error::AlreadyExists(id));
+    /// Returns an error if a catalog with the given name already exists.
+    pub async fn create(&self, name: CatalogName, config: CatalogConfig) -> Result<()> {
+        let secret_name = secret_name(&name);
+        if self.secret_store.get(&secret_name).await.is_ok() {
+            return Err(Error::AlreadyExists(name));
         }
 
         let value = serde_json::to_vec(&config).map_err(|source| Error::Serialize { source })?;
-        self.secret_store.put(&name, value.into()).await?;
+        self.secret_store.put(&secret_name, value.into()).await?;
         Ok(())
     }
 
-    /// Deletes the catalog with the given id.
-    pub async fn delete(&self, id: CatalogId) -> Result<()> {
-        self.secret_store.delete(&secret_name(id)).await?;
+    /// Deletes the catalog with the given name.
+    pub async fn delete(&self, name: CatalogName) -> Result<()> {
+        self.secret_store.delete(&secret_name(&name)).await?;
         Ok(())
     }
 }
@@ -351,10 +331,10 @@ impl TableLink {
 }
 
 /// Returns the name of the secret holding the configuration of the catalog
-/// with the given id.
-fn secret_name(id: CatalogId) -> SecretName {
+/// with the given name.
+fn secret_name(name: &CatalogName) -> SecretName {
     // PANIC: the name is never empty.
-    SecretName::new_unchecked(format!("catalog/{id}"))
+    SecretName::new_unchecked(format!("catalog/{}", name.id()))
 }
 
 /// Returns the full name of a table, obtained by joining the namespace
@@ -394,8 +374,8 @@ mod tests {
         )
     }
 
-    fn id() -> CatalogId {
-        CatalogId::new(Uuid::from_u128(42))
+    fn name() -> CatalogName {
+        CatalogName::new("test-catalog").unwrap()
     }
 
     fn rest_config() -> CatalogConfig {
@@ -493,30 +473,30 @@ mod tests {
     #[tokio::test]
     async fn catalog_lifecycle() {
         let store = store();
-        let id = id();
+        let name = name();
 
-        assert!(store.get(id).await.unwrap().is_none());
+        assert!(store.get(name.clone()).await.unwrap().is_none());
 
-        store.create(id, rest_config()).await.unwrap();
-        let catalog = store.get(id).await.unwrap().unwrap();
-        assert_eq!(catalog.id(), id);
+        store.create(name.clone(), rest_config()).await.unwrap();
+        let catalog = store.get(name.clone()).await.unwrap().unwrap();
+        assert_eq!(catalog.name(), &name);
         assert_eq!(catalog.config(), &rest_config());
 
         insta::assert_compact_debug_snapshot!(
-            store.create(id, rest_config()).await.unwrap_err(),
-            @"AlreadyExists(CatalogId(00000000-0000-0000-0000-00000000002a))"
+            store.create(name.clone(), rest_config()).await.unwrap_err(),
+            @"AlreadyExists(CatalogName { id: \"test-catalog\" })"
         );
 
-        store.delete(id).await.unwrap();
-        assert!(store.get(id).await.unwrap().is_none());
+        store.delete(name.clone()).await.unwrap();
+        assert!(store.get(name.clone()).await.unwrap().is_none());
 
-        store.delete(id).await.unwrap();
+        store.delete(name).await.unwrap();
     }
 
     #[tokio::test]
     async fn unlink_table() {
         let store = store();
-        let catalog = StoredCatalog::new(store.object_store.clone(), id(), rest_config());
+        let catalog = StoredCatalog::new(store.object_store.clone(), name(), rest_config());
         let table_ident = table_ident();
         let table_uuid = Uuid::from_u128(7);
 
@@ -547,7 +527,7 @@ mod tests {
         use iceberg::spec::{NestedField, PartitionSpec, PrimitiveType, Schema, SortOrder, Type};
 
         let store = store();
-        let catalog = StoredCatalog::new(store.object_store.clone(), id(), rest_config());
+        let catalog = StoredCatalog::new(store.object_store.clone(), name(), rest_config());
         let table_ident = table_ident();
         let table_uuid = Uuid::from_u128(7);
 
@@ -607,22 +587,22 @@ mod tests {
     #[tokio::test]
     async fn to_catalog() {
         let store = store();
-        let id = id();
+        let name = name();
 
         let config = CatalogConfig::Rest(RestCatalogConfig {
             uri: "https://rest.catalog.example.com".to_string(),
             warehouse: Some("s3://warehouse".to_string()),
             properties: HashMap::from([("token".to_string(), "hunter2".to_string())]),
         });
-        store.create(id, config).await.unwrap();
-        let catalog = store.get(id).await.unwrap().unwrap();
+        store.create(name.clone(), config).await.unwrap();
+        let catalog = store.get(name.clone()).await.unwrap().unwrap();
 
         let iceberg_catalog = catalog.to_catalog().await.unwrap();
         insta::assert_debug_snapshot!(iceberg_catalog, @r#"
         RestCatalog {
             user_config: RestCatalogConfig {
                 name: Some(
-                    "00000000-0000-0000-0000-00000000002a",
+                    "catalogs/test-catalog",
                 ),
                 uri: "https://rest.catalog.example.com",
                 warehouse: Some(
@@ -646,7 +626,7 @@ mod tests {
             warehouse: None,
             properties: HashMap::new(),
         });
-        let catalog = StoredCatalog::new(store.object_store.clone(), id, config);
+        let catalog = StoredCatalog::new(store.object_store.clone(), name, config);
 
         insta::assert_snapshot!(
             catalog.to_catalog().await.unwrap_err().to_string(),

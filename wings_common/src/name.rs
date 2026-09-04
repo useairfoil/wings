@@ -59,7 +59,7 @@ pub fn validate_resource_id(id: &str) -> ResourceResult<()> {
 macro_rules! resource_type {
     // Root resource (no parent)
     ($name:ident, $prefix:literal) => {
-        paste::paste! {
+        $crate::paste::paste! {
             #[doc = "Type-safe identifier for a " $name " resource."]
             #[derive(Debug, Clone, PartialEq, Eq, Hash)]
             pub struct [<$name Name>] {
@@ -149,7 +149,7 @@ macro_rules! resource_type {
 
     // Child resource (with parent)
     ($name:ident, $prefix:literal, $parent:ident) => {
-        paste::paste! {
+        $crate::paste::paste! {
             #[doc = "Type-safe identifier for a " $name " resource."]
             #[derive(Debug, Clone, PartialEq, Eq, Hash)]
             pub struct [<$name Name>] {

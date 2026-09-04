@@ -1,8 +1,7 @@
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 use wings_grpc_common::pb;
 use wings_meta_store::catalog::{
-    CatalogConfig, CatalogId, CatalogStore, Error as CatalogStoreError, RestCatalogConfig,
+    CatalogConfig, CatalogName, CatalogStore, Error as CatalogStoreError, RestCatalogConfig,
     StoredCatalog,
 };
 
@@ -28,11 +27,11 @@ impl pb::catalog_service_server::CatalogService for CatalogService {
         request: Request<pb::CreateCatalogRequest>,
     ) -> Result<Response<pb::CreateCatalogResponse>, Status> {
         let request = request.into_inner();
-        let id = parse_catalog_id(&request.id)?;
+        let name = parse_catalog_id(&request.catalog_id)?;
         let config = catalog_config_from_proto(request.config)?;
 
         self.catalog_store
-            .create(id, config)
+            .create(name, config)
             .await
             .map_err(catalog_store_error_to_status)?;
 
@@ -44,14 +43,14 @@ impl pb::catalog_service_server::CatalogService for CatalogService {
         request: Request<pb::GetCatalogRequest>,
     ) -> Result<Response<pb::GetCatalogResponse>, Status> {
         let request = request.into_inner();
-        let id = parse_catalog_id(&request.id)?;
+        let name = parse_catalog_name(&request.name)?;
 
         let catalog = self
             .catalog_store
-            .get(id)
+            .get(name.clone())
             .await
             .map_err(catalog_store_error_to_status)?
-            .ok_or_else(|| Status::not_found(format!("catalog not found: {id}")))?;
+            .ok_or_else(|| Status::not_found(format!("catalog not found: {name}")))?;
 
         let response = pb::GetCatalogResponse {
             catalog: Some(catalog_to_proto(&catalog)),
@@ -65,10 +64,10 @@ impl pb::catalog_service_server::CatalogService for CatalogService {
         request: Request<pb::DeleteCatalogRequest>,
     ) -> Result<Response<pb::DeleteCatalogResponse>, Status> {
         let request = request.into_inner();
-        let id = parse_catalog_id(&request.id)?;
+        let name = parse_catalog_name(&request.name)?;
 
         self.catalog_store
-            .delete(id)
+            .delete(name)
             .await
             .map_err(catalog_store_error_to_status)?;
 
@@ -76,11 +75,15 @@ impl pb::catalog_service_server::CatalogService for CatalogService {
     }
 }
 
-/// Parses the catalog id of a request into a [`CatalogId`].
-fn parse_catalog_id(id: &str) -> Result<CatalogId, Status> {
-    let uuid = Uuid::parse_str(id)
-        .map_err(|_| Status::invalid_argument(format!("invalid catalog id: {id}")))?;
-    Ok(CatalogId::new(uuid))
+/// Parses the catalog name of a request into a [`CatalogName`].
+fn parse_catalog_name(name: &str) -> Result<CatalogName, Status> {
+    CatalogName::parse(name)
+        .map_err(|_| Status::invalid_argument(format!("invalid catalog name: {name}")))
+}
+
+/// Parses the catalog id of a create request into a [`CatalogName`].
+fn parse_catalog_id(id: &str) -> Result<CatalogName, Status> {
+    CatalogName::new(id).map_err(|_| Status::invalid_argument(format!("invalid catalog id: {id}")))
 }
 
 /// Converts a proto catalog config into a catalog config.
@@ -108,7 +111,7 @@ fn catalog_to_proto(catalog: &StoredCatalog) -> pb::Catalog {
     };
 
     pb::Catalog {
-        id: catalog.id().to_string(),
+        name: catalog.name().to_string(),
         config: Some(pb::CatalogConfig {
             config: Some(config),
         }),
@@ -118,8 +121,8 @@ fn catalog_to_proto(catalog: &StoredCatalog) -> pb::Catalog {
 /// Maps a catalog store error to a gRPC status.
 fn catalog_store_error_to_status(error: CatalogStoreError) -> Status {
     match &error {
-        CatalogStoreError::AlreadyExists(id) => {
-            Status::already_exists(format!("catalog already exists: {id}"))
+        CatalogStoreError::AlreadyExists(name) => {
+            Status::already_exists(format!("catalog already exists: {name}"))
         }
         _ => Status::internal(error.to_string()),
     }
