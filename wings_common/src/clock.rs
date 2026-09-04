@@ -133,7 +133,9 @@ mod tests {
 
     use tokio::time::timeout;
 
-    use super::{DefaultSystemClock, MockSystemClock, SystemClock};
+    #[cfg(feature = "test-util")]
+    use super::MockSystemClock;
+    use super::{DefaultSystemClock, SystemClock};
 
     #[tokio::test]
     #[cfg(feature = "test-util")]

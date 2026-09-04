@@ -18,12 +18,16 @@ backon.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 object_store.workspace = true
+paste.workspace = true
 rand.workspace = true
+serde.workspace = true
 slatedb-common.workspace = true
 slatedb-txn-obj.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 ulid.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
