@@ -14,7 +14,6 @@ members = [
     "wings_grpc_common",
     "wings_grpc_server",
     "wings_observability",
-    "wings_queue",
     "wings_stress",
     "wings_secret_store",
     "wings_meta_store"
@@ -31,12 +30,10 @@ arrow-flight = { version = "59.3.0", features = ["flight-sql"] }
 async-trait = "0.1.89"
 backon = { version = "1.6.0", default-features = false }
 base64 = "0.22.1"
-binrw = "0.15.1"
 bytes = "1.11.1"
 chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive", "env", "unicode"] }
 dashmap = "6.2.1"
-http = "1.4.2"
 iceberg = "0.10.1"
 iceberg-catalog-rest = "0.10.1"
 insta = { version = "1.47.2", features = ["yaml"] }
@@ -46,11 +43,9 @@ paste = "1.0.15"
 opentelemetry = "0.32.0"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "0.32.1"
-pretty-hex = "0.4.2"
 prost = "0.14.4"
 prost-types = { version = "0.14.4", features = ["chrono"] }
 rand = "0.10.1"
-reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 slatedb-common = "0.16.0"
@@ -69,13 +64,10 @@ tracing-opentelemetry = "0.33.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 ulid = "1.2.1"
 uuid = { version = "1.23.3", features = ["v4"] }
-zstd = "0.13.3"
 # local crates
-wings = { path = "./wings" }
 wings-common = { path = "./wings_common" }
 wings-grpc-common = { path = "./wings_grpc_common" }
 wings-grpc-server = { path = "./wings_grpc_server" }
 wings-observability = { path = "./wings_observability" }
-wings-queue = { path = "./wings_queue" }
 wings-secret-store = { path = "./wings_secret_store" }
 wings-meta-store = { path = "./wings_meta_store" }

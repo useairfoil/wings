@@ -1,1 +1,1 @@
-pub mod cmd;
+//! Utilities for Wings stress testing.

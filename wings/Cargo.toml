@@ -19,14 +19,10 @@ object_store.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-tonic.workspace = true
-tonic-health.workspace = true
-tonic-reflection.workspace = true
 tracing.workspace = true
 
 wings-common.workspace = true
 wings-grpc-server.workspace = true
 wings-meta-store.workspace = true
 wings-observability.workspace = true
-wings-queue.workspace = true
 wings-secret-store.workspace = true
