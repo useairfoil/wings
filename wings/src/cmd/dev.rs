@@ -1,8 +1,8 @@
 use clap::Args;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use wings_grpc_server::run_grpc_server;
 use wings_meta_store::catalog::CatalogStore;
+use wings_server::run_http_server;
 
 use crate::{object_store::ObjectStoreArgs, secret_store::SecretStoreArgs, server::ServerArgs};
 
@@ -24,8 +24,6 @@ pub enum Error {
     ObjectStore(#[from] object_store::Error),
     #[error("secret store error: {0}")]
     SecretStore(#[from] wings_secret_store::Error),
-    #[error("grpc server error: {0}")]
-    GrpcServer(#[from] wings_grpc_server::Error),
 }
 
 impl DevArgs {
@@ -39,7 +37,7 @@ impl DevArgs {
 
         let listener = self.server.bind_listener().await?;
 
-        run_grpc_server(listener, catalog_store, ct).await?;
+        run_http_server(listener, catalog_store, ct).await?;
 
         Ok(())
     }

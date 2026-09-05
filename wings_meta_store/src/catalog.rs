@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use iceberg::{Catalog, CatalogBuilder};
-pub use iceberg::{NamespaceIdent, TableIdent};
+use iceberg::CatalogBuilder;
+pub use iceberg::{Catalog, Error as IcebergError, NamespaceIdent, TableIdent};
 use iceberg_catalog_rest::{
     REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE, RestCatalogBuilder,
 };
@@ -18,7 +18,7 @@ wings_common::resource_type!(Catalog, "catalogs");
 ///
 /// Currently, only REST catalogs are supported.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum CatalogConfig {
     /// An Iceberg REST catalog.
     Rest(RestCatalogConfig),
@@ -117,6 +117,26 @@ struct TableLink {
     table_uuid: Uuid,
 }
 
+impl CatalogConfig {
+    /// Creates the iceberg [`Catalog`] described by this configuration.
+    ///
+    /// The `name` is used as the internal name of the created catalog.
+    pub async fn to_catalog(&self, name: &str) -> Result<Arc<dyn Catalog>> {
+        match self {
+            CatalogConfig::Rest(config) => {
+                let mut props = config.properties.clone();
+                props.insert(REST_CATALOG_PROP_URI.to_string(), config.uri.clone());
+                if let Some(warehouse) = &config.warehouse {
+                    props.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
+                }
+
+                let catalog = RestCatalogBuilder::default().load(name, props).await?;
+                Ok(Arc::new(catalog))
+            }
+        }
+    }
+}
+
 impl StoredCatalog {
     /// Creates a new stored catalog with the given name and configuration.
     pub fn new(
@@ -146,20 +166,7 @@ impl StoredCatalog {
 
     /// Creates the iceberg [`Catalog`] described by this stored catalog.
     pub async fn to_catalog(&self) -> Result<Arc<dyn Catalog>> {
-        match &self.config {
-            CatalogConfig::Rest(config) => {
-                let mut props = config.properties.clone();
-                props.insert(REST_CATALOG_PROP_URI.to_string(), config.uri.clone());
-                if let Some(warehouse) = &config.warehouse {
-                    props.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
-                }
-
-                let catalog = RestCatalogBuilder::default()
-                    .load(self.name.to_string(), props)
-                    .await?;
-                Ok(Arc::new(catalog))
-            }
-        }
+        self.config.to_catalog(&self.name.to_string()).await
     }
 
     /// Links a table from the iceberg catalog into the meta store.
@@ -464,7 +471,7 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         insta::assert_snapshot!(
             json,
-            @r#"{"type":"rest","uri":"https://rest.catalog.example.com","warehouse":"s3://warehouse","properties":{"token":"hunter2"}}"#
+            @r#"{"rest":{"uri":"https://rest.catalog.example.com","warehouse":"s3://warehouse","properties":{"token":"hunter2"}}}"#
         );
 
         let deserialized: CatalogConfig = serde_json::from_str(&json).unwrap();

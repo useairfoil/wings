@@ -55,17 +55,12 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        src = pkgs.lib.cleanSourceWith {
-          src = craneLib.path ./.;
-          filter =
-            path: type: (builtins.match ".*proto$" path != null) || (craneLib.filterCargoSources path type);
-        };
+        src = craneLib.cleanCargoSource ./.;
 
         commonArgs = {
           inherit src;
           nativeBuildInputs = with pkgs; [
             pkg-config
-            protobuf
             openssl.dev
           ];
         };

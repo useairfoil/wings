@@ -22,7 +22,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 wings-common.workspace = true
-wings-grpc-server.workspace = true
+wings-server.workspace = true
 wings-meta-store.workspace = true
 wings-observability.workspace = true
 wings-secret-store.workspace = true

@@ -9,7 +9,7 @@ Wings supports two modes, configurable by table:
  - entities: row values are merged so that only the latest value is stored, with no duplicates. In this mode, partial updates are supported.
  - append only: every write adds data to the table.
 
-In both modes, data is ingested through the Wings Arrow Flight service and committed to the write-ahead log (WAL) on object storage, after this data is considered durable. Concurrent writes are batched together and flushed every second.
+The ingestion API is being redesigned. The current HTTP server exposes health checks and catalog management only.
 
 At the moment, Wings _is not_ a general purpose storage engine. Data MUST go through the Wings ingestion service so that it can be validated and added to the table.
 
@@ -31,14 +31,68 @@ At the moment, Wings _is not_ a general purpose storage engine. Data MUST go thr
 
 ## Getting Started
 
-TODO
+Run `cargo run --bin wings -- dev` to start the HTTP server at
+`http://127.0.0.1:7777`. Use `--server.address` or `WINGS_SERVER_ADDRESS` to
+change the listen address. Configure the object-store provider, bucket and
+credentials first (`--object-store.type`, `--object-store.bucket-name` and the
+provider's environment variables); the file secret store uses that object store.
+
+| Method | Path | Success response |
+| --- | --- | --- |
+| GET | `/health` | `200 OK` (liveness check, empty body) |
+| POST | `/catalogs` | `201 Created`, catalog JSON and `Location` header |
+| GET | `/catalogs/{id}` | `200 OK`, catalog JSON |
+| DELETE | `/catalogs/{id}` | `204 No Content` (also when already absent) |
+| GET | `/catalogs/{id}/v1/config` | `200 OK`, Iceberg REST client configuration |
+
+Catalog configurations are persisted in the configured secret store, not a
+database. There is intentionally no listing endpoint (`GET /catalogs` returns
+`405 Method Not Allowed`).
+
+```sh
+curl -f http://127.0.0.1:7777/health
+curl -f http://127.0.0.1:7777/catalogs \
+  -H 'Content-Type: application/json' \
+  -d '{"catalog_id":"example","config":{"type":"rest","uri":"http://localhost:8181"}}'
+curl -f http://127.0.0.1:7777/catalogs/example
+curl -f -X DELETE http://127.0.0.1:7777/catalogs/example
+```
+
+Create and get return `{"name":"catalogs/example","config":{"type":"rest","uri":"http://localhost:8181"}}`.
+REST config also accepts optional `warehouse` and `properties` fields.
+IDs use the existing catalog ID validation. Invalid IDs return `400`, missing
+catalogs return `404`, and duplicate creation returns `409`. Invalid JSON returns
+`400`, an invalid JSON schema returns `422`, and a missing JSON content type
+returns `415`. Backend failures return `500` without exposing backend details.
+The API has no authentication yet; keep it on a trusted interface, especially
+because catalog properties may contain credentials.
+
+### Iceberg REST catalog API
+
+Each catalog has its own Iceberg REST base URI, for example
+`http://127.0.0.1:7777/catalogs/example`. Currently only `GET /v1/config`
+is implemented under that base URI:
+
+```sh
+curl -f 'http://127.0.0.1:7777/catalogs/example/v1/config?warehouse=example'
+```
+
+It returns `{"defaults":{},"overrides":{},"endpoints":[]}`. The optional
+`warehouse` query parameter is accepted but ignored: the URL selects the catalog.
+There are no client property defaults or overrides yet, and no namespace or table
+operations are advertised. Upstream catalog connection properties and credentials
+are not returned. Missing catalogs return `404`, invalid IDs return `400`, and
+backend failures return `500`, using the Iceberg REST error response format.
+
+Iceberg endpoint implementations live in `wings_server/src/iceberg/`, starting
+with `config.rs`; namespace and table handlers will live alongside it as they are
+implemented. Catalog-management endpoints remain separate.
 
 ```txt
 wings
 ├── wings: the main binary.
 ├── wings_common: common utilities shared across crates, e.g. DST.
-├── wings_grpc_common: protobuf definitions for the gRPC server and client.
-├── wings_grpc_server: gRPC server, including the Arrow Flight server for ingestion.
+├── wings_server: Axum HTTP server for health checks and catalog management.
 ├── wings_meta_store: crate to interact with the metadata.
 ├── wings_observability: utilities to setup observability.
 ├── wings_secret_store: abstraction over secret stores (e.g. AWS Secrets Manager, HashiCorp Vault).
