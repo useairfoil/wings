@@ -132,7 +132,6 @@
               dockerTools.binSh
               dockerTools.caCertificates
             ];
-            pathsToLink = [ "/bin" ];
           };
           config = {
             Entrypoint = [ "/bin/wings" ];
