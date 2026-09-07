@@ -126,7 +126,12 @@
           created = "now";
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
-            paths = [ binaries ];
+            paths = with pkgs; [
+              binaries
+              dockerTools.usrBinEnv
+              dockerTools.binSh
+              dockerTools.caCertificates
+            ];
             pathsToLink = [ "/bin" ];
           };
           config = {
