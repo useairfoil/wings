@@ -1,8 +1,8 @@
 use clap::Args;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
+use tonic::service::Routes;
 use wings_meta_store::catalog::CatalogStore;
-use wings_server::run_http_server;
 
 use crate::{object_store::ObjectStoreArgs, secret_store::SecretStoreArgs, server::ServerArgs};
 
@@ -37,7 +37,14 @@ impl DevArgs {
 
         let listener = self.server.bind_listener().await?;
 
-        run_http_server(listener, catalog_store, ct).await?;
+        let router = Routes::from(wings_server::router(catalog_store.clone()))
+            .add_service(wings_ingestion_server::service(catalog_store, ct.clone()))
+            .into_axum_router();
+
+        tracing::info!(address = %listener.local_addr()?, "server listening");
+        axum::serve(listener, router)
+            .with_graceful_shutdown(ct.cancelled_owned())
+            .await?;
 
         Ok(())
     }

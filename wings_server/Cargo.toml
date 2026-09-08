@@ -11,8 +11,6 @@ iceberg-catalog-rest.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
-tokio-util.workspace = true
 tracing.workspace = true
 wings-meta-store.workspace = true
 
