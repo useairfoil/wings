@@ -7,6 +7,7 @@ services:
       AWS_ACCESS_KEY_ID: wingsdevaccesskey
       AWS_SECRET_ACCESS_KEY: wingsdevsecretkey
       S3_BUCKET: default-bucket
+      S3_TABLE_BUCKET: default-catalog
     ports:
       - "8333:8333"
       - "8888:8888"
